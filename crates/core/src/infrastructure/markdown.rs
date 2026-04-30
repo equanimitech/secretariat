@@ -5,10 +5,10 @@
 //! ```text
 //! ---
 //! $envelope:
-//!   $type: app.equanimi.secretariat.envelope
+//!   $type: tech.equanimi.secretariat.envelope
 //!   ...
 //! $attestation:
-//!   $type: app.equanimi.secretariat.stamp
+//!   $type: tech.equanimi.secretariat.stamp
 //!   ...
 //! ---
 //!

@@ -28,7 +28,7 @@ These are non-negotiable. They override the template's defaults where they confl
    parameters. Aggregates enforce invariants at construction.
 
 3. **AT-proto-lexicon-shaped records.** Every record type has a `$type`
-   discriminator (e.g. `app.equanimi.secretariat.stamp`). Schemas are mirrored
+   discriminator (e.g. `tech.equanimi.secretariat.stamp`). Schemas are mirrored
    under `lexicons/` — that directory is the source of truth for the on-wire
    shape, even though it does not yet drive runtime validation.
 

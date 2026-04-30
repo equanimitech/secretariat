@@ -13,7 +13,7 @@ use super::{Did, DocHash, Signature, StampAct};
 /// A signed attestation that the principal performed `act` on a document
 /// whose canonical body hashes to `doc_hash`.
 ///
-/// Lexicon: `app.equanimi.secretariat.stamp`.
+/// Lexicon: `tech.equanimi.secretariat.stamp`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Stamp {
     pub signer: Did,
@@ -25,7 +25,7 @@ pub struct Stamp {
 }
 
 impl Stamp {
-    pub const TYPE_ID: &'static str = "app.equanimi.secretariat.stamp";
+    pub const TYPE_ID: &'static str = "tech.equanimi.secretariat.stamp";
 
     pub fn new(
         signer: Did,
@@ -132,7 +132,7 @@ mod tests {
     #[test]
     fn stamp_emits_type_field() {
         let yaml = serde_yaml::to_string(&fixture_stamp()).unwrap();
-        assert!(yaml.contains("$type: app.equanimi.secretariat.stamp"));
+        assert!(yaml.contains("$type: tech.equanimi.secretariat.stamp"));
     }
 
     #[test]

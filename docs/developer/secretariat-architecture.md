@@ -114,12 +114,12 @@ domain testable as pure logic.
 ### Entities
 
 - **`Stamp`** — the signed human act. Once issued, immutable. Lexicon:
-  `app.equanimi.secretariat.stamp`.
+  `tech.equanimi.secretariat.stamp`.
 - **`Envelope`** — bid for the receiver's attention. Composed by the scribe.
-  Lexicon: `app.equanimi.secretariat.envelope`.
+  Lexicon: `tech.equanimi.secretariat.envelope`.
 - **`AttentionEnvelope`** — the principal's published bounds. Has an
   `admits(envelope) -> bool` predicate. Lexicon:
-  `app.equanimi.secretariat.attentionEnvelope`.
+  `tech.equanimi.secretariat.attentionEnvelope`.
 
 ### Aggregate
 
@@ -253,7 +253,7 @@ Stamped envelope = markdown with YAML frontmatter:
 ```markdown
 ---
 $envelope:
-  $type: app.equanimi.secretariat.envelope
+  $type: tech.equanimi.secretariat.envelope
   from: did:key:z6Mk... | did:web:rafa.equanimi.tech
   to: did:key:z6Mk...                # optional; absent = self-addressed
   depth: gross | subtle
@@ -261,7 +261,7 @@ $envelope:
   source: <free-form>
   cadenceHint: <optional>
 $attestation:
-  $type: app.equanimi.secretariat.stamp
+  $type: tech.equanimi.secretariat.stamp
   signer: <did>
   act: attest
   docHash: sha256:<hex>

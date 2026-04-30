@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{Did, Envelope, EnvelopeDepth, EnvelopeUrgency};
 
-/// Lexicon: `app.equanimi.secretariat.attentionEnvelope`.
+/// Lexicon: `tech.equanimi.secretariat.attentionEnvelope`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AttentionEnvelope {
     pub signer: Did,
@@ -21,7 +21,7 @@ pub struct AttentionEnvelope {
 }
 
 impl AttentionEnvelope {
-    pub const TYPE_ID: &'static str = "app.equanimi.secretariat.attentionEnvelope";
+    pub const TYPE_ID: &'static str = "tech.equanimi.secretariat.attentionEnvelope";
 
     /// Pure predicate: does the given envelope fit within the published bounds?
     ///

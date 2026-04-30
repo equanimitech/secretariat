@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{Did, EnvelopeDepth, EnvelopeUrgency};
 
-/// Lexicon: `app.equanimi.secretariat.envelope`.
+/// Lexicon: `tech.equanimi.secretariat.envelope`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Envelope {
     pub from: Did,
@@ -21,7 +21,7 @@ pub struct Envelope {
 }
 
 impl Envelope {
-    pub const TYPE_ID: &'static str = "app.equanimi.secretariat.envelope";
+    pub const TYPE_ID: &'static str = "tech.equanimi.secretariat.envelope";
 
     pub fn builder(from: Did) -> EnvelopeBuilder {
         EnvelopeBuilder::new(from)
@@ -164,7 +164,7 @@ mod tests {
     #[test]
     fn envelope_emits_camel_case_keys_and_type() {
         let yaml = serde_yaml::to_string(&fixture()).unwrap();
-        assert!(yaml.contains("$type: app.equanimi.secretariat.envelope"));
+        assert!(yaml.contains("$type: tech.equanimi.secretariat.envelope"));
         assert!(yaml.contains("cadenceHint"));
     }
 
