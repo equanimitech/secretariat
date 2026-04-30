@@ -1,143 +1,166 @@
-# AI Agent Instructions
+# Secretariat — Claude orchestration
 
-## Overview
+Secretariat is a cryptographically attested AI-mediated correspondence system.
+The principal is the human; Claude is the scribe. Claude composes, the principal
+stamps. Stamps are biometrically gated.
 
-This repository is a template with sensible defaults for building Tauri React apps.
+This file is read at the start of every Claude Code session. It overrides the
+generic template defaults (the project was bootstrapped from
+`dannysmith/tauri-template` but the bounded context is Secretariat, not a generic
+desktop app).
 
-## Core Rules
+## What's here today
 
-### New Sessions
+- **CLI (`sec`)** — works end-to-end on macOS. `init` / `compose` / `stamp` /
+  `verify` / `list`. 61 unit tests passing. See `docs/developer/secretariat-architecture.md`.
+- **Tauri shell** — scaffolded but unused. The ceremony GUI is a future increment.
+- **MCP server** — not built yet. Claude orchestrates via `Bash` against `sec` for now.
 
-- Read @docs/tasks.md for task management
-- Review `docs/developer/architecture-guide.md` for high-level patterns
-- Check `docs/developer/README.md` for the full documentation index
-- Check git status and project structure
+## Hard rules
 
-### Development Practices
+These are non-negotiable. They override the template's defaults where they conflict.
 
-**CRITICAL:** Follow these strictly:
+1. **Use pnpm, not npm.** This overrides the template's npm-only rule. All
+   front-end commands run as `pnpm install` / `pnpm tauri:dev` etc.
 
-0. **Use npm only**: This project uses `npm`, NOT `pnpm`. Always use `npm install`, `npm run`, etc.
-1. **Read Before Editing**: Always read files first to understand context
-2. **Follow Established Patterns**: Use patterns from this file and `docs/developer`
-3. **Senior Architect Mindset**: Consider performance, maintainability, testability
-4. **Batch Operations**: Use multiple tool calls in single responses
-5. **Match Code Style**: Follow existing formatting and patterns
-6. **Test Coverage**: Write comprehensive tests for business logic
-7. **Quality Gates**: Run `npm run check:all` after significant changes
-8. **No Dev Server**: Ask user to run and report back
-9. **No Unsolicited Commits**: Only when explicitly requested
-10. **Documentation**: Update relevant `docs/developer/` files for new patterns
-11. **Removing files**: Always use `rm -f`
+2. **Domain layer (`crates/core/src/domain/`) imports no IO.** No `std::fs`,
+   no `reqwest`, no `chrono::Utc::now()`. Time and randomness enter via
+   parameters. Aggregates enforce invariants at construction.
 
-**CRITICAL:** Use Tauri v2 docs only. Always use modern Rust formatting: `format!("{variable}")`
+3. **AT-proto-lexicon-shaped records.** Every record type has a `$type`
+   discriminator (e.g. `app.equanimi.secretariat.stamp`). Schemas are mirrored
+   under `lexicons/` — that directory is the source of truth for the on-wire
+   shape, even though it does not yet drive runtime validation.
 
-## Architecture Patterns (CRITICAL)
+4. **Never inline-stamp.** Only the principal stamps. Claude never calls
+   `sec stamp` on its own. Claude composes envelopes; the principal triggers
+   stamping at cadence. The biometric gate is the firewall — if Claude could
+   stamp, the whole primitive collapses to forgery.
 
-### State Management Onion
+5. **Compose envelopes following `~/.secretariat/template.md`.** This is the
+   user-customizable AG (attentional-granularity) template, owned by the
+   principal. It is to envelope composition what `CLAUDE.md` is to general
+   Claude behavior.
+
+6. **Respect `~/.secretariat/attention-envelope.md`.** The principal's
+   declared bounds (depths, urgencies, cadence). Queue to `outbox` instead of
+   surfacing inline if the bid would violate cadence. The protocol detects
+   bound violations; Claude pre-empts them.
+
+7. **Place drafts in `~/.secretariat/outbox/<recipient-did>/`.** Never write
+   draft envelopes into the working directory. The outbox is the queue the
+   principal stamps from.
+
+8. **Use `sec verify --json`** when consuming incoming attested envelopes
+   from another principal. Never trust an envelope without verifying.
+
+9. **The `/share` signature line is required at the end of every envelope:**
+
+   ```
+   ---
+
+   _Drafted by AI, reviewed by a human._
+   ```
+
+   This is in addition to the cryptographic stamp. Recipients without `sec`
+   installed can still see that the document passed through a human edit pass.
+
+10. **Tauri v2 only.** Modern Rust formatting (`format!("{variable}")`).
+
+## Architecture at a glance
 
 ```
-useState (component) → Zustand (global UI) → TanStack Query (persistent data)
+crates/cli         (binary `sec`)            ──▶ application + infrastructure
+src-tauri          (GUI shell, placeholder)  ──▶ application + infrastructure
+crates/core::application                     ──▶ ports, domain
+crates/core::infrastructure                  ──▶ ports, domain (impls)
+crates/core::ports                           ──▶ domain (traits)
+crates/core::domain                          (no internal deps; no IO)
 ```
 
-**Decision**: Is data needed across components? → Does it persist between sessions?
+**Hard rule (repeated):** the dependency arrows go down. Domain never
+depends on anything else.
 
-### Performance Pattern (CRITICAL)
+See `docs/developer/secretariat-architecture.md` for module-by-module detail,
+the wire format, and the threat model.
 
-```typescript
-// ✅ GOOD: Selector syntax - only re-renders when specific value changes
-const leftSidebarVisible = useUIStore(state => state.leftSidebarVisible)
+## Bounded context
 
-// ❌ BAD: Destructuring causes render cascades (caught by ast-grep)
-const { leftSidebarVisible } = useUIStore()
+Two real downstream use cases shape the wedge:
 
-// ✅ GOOD: Use getState() in callbacks for current state
-const handleAction = () => {
-  const { data, setData } = useStore.getState()
-  setData(newData)
-}
-```
+- **Rafa ↔ Marcelo (the book).** Marcelo Ballestiero is co-authoring
+  *Autonomous Enterprise* (245pp draft, April 2026); Secretariat is the
+  operational artifact embodying that framework's principles. Recursive
+  validation: the book *about* bounded autonomy is being co-authored
+  *using* bounded autonomy.
+- **Rafa ↔ Christophe (Themia legal briefs).** Will eventually need
+  Windows support; today Mac-only.
 
-### Static Analysis
+When making decisions, optimize for these two flows.
 
-- **React Compiler**: Handles memoization automatically - no manual `useMemo`/`useCallback` needed
-- **ast-grep**: Enforces architecture patterns (e.g., no Zustand destructuring). See `docs/developer/static-analysis.md`
-- **Knip/jscpd**: Periodic cleanup tools. Use `/cleanup` command (Claude Code)
+## Development practices
 
-### Event-Driven Bridge
+- **Read before editing.** Always understand surrounding code.
+- **Follow existing patterns** — look at peer modules in the same layer first.
+- **Type-driven** — make illegal states unrepresentable. New value objects
+  are newtypes with parse-time validation, like `Did` / `DocHash` / `Signature`.
+- **Comprehensive tests for domain logic.** Domain is the core; cover the
+  invariants. Infrastructure tests focus on real integrations (file IO,
+  signature round-trips), not mocks.
+- **Quality gates:** run `cargo test --workspace` and `cargo clippy -- -D warnings`
+  before claiming work complete.
+- **No unsolicited commits.** Only commit when the user explicitly asks.
+- **Removing files:** always use `rm -f`.
 
-- **Rust → React**: `app.emit("event-name", data)` → `listen("event-name", handler)`
-- **React → Rust**: Use typed commands from `@/lib/tauri-bindings` (tauri-specta)
-- **Commands**: All actions flow through centralized command system
+## Reuse — skills shipped with this user's `~/.claude/`
 
-### Tauri Command Pattern (tauri-specta)
+When composing envelopes or shaping new primitives, defer to existing skills:
 
-```typescript
-// ✅ GOOD: Type-safe commands with Result handling
-import { commands } from '@/lib/tauri-bindings'
+- **`attentional-granularity`** — content structure (gross → subtle, deepening
+  pathway). Drives the default content of `~/.secretariat/template.md`.
+- **`share`** — drafting shareables. The signature line `_Drafted by AI,
+  reviewed by a human._` comes from this skill.
+- **`behavioral-design`** — BCT/PDP analysis. Used pre-build to validate the
+  ceremony surface against social-reward anti-patterns (we explicitly avoid
+  BCT 10.4 — leaderboards, streaks, counts).
+- **`ddd`** — when adding new aggregates / value objects, follow the layered
+  shape already in place (domain / ports / infrastructure / application).
+- **`leverage-points`** — Meadows lens for strategic decisions. Used in
+  `equanimitech/docs/ideas/secretariat-leverage-diagnostic.md` for the
+  category-fit analysis.
 
-const result = await commands.loadPreferences()
-if (result.status === 'ok') {
-  console.log(result.data.theme)
-}
+## DID methods
 
-// ❌ BAD: String-based invoke (no type safety)
-const prefs = await invoke('load_preferences')
-```
+Two methods supported. Default is `did:key`.
 
-**Adding commands**: See `docs/developer/tauri-commands.md`
+| Method | When to use | Hosting |
+|---|---|---|
+| **`did:key`** | New users, individuals without a domain (Marcelo, Christophe, dad) | Zero — the DID *is* the public key |
+| **`did:web`** | Users with a domain they control (Rafa) | A static `.well-known/did.json` over HTTPS |
 
-### Internationalization (i18n)
+`sec init` (no args) auto-derives a `did:key` from the freshly generated
+verifying key. `sec init --did did:web:rafa.equanimi.tech` opts into the
+domain-anchored variant.
 
-```typescript
-// ✅ GOOD: Use useTranslation hook in React components
-import { useTranslation } from 'react-i18next'
+## Out of scope (for now)
 
-function MyComponent() {
-  const { t } = useTranslation()
-  return <h1>{t('myFeature.title')}</h1>
-}
+Per the pitch's no-go list:
 
-// ✅ GOOD: Non-React contexts - bind for many calls, or use directly
-import i18n from '@/i18n/config'
-const t = i18n.t.bind(i18n)  // Bind once for many translations
-i18n.t('key')                 // Or call directly for occasional use
-```
+- Tauri GUI (the scaffold exists; ceremony surface is a future pitch)
+- MCP server
+- Bilateral correspondence transport (server, peer queue, push)
+- AT-proto network federation, Iroh, IPFS
+- Lexicon publication (schemas are mutable until self-use validates)
+- Cross-platform — Mac-only Day 1; Windows when the GUI lands
+- Defer / vouch / dispute / redirect acts (only `attest` for now)
+- PDF / docx embedding (markdown only)
+- Cryptographic stamp chain (each stamp signing the previous hash)
 
-- **Translations**: All strings in `/locales/*.json`
-- **RTL Support**: Use CSS logical properties (`text-start` not `text-left`)
-- **Adding strings**: See `docs/developer/i18n-patterns.md`
+## Reference paths
 
-### Documentation & Versions
-
-- **Context7 First**: Always use Context7 for framework docs before WebSearch
-- **Version Requirements**: Tauri v2.x, shadcn/ui v4.x, Tailwind v4.x, React 19.x, Zustand v5.x, Vite v7.x, Vitest v4.x
-
-## Developer Documentation
-
-For complete patterns and detailed guidance, see `docs/developer/README.md`.
-
-Key documents:
-
-- `architecture-guide.md` - Mental models, security, anti-patterns
-- `state-management.md` - State onion, getState() pattern details
-- `tauri-commands.md` - Adding new Rust commands
-- `static-analysis.md` - All linting tools and quality gates
-
-## Claude Code Skills & Agents
-
-These are specific to Claude Code but documented here for context.
-
-### Skills
-
-- `/init` - One-time template initialization (includes package manager selection)
-- `/check` - Check work against architecture, run `npm run check:all`, suggest commit message
-- `/cleanup` - Run static analysis (knip, jscpd, check:all), get structured recommendations
-- `/change-package-manager <bun|pnpm|npm>` - Switch package manager across all config, scripts, docs, CI, and AI instructions
-
-### Agents
-
-Task-focused agents that leverage separate context for focused work:
-
-- `cleanup-analyzer` - Analyze static analysis output (used by `/cleanup`)
-- `userguide-reviewer` - Review user guide against actual system features
+- Pitch: `equanimitech/docs/pitches/2026-04-30-secretariat-stamping-client-mvp.md`
+- Plan: `~/.claude/plans/wait-you-have-a-zazzy-aurora.md`
+- Source idea: `equanimitech/docs/ideas/secretariat-pitch.md`
+- Leverage diagnostic: `equanimitech/docs/ideas/secretariat-leverage-diagnostic.md`
+- Primer for Marcelo: `equanimitech/docs/share/2026-04-30-primer-for-marcelo.md`
+- Day 1 milestone: `docs/milestones/2026-04-30-first-signed-message.md`
