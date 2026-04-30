@@ -14,6 +14,10 @@ dist-ssr
 *.local.*
 jscpd-report
 
+# Rust
+target/
+Cargo.lock
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

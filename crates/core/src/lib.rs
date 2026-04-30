@@ -11,6 +11,7 @@
 //! Application use cases (`stamp_document`, `verify_document`) live in `application`.
 
 pub mod application;
+pub mod codec;
 pub mod domain;
 pub mod infrastructure;
 pub mod ports;

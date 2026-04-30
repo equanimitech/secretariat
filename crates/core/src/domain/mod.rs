@@ -12,7 +12,7 @@ mod stamp;
 
 pub use acts::{EnvelopeDepth, EnvelopeUrgency, StampAct};
 pub use attention_envelope::AttentionEnvelope;
-pub use attested_document::{AttestedDocument, DocumentInvariantError};
+pub use attested_document::{canonical_body_hash, AttestedDocument, DocumentInvariantError};
 pub use envelope::{Envelope, EnvelopeBuilder};
-pub use identity::{Did, DidParseError, DocHash, Signature, SignatureParseError};
+pub use identity::{Did, DidMethod, DidParseError, DocHash, Signature, SignatureParseError};
 pub use stamp::Stamp;

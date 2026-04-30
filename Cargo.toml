@@ -20,6 +20,14 @@ reqwest = { version = "0.12", features = ["blocking", "json", "rustls-tls"], def
 base64 = "0.22"
 dirs = "5.0"
 hex = "0.4"
+thiserror = "1.0"
+bs58 = "0.5"
+multibase = "0.9"
+
+# dev only — pulled into individual crates' [dev-dependencies] by name
+tempfile = "3"
+assert_cmd = "2"
+predicates = "3"
 
 # Optimize for smaller binary size in release builds (matches src-tauri's profile).
 [profile.release]
