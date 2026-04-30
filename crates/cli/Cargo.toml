@@ -1,0 +1,21 @@
+[package]
+name = "secretariat-cli"
+version = "0.1.0"
+edition = "2021"
+authors = ["Rafa Ballestiero"]
+license = "MIT"
+description = "CLI for Secretariat: sec init, sec stamp, sec verify, sec compose."
+
+[[bin]]
+name = "sec"
+path = "src/main.rs"
+
+[dependencies]
+secretariat-core = { path = "../core" }
+anyhow.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+chrono.workspace = true
+dirs.workspace = true

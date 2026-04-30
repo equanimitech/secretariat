@@ -1,0 +1,18 @@
+//! Pure domain: bounded context = human attestation of AI-mediated documents.
+//!
+//! No IO. Types are the architectural guardrails — illegal states unrepresentable.
+//! Aggregates (`AttestedDocument`) enforce cross-entity invariants at construction.
+
+mod acts;
+mod attention_envelope;
+mod attested_document;
+mod envelope;
+mod identity;
+mod stamp;
+
+pub use acts::{EnvelopeDepth, EnvelopeUrgency, StampAct};
+pub use attention_envelope::AttentionEnvelope;
+pub use attested_document::{AttestedDocument, DocumentInvariantError};
+pub use envelope::{Envelope, EnvelopeBuilder};
+pub use identity::{Did, DidParseError, DocHash, Signature, SignatureParseError};
+pub use stamp::Stamp;
