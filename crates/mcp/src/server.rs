@@ -420,30 +420,30 @@ fn load_principal_did(paths: &KeyPaths) -> Result<Did, ErrorData> {
 
 fn verify_outcome_to_view(outcome: VerifyOutcome) -> VerifyOutput {
     match outcome {
-        VerifyOutcome::Verified { signer, stamped_at } => VerifyOutput {
+        VerifyOutcome::Verified { signer, stamped_at, .. } => VerifyOutput {
             outcome: "Verified".into(),
             signer: Some(signer.as_str().to_string()),
             stamped_at: Some(stamped_at.to_rfc3339()),
         },
-        VerifyOutcome::Tampered { signer, stamped_at } => VerifyOutput {
+        VerifyOutcome::Tampered { .. } => VerifyOutput {
             outcome: "Tampered".into(),
-            signer: Some(signer.as_str().to_string()),
-            stamped_at: Some(stamped_at.to_rfc3339()),
+            signer: None,
+            stamped_at: None,
         },
         VerifyOutcome::Unsigned => VerifyOutput {
             outcome: "Unsigned".into(),
             signer: None,
             stamped_at: None,
         },
-        VerifyOutcome::SignerUnresolvable { signer } => VerifyOutput {
+        VerifyOutcome::SignerUnresolvable { signer, .. } => VerifyOutput {
             outcome: "SignerUnresolvable".into(),
             signer: Some(signer.as_str().to_string()),
             stamped_at: None,
         },
-        VerifyOutcome::SignatureInvalid { signer, stamped_at } => VerifyOutput {
+        VerifyOutcome::SignatureInvalid { signer } => VerifyOutput {
             outcome: "SignatureInvalid".into(),
             signer: Some(signer.as_str().to_string()),
-            stamped_at: Some(stamped_at.to_rfc3339()),
+            stamped_at: None,
         },
     }
 }

@@ -1,9 +1,6 @@
 [workspace]
 resolver = "2"
-# `crates/mcp` is excluded from the workspace until chunk 7 build is finalized
-# (rmcp 0.8 wiring incomplete). Re-add to members once `cargo build -p secretariat-mcp` is green.
-members = ["src-tauri", "crates/core", "crates/cli", "crates/relay"]
-exclude = ["crates/mcp"]
+members = ["src-tauri", "crates/core", "crates/cli", "crates/relay", "crates/mcp"]
 
 # Shared dep versions across the workspace.
 # Per-crate Cargo.toml files reference these via `.workspace = true`.
