@@ -6,6 +6,7 @@
 //! ~/.secretariat/
 //! ├── key                          ed25519 PKCS#8 PEM, mode 0600
 //! ├── did.json                     DID document scaffold (user hosts)
+//! ├── contacts.json                known peers (Contact aggregate, mode 0600)
 //! ├── attention-envelope.md        principal's signed bounds
 //! ├── template.md                  user-customizable AG template
 //! ├── inbox/                       incoming stamped envelopes
@@ -46,6 +47,8 @@ pub struct KeyPaths {
     pub root: PathBuf,
     pub signing_key: PathBuf,
     pub did_document: PathBuf,
+    pub contacts: PathBuf,
+    pub relay_state: PathBuf,
     pub peers_cache: PathBuf,
     pub inbox: PathBuf,
     pub outbox: PathBuf,
@@ -63,6 +66,8 @@ impl KeyPaths {
         Self {
             signing_key: root.join("key"),
             did_document: root.join("did.json"),
+            contacts: root.join("contacts.json"),
+            relay_state: root.join("relay-state.json"),
             peers_cache: root.join("peers"),
             inbox: root.join("inbox"),
             outbox: root.join("outbox"),

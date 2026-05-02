@@ -285,6 +285,14 @@ The hash covers the **body only** — the `$envelope` frontmatter is routing
 metadata, not protected by the signature. v2 may add envelope signing for
 bilateral bound enforcement; for now, content authenticity is the contract.
 
+**Body encryption is not yet implemented.** Day 1 envelopes are plaintext
+markdown — fine for self-stamping and local files, *not* fine for traversal
+over a transport like Gmail (the provider would read the body). Before any
+transport adapter ships, the body must be sealed end-to-end to the
+recipient's DID-derived x25519 key (ed25519 keys convert losslessly).
+Transports will see signed ciphertext, never plaintext. See AGENTS.md
+invariant #4.
+
 ## Threat model
 
 ### Defended
@@ -350,13 +358,19 @@ flag for CLI smoke tests.
 
 | Component | Where it'll live | Trigger |
 |---|---|---|
-| Tauri ceremony GUI | `src-tauri/`, `src/` (React) | After self-use validates the primitive |
+| Tauri ceremony GUI / menubar stamper | `src-tauri/`, `src/` (React) | After self-use validates the primitive |
 | MCP server | new crate `crates/mcp` | When Claude orchestration outgrows Bash |
+| `CognitionPort` + adapters (Claude Code, Anthropic API, Ollama, MLX, Bedrock) | new module under `crates/core/src/ports/` + `crates/core/src/infrastructure/cognition/` | When the agent loop is built (Secretariat-as-orchestrator phase) |
+| Body encryption (ed25519 → x25519, sealed-box / X3DH-lite) | `crates/core/src/infrastructure/crypto/` + envelope wire-format extension | Before *any* network transport ships — invariant #4 requires it |
+| Transport adapters (email-bootstrap first, then self-hosted relay, then Iroh / libp2p, Slack opt-in) | `crates/core/src/infrastructure/transport/` | After menubar stamper + body encryption land; email is the bootstrap, others negotiate via contract |
+| Outbox queue + cadence-aware delivery | application use case + daemon scheduler | When transports land; gates delivery on recipient `attentionEnvelope` + bilateral contract |
+| `tech.equanimi.secretariat.contract` lexicon + handshake | `lexicons/` + new aggregate in domain | After n=2 bilateral correspondence is real |
 | Bilateral transport | new crate, server-side | After `did:key` flows are exercised at n=2 |
 | Real PDS migration | replaces `infrastructure/did_web_resolver` | Multi-correspondent phase |
 | Cross-platform Touch ID | WebAuthn via Tauri webview | When GUI lands |
 | Lexicon publication | `lexicons/` directory becomes public | After self-use stabilizes the schema |
 | `defer` / `vouch` / `dispute` / `redirect` acts | already in `StampAct`, untyped at CLI | As cadence + bilateral land |
+| Web verifier (recipient-without-`sec` UX) | `equanimi.tech/verify` static page | When first envelope reaches a recipient who doesn't have `sec` installed |
 
 See `~/.claude/plans/wait-you-have-a-zazzy-aurora.md` for the full
 sequencing plan and the validation tests run in parallel.

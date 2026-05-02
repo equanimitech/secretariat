@@ -16,7 +16,9 @@ jscpd-report
 
 # Rust
 target/
-Cargo.lock
+# Cargo.lock is intentionally tracked — this workspace ships binaries
+# (sec, sec-relay, sec-mcp), so deterministic dep resolution matters for
+# reproducible builds (Docker, Railway).
 
 # Editor directories and files
 .vscode/*

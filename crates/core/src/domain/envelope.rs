@@ -4,10 +4,61 @@
 //! routing metadata; in MVP the cryptographic stamp covers only the body, not
 //! the envelope (see decision log #1 in the plan). v2 may add envelope signing
 //! for bilateral bound enforcement.
+//!
+//! ## Encryption
+//!
+//! When `encryption` is `Some(_)`, the document body is no longer plaintext
+//! markdown — it is the wire-string form of an encrypted blob (see
+//! [`crate::infrastructure::crypto::sealed::SealedBox`]). The hash invariant
+//! is unchanged: `docHash` covers the body bytes (which are the wire string),
+//! so the ed25519 signature authenticates the bytes that travel over the
+//! transport. Decryption happens *after* verification, on the recipient side,
+//! using their X25519 secret derived from their ed25519 signing key.
+//!
+//! When `encryption` is `None`, the body is plaintext markdown and behavior
+//! matches the Day-1 design.
 
 use serde::{Deserialize, Serialize};
 
 use super::{Did, EnvelopeDepth, EnvelopeUrgency};
+
+/// The encryption scheme applied to the document body. v0 ships a single
+/// scheme; future versions may add others (post-quantum, etc.) by extending
+/// this enum and bumping the wire-format identifier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum EncryptionScheme {
+    /// X25519 ECDH key agreement + XChaCha20-Poly1305 AEAD.
+    /// Wire identifier: `x25519-xchacha20poly1305`.
+    X25519XChaCha20Poly1305,
+}
+
+impl EncryptionScheme {
+    pub const X25519_XCHACHA20POLY1305_ID: &'static str = "x25519-xchacha20poly1305";
+
+    pub fn as_wire_str(&self) -> &'static str {
+        match self {
+            Self::X25519XChaCha20Poly1305 => Self::X25519_XCHACHA20POLY1305_ID,
+        }
+    }
+}
+
+impl Serialize for EncryptionScheme {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_wire_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for EncryptionScheme {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(d)?;
+        match s.as_str() {
+            Self::X25519_XCHACHA20POLY1305_ID => Ok(Self::X25519XChaCha20Poly1305),
+            other => Err(serde::de::Error::custom(format!(
+                "unknown encryption scheme `{other}`"
+            ))),
+        }
+    }
+}
 
 /// Lexicon: `tech.equanimi.secretariat.envelope`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -18,6 +69,9 @@ pub struct Envelope {
     pub urgency: EnvelopeUrgency,
     pub source: String,
     pub cadence_hint: Option<String>,
+    /// Body encryption scheme. `None` = plaintext markdown body. `Some(_)` =
+    /// body is the wire string of an encrypted blob; decrypt after verify.
+    pub encryption: Option<EncryptionScheme>,
 }
 
 impl Envelope {
@@ -25,6 +79,11 @@ impl Envelope {
 
     pub fn builder(from: Did) -> EnvelopeBuilder {
         EnvelopeBuilder::new(from)
+    }
+
+    /// Convenience: is this envelope's body encrypted?
+    pub fn is_encrypted(&self) -> bool {
+        self.encryption.is_some()
     }
 }
 
@@ -40,6 +99,8 @@ struct EnvelopeWire {
     source: String,
     #[serde(rename = "cadenceHint", default, skip_serializing_if = "Option::is_none")]
     cadence_hint: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    encryption: Option<EncryptionScheme>,
 }
 
 impl Serialize for Envelope {
@@ -52,6 +113,7 @@ impl Serialize for Envelope {
             urgency: self.urgency,
             source: self.source.clone(),
             cadence_hint: self.cadence_hint.clone(),
+            encryption: self.encryption,
         }
         .serialize(s)
     }
@@ -74,12 +136,13 @@ impl<'de> Deserialize<'de> for Envelope {
             urgency: w.urgency,
             source: w.source,
             cadence_hint: w.cadence_hint,
+            encryption: w.encryption,
         })
     }
 }
 
 /// Fluent builder. The only mandatory field is `from`. Defaults:
-/// `depth = Subtle`, `urgency = Whenever`, `source = ""`.
+/// `depth = Subtle`, `urgency = Whenever`, `source = ""`, `encryption = None`.
 #[derive(Debug, Clone)]
 pub struct EnvelopeBuilder {
     from: Did,
@@ -88,6 +151,7 @@ pub struct EnvelopeBuilder {
     urgency: EnvelopeUrgency,
     source: String,
     cadence_hint: Option<String>,
+    encryption: Option<EncryptionScheme>,
 }
 
 impl EnvelopeBuilder {
@@ -99,6 +163,7 @@ impl EnvelopeBuilder {
             urgency: EnvelopeUrgency::Whenever,
             source: String::new(),
             cadence_hint: None,
+            encryption: None,
         }
     }
 
@@ -127,6 +192,11 @@ impl EnvelopeBuilder {
         self
     }
 
+    pub fn encryption(mut self, scheme: EncryptionScheme) -> Self {
+        self.encryption = Some(scheme);
+        self
+    }
+
     pub fn build(self) -> Envelope {
         Envelope {
             from: self.from,
@@ -135,6 +205,7 @@ impl EnvelopeBuilder {
             urgency: self.urgency,
             source: self.source,
             cadence_hint: self.cadence_hint,
+            encryption: self.encryption,
         }
     }
 }
@@ -173,5 +244,53 @@ mod tests {
         let e = Envelope::builder(Did::parse("did:web:rafa.equanimi.tech").unwrap()).build();
         let yaml = serde_yaml::to_string(&e).unwrap();
         assert!(!yaml.contains("to:"));
+    }
+
+    #[test]
+    fn envelope_omits_encryption_when_plaintext() {
+        let e = fixture();
+        assert!(!e.is_encrypted());
+        let yaml = serde_yaml::to_string(&e).unwrap();
+        assert!(!yaml.contains("encryption"));
+    }
+
+    #[test]
+    fn envelope_emits_encryption_marker_when_encrypted() {
+        let e = Envelope::builder(Did::parse("did:web:rafa.equanimi.tech").unwrap())
+            .encryption(EncryptionScheme::X25519XChaCha20Poly1305)
+            .build();
+        assert!(e.is_encrypted());
+        let yaml = serde_yaml::to_string(&e).unwrap();
+        assert!(yaml.contains("encryption: x25519-xchacha20poly1305"));
+    }
+
+    #[test]
+    fn envelope_encrypted_yaml_roundtrip() {
+        let e = Envelope::builder(Did::parse("did:web:rafa.equanimi.tech").unwrap())
+            .to(Did::parse("did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK").unwrap())
+            .depth(EnvelopeDepth::Subtle)
+            .urgency(EnvelopeUrgency::Whenever)
+            .source("daemon-2026-05-02")
+            .encryption(EncryptionScheme::X25519XChaCha20Poly1305)
+            .build();
+        let yaml = serde_yaml::to_string(&e).unwrap();
+        let back: Envelope = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(e, back);
+        assert_eq!(
+            back.encryption,
+            Some(EncryptionScheme::X25519XChaCha20Poly1305)
+        );
+    }
+
+    #[test]
+    fn envelope_rejects_unknown_encryption_scheme() {
+        let yaml = "$type: tech.equanimi.secretariat.envelope\n\
+                    from: did:web:rafa.equanimi.tech\n\
+                    depth: subtle\n\
+                    urgency: whenever\n\
+                    source: x\n\
+                    encryption: aes-gcm-future-scheme\n";
+        let r: Result<Envelope, _> = serde_yaml::from_str(yaml);
+        assert!(r.is_err());
     }
 }

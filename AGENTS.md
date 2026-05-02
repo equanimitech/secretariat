@@ -67,6 +67,64 @@ These are non-negotiable. They override the template's defaults where they confl
 
 10. **Tauri v2 only.** Modern Rust formatting (`format!("{variable}")`).
 
+## Architectural invariants
+
+These are properties of the *system*, not rules of *behavior*. Violating
+one means we shipped the wrong thing, not that we acted wrong. They derive
+from the sovereignty/privacy/equanimity stack and shape every adapter we add.
+
+1. **No central server.** Federation is direct DID resolution. There is no
+   broker, registry, directory, or marketplace. Adding one breaks the
+   model.
+
+2. **No telemetry.** The daemon never phones home. No usage analytics, no
+   crash reporting, no "anonymous metrics." Verification of envelopes is
+   self-contained — signature + DID, no external lookup beyond the
+   signer's own published `did:web` document (cached on first fetch).
+
+3. **Keys never leave the device.** Backups, if any, are user-encrypted
+   with a key only the user holds. No vendor-managed keystore. No cloud
+   keychain sync without user-provided pre-encryption.
+
+4. **Transports are adapters, not authorities.** Gmail, Slack, IMAP,
+   iMessage, SMS, paper QR — each is a dumb pipe. The envelope body is
+   end-to-end encrypted to the recipient's DID-derived encryption key
+   (ed25519 → x25519). Transports see *signed ciphertext* — never
+   plaintext, never envelope structure beyond outermost addressing,
+   never contract terms. Adding a transport must not weaken the trust
+   model.
+
+   **Metadata leakage is acknowledged, not hidden.** Email leaks
+   who-to-whom-and-when to the provider; the social graph is visible
+   even when content is sealed. Users choose transports knowing this.
+   Email is the universal bootstrap adapter (everyone has it); steady-
+   state correspondence between two installed Secretariats may
+   negotiate stronger transports (self-hosted relay, peer-to-peer)
+   via the bilateral contract's `preferred_transports` field.
+
+5. **Cognition is pluggable.** The agent loop talks to a `CognitionPort`,
+   not a vendor SDK. Adapters wire concrete substrates: Claude Code
+   (user's subscription), Anthropic API (BYOK), local models
+   (Ollama / llama.cpp / MLX), Bedrock, etc. Choosing a substrate is the
+   principal's decision, not the product's. Sovereignty over cognition is
+   parallel to sovereignty over keys — the principal must always be able
+   to swap the brain.
+
+6. **Contracts are bilateral and local.** No registry, no directory, no
+   marketplace. Each pair holds its own contract document, signed by both.
+   Discovery is via DID documents (`did:web` `.well-known/` or `did:key`
+   prior-exchange cache).
+
+7. **No SaaS distribution.** A hosted Secretariat collapses the primitive
+   — the moment a server holds keys or routes envelopes, sovereignty is
+   gone. Distribution is local daemon (menubar app + MCP) plus optional
+   self-hosted `did:web` (user's domain) plus on-device transport OAuth
+   tokens. App Store ok. Subscription-to-our-service not ok. Closer to
+   1Password's old license model than to Notion.
+
+These constraints are not obstacles to multi-medium reach — they're what
+make it possible without becoming yet-another-vendor.
+
 ## Architecture at a glance
 
 ```

@@ -28,6 +28,15 @@ enum Cmd {
 
     /// List inbox / outbox / recent stamps.
     List(commands::list::Args),
+
+    /// Manage the contact book: add, list, show, remove peers.
+    Contact(commands::contact::Args),
+
+    /// Run the daemon: register with relays + serve the poll/send loop.
+    Daemon(commands::daemon::Args),
+
+    /// Decrypt + print the body of an envelope (encrypted or plaintext).
+    Read(commands::read::Args),
 }
 
 fn main() -> Result<()> {
@@ -38,5 +47,8 @@ fn main() -> Result<()> {
         Cmd::Stamp(a) => commands::stamp::run(a),
         Cmd::Verify(a) => commands::verify::run(a),
         Cmd::List(a) => commands::list::run(a),
+        Cmd::Contact(a) => commands::contact::run(a),
+        Cmd::Daemon(a) => commands::daemon::run(a),
+        Cmd::Read(a) => commands::read::run(a),
     }
 }

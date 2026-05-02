@@ -18,6 +18,18 @@
 //! The frontmatter block is delimited by `^---\n` ... `\n---\n`. Either or both
 //! of `$envelope` / `$attestation` may be absent. The body starts immediately
 //! after the closing `---\n`.
+//!
+//! ## Encrypted-body convention
+//!
+//! When the envelope's `encryption` field is `Some(scheme)`, the body is no
+//! longer plaintext markdown — it is the wire-string form of an encrypted
+//! blob (see [`crate::infrastructure::crypto::sealed::SealedBox::to_wire_string`]).
+//! This module is encryption-agnostic: it preserves whatever bytes the body
+//! contains. The hash invariant (`docHash` over body) holds in both modes,
+//! so the ed25519 signature authenticates the bytes that travel over the
+//! transport (whether plaintext or ciphertext). Decryption is a separate
+//! step performed after verification, on the recipient side, by the
+//! application layer.
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -267,5 +279,60 @@ mod tests {
         let body = "raw text\n";
         let out = embed_stamp(body, None, None).unwrap();
         assert_eq!(out, body);
+    }
+
+    #[test]
+    fn encrypted_body_round_trip_through_wire_format() {
+        // Cross-layer test: sealed-box body + encrypted envelope marker +
+        // markdown frontmatter wrapping. End-to-end the way the daemon will
+        // build inbound/outbound envelopes once the application layer is wired.
+        use crate::domain::{canonical_body_hash, EncryptionScheme};
+        use crate::infrastructure::crypto::sealed::{
+            open, pubkey_to_x25519, seal, signing_to_x25519, SealedBox,
+        };
+        use ed25519_dalek::SigningKey;
+        use rand::rngs::OsRng;
+
+        // 1. Recipient has a signing key; sender encrypts to its X25519 form.
+        let recipient = SigningKey::generate(&mut OsRng);
+        let recipient_pubkey = pubkey_to_x25519(&recipient.verifying_key());
+
+        // 2. Plaintext message from the principal; daemon seals it.
+        let plaintext = b"# ch7\n\nstaff vs. tools push-back\n";
+        let sealed = seal(plaintext, &recipient_pubkey).unwrap();
+        let body_wire = sealed.to_wire_string();
+
+        // 3. Compose envelope with encryption marker.
+        let envelope = EnvelopeBuilder::new(rafa_did())
+            .to(Did::parse("did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK").unwrap())
+            .encryption(EncryptionScheme::X25519XChaCha20Poly1305)
+            .build();
+
+        // 4. Stamp covers the wire-string body bytes.
+        let body_hash = canonical_body_hash(&body_wire);
+        let stamp = fixture_stamp_for(body_hash.clone());
+
+        // 5. Embed → markdown document with encryption-marked envelope and
+        //    SealedBox-wire-string body.
+        let doc = embed_stamp(&body_wire, Some(&envelope), Some(&stamp)).unwrap();
+
+        // 6. Recipient parses.
+        let parsed = parse_document(&doc).unwrap();
+        let parsed_envelope = parsed.envelope.expect("envelope must round-trip");
+        assert!(parsed_envelope.is_encrypted());
+        assert_eq!(
+            parsed_envelope.encryption,
+            Some(EncryptionScheme::X25519XChaCha20Poly1305)
+        );
+
+        // 7. Hash invariant holds: docHash matches the body bytes the
+        //    recipient sees (the wire-string ciphertext).
+        assert_eq!(canonical_body_hash(&parsed.body), body_hash);
+
+        // 8. Recipient parses body as SealedBox and decrypts with its secret.
+        let parsed_sealed = SealedBox::parse_wire_string(&parsed.body).unwrap();
+        let recipient_secret = signing_to_x25519(&recipient);
+        let opened = open(&parsed_sealed, &recipient_secret).unwrap();
+        assert_eq!(opened, plaintext);
     }
 }
