@@ -1,7 +1,7 @@
 # Multi-stage build: compile with full toolchain, ship with distroless runtime.
 # Image size: ~35 MB.
 
-FROM rust:1.83-slim AS builder
+FROM rust:1.85-slim AS builder
 WORKDIR /build
 
 # Pull workspace deps and build them once for layer caching.

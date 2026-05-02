@@ -1,83 +1,65 @@
-name: 'Release Tauri Template App'
+name: Release binaries
 
 on:
   push:
-    tags: ['v*']
+    tags:
+      - 'v*'
   workflow_dispatch:
-    inputs:
-      version:
-        description: 'Release version (e.g., v1.0.0)'
-        required: true
-        type: string
-
-env:
-  CARGO_TERM_COLOR: always
-  RUST_BACKTRACE: 1
 
 jobs:
-  publish-tauri:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
     permissions:
       contents: write
     strategy:
       fail-fast: false
       matrix:
         include:
-          - platform: 'macos-latest'
-            args: '--bundles app,dmg'
-          - platform: 'windows-latest'
-            args: '--bundles msi'
-          - platform: 'ubuntu-22.04'
-            args: '--bundles appimage'
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            archive: secretariat-darwin-arm64.tar.gz
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            archive: secretariat-darwin-x86_64.tar.gz
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            archive: secretariat-linux-x86_64.tar.gz
 
-    runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 'lts/*'
-          cache: 'npm'
-
-      - name: Install Rust stable
+      - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-
-      - name: Rust cache
-        uses: swatinem/rust-cache@v2
         with:
-          workspaces: './src-tauri -> target'
+          targets: ${{ matrix.target }}
 
-      - name: Install Linux dependencies
-        if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - name: Cache cargo registry + target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Install frontend dependencies
-        run: npm ci
+      - name: Build sec + sec-mcp
+        run: cargo build --release --target ${{ matrix.target }} --bin sec --bin sec-mcp
 
-      - name: Build and release
-        uses: tauri-apps/tauri-action@dev
+      - name: Bundle
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          ARCHIVE: ${{ matrix.archive }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          mkdir -p dist/secretariat
+          cp "target/${TARGET}/release/sec" dist/secretariat/
+          cp "target/${TARGET}/release/sec-mcp" dist/secretariat/
+          [ -f scripts/install.sh ] && cp scripts/install.sh dist/secretariat/
+          tar czf "${ARCHIVE}" -C dist secretariat
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
         with:
-          tagName: ${{ github.ref_name || inputs.version }}
-          releaseName: 'Tauri Template App ${{ github.ref_name || inputs.version }}'
-          releaseBody: |
-            ## Tauri Template App ${{ github.ref_name || inputs.version }}
-
-            ### Installation Instructions
-            - **macOS**: Download the `.dmg` file and drag to Applications folder
-            - **Windows**: Download the `.msi` file and run the installer
-            - **Linux**: Download the `.AppImage` file, make it executable (`chmod +x`), and run
-
-            ### Auto-Updates
-            Existing users will receive automatic update notifications.
-
-            **Full Changelog**: https://github.com/${{ github.repository }}/commits/${{ github.ref_name || inputs.version }}
-          releaseDraft: true
-          prerelease: false
-          includeUpdaterJson: true
-          args: ${{ matrix.args }}
+          files: ${{ matrix.archive }}
+          fail_on_unmatched_files: true
+          generate_release_notes: true
