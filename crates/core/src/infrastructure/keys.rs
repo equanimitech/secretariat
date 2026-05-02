@@ -11,7 +11,8 @@
 //! ├── template.md                  user-customizable AG template
 //! ├── inbox/                       incoming stamped envelopes
 //! ├── outbox/                      drafts awaiting principal stamp
-//! └── peers/                       cached did:web docs
+//! ├── peers/                       cached did:web docs
+//! └── bin/                         user-local helper binaries (e.g. touchid-prompt)
 //! ```
 
 use std::fs;
@@ -52,6 +53,7 @@ pub struct KeyPaths {
     pub peers_cache: PathBuf,
     pub inbox: PathBuf,
     pub outbox: PathBuf,
+    pub bin: PathBuf,
     pub template: PathBuf,
     pub attention_envelope: PathBuf,
 }
@@ -71,6 +73,7 @@ impl KeyPaths {
             peers_cache: root.join("peers"),
             inbox: root.join("inbox"),
             outbox: root.join("outbox"),
+            bin: root.join("bin"),
             template: root.join("template.md"),
             attention_envelope: root.join("attention-envelope.md"),
             root,
@@ -78,7 +81,7 @@ impl KeyPaths {
     }
 
     pub fn ensure_dirs(&self) -> Result<(), KeyError> {
-        for dir in [&self.root, &self.peers_cache, &self.inbox, &self.outbox] {
+        for dir in [&self.root, &self.peers_cache, &self.inbox, &self.outbox, &self.bin] {
             fs::create_dir_all(dir).map_err(|e| KeyError::Io {
                 path: dir.clone(),
                 source: e,
@@ -177,6 +180,7 @@ mod tests {
         assert!(paths.peers_cache.is_dir());
         assert!(paths.inbox.is_dir());
         assert!(paths.outbox.is_dir());
+        assert!(paths.bin.is_dir());
     }
 
     #[test]

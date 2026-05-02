@@ -27,6 +27,7 @@ COPY --from=builder /build/target/release/sec-relay /usr/local/bin/sec-relay
 
 EXPOSE 8443
 
-# Default if no startCommand override (e.g. local `docker run`):
-# bind to Railway's $PORT or fall back to 8443.
-CMD ["sh", "-c", "/usr/local/bin/sec-relay serve --bind 0.0.0.0:${PORT:-8443}"]
+# `sec-relay serve` reads `PORT` from the environment internally (Railway,
+# Render, Fly, etc. all set it). Falls back to 8443 if unset. Pure exec form
+# — no shell required, fewer ways to fail.
+CMD ["/usr/local/bin/sec-relay", "serve"]

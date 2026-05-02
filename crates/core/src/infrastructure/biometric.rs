@@ -1,27 +1,26 @@
 //! Selects the biometric gate at runtime based on env + debug build flags.
 //!
-//! Precedence (matches plan's "Biometric mocking for CI / dev" section):
-//! - `SECRETARIAT_BIOMETRIC=always_allow`  → AlwaysAllowGate (debug builds only, or with --allow-test-biometrics)
+//! Lifted from the CLI so MCP and any future GUI shell can build the same
+//! signer without duplicating policy. CLI re-exports this module.
+//!
+//! Precedence:
+//! - `SECRETARIAT_BIOMETRIC=always_allow`  → AlwaysAllowGate (debug builds only, or with `allow_test_biometrics=true`)
 //! - `SECRETARIAT_BIOMETRIC=always_deny`   → AlwaysDenyGate (same constraint)
 //! - `SECRETARIAT_BIOMETRIC=touchid` (default on Mac) → TouchIdGate (shells out to Swift helper)
 
-#[cfg(target_os = "macos")]
-use anyhow::Context;
 use anyhow::{anyhow, Result};
 #[cfg(target_os = "macos")]
-use std::path::PathBuf;
+use anyhow::Context;
+use ed25519_dalek::SigningKey;
 
-use secretariat_core::infrastructure::ed25519_signer::{
+use crate::infrastructure::ed25519_signer::{
     AlwaysAllowGate, AlwaysDenyGate, BiometricGate, Ed25519Signer,
 };
 #[cfg(target_os = "macos")]
-use secretariat_core::infrastructure::touchid::TouchIdGate;
-use secretariat_core::ports::SignerError;
-use secretariat_core::Did;
-use ed25519_dalek::SigningKey;
+use crate::infrastructure::touchid::TouchIdGate;
+use crate::ports::SignerError;
+use crate::Did;
 
-/// One of the three real gates plus a deny gate, behind a thin enum so the
-/// `Ed25519Signer` can be parameterized without monomorphizing per call site.
 pub enum AnyGate {
     #[cfg(target_os = "macos")]
     TouchId(TouchIdGate),
@@ -79,23 +78,4 @@ pub fn build_signer(
 ) -> Result<Ed25519Signer<AnyGate>> {
     let gate = pick_gate(allow_test_biometrics)?;
     Ok(Ed25519Signer::new(did, key, gate))
-}
-
-/// For init / verify / compose: locate the Touch ID helper without instantiating
-/// a signer. Surfaces a clear error if the binary is missing.
-#[cfg(target_os = "macos")]
-#[allow(dead_code)]
-pub fn require_touchid_binary() -> Result<PathBuf> {
-    let g = TouchIdGate::discover().context("locating touchid-prompt helper")?;
-    // TouchIdGate doesn't expose its path; fall back to a probe against the
-    // expected workspace location for a friendly error.
-    let candidate =
-        std::env::current_dir()?.join("target").join("touchid-prompt");
-    if candidate.exists() {
-        Ok(candidate)
-    } else {
-        // Trust TouchIdGate::discover succeeded — the binary is somewhere on PATH or env.
-        let _ = g;
-        Ok(PathBuf::from("touchid-prompt"))
-    }
 }

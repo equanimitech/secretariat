@@ -22,9 +22,6 @@ jobs:
           - target: x86_64-apple-darwin
             os: macos-latest
             archive: secretariat-darwin-x86_64.tar.gz
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-            archive: secretariat-linux-x86_64.tar.gz
 
     steps:
       - uses: actions/checkout@v4
@@ -46,6 +43,9 @@ jobs:
       - name: Build sec + sec-mcp
         run: cargo build --release --target ${{ matrix.target }} --bin sec --bin sec-mcp
 
+      - name: Build touchid-prompt helper
+        run: bash tools/touchid-prompt/build.sh
+
       - name: Bundle
         env:
           ARCHIVE: ${{ matrix.archive }}
@@ -54,6 +54,7 @@ jobs:
           mkdir -p dist/secretariat
           cp "target/${TARGET}/release/sec" dist/secretariat/
           cp "target/${TARGET}/release/sec-mcp" dist/secretariat/
+          cp target/touchid-prompt dist/secretariat/
           [ -f scripts/install.sh ] && cp scripts/install.sh dist/secretariat/
           tar czf "${ARCHIVE}" -C dist secretariat
 

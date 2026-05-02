@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# Installs `sec` + `sec-mcp` from this directory into ~/.local/bin (creating
-# it + adding to PATH if needed). Run after extracting the release tarball:
+# Installs Secretariat from the extracted release tarball:
+#   - `sec` + `sec-mcp` → ~/.local/bin (CLI on PATH)
+#   - `touchid-prompt`  → ~/.secretariat/bin (helper looked up by Touch ID gate)
+#
+# Run after extracting the release tarball:
 #
 #     tar xzf secretariat-darwin-arm64.tar.gz
 #     cd secretariat && bash install.sh
@@ -10,7 +13,8 @@
 set -euo pipefail
 
 INSTALL_DIR="${HOME}/.local/bin"
-mkdir -p "${INSTALL_DIR}"
+HELPER_DIR="${HOME}/.secretariat/bin"
+mkdir -p "${INSTALL_DIR}" "${HELPER_DIR}"
 
 for binary in sec sec-mcp; do
   if [ ! -f "${binary}" ]; then
@@ -20,6 +24,14 @@ for binary in sec sec-mcp; do
   install -m 0755 "${binary}" "${INSTALL_DIR}/${binary}"
   echo "installed ${INSTALL_DIR}/${binary}"
 done
+
+# Touch ID helper is macOS-only; tarball is also macOS-only so we expect it.
+if [ -f "touchid-prompt" ]; then
+  install -m 0755 "touchid-prompt" "${HELPER_DIR}/touchid-prompt"
+  echo "installed ${HELPER_DIR}/touchid-prompt"
+else
+  echo "warning: touchid-prompt not found in this tarball — sec stamp will fail until you build it from tools/touchid-prompt/build.sh" >&2
+fi
 
 # Hint to add ~/.local/bin to PATH if it isn't already.
 case ":${PATH}:" in

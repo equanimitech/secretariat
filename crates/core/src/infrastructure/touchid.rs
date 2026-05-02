@@ -53,6 +53,23 @@ impl BiometricGate for TouchIdGate {
         let status = std::process::Command::new(&self.binary_path)
             .arg(reason)
             .status()
+            .map_err(|e| {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    std::io::Error::new(
+                        std::io::ErrorKind::NotFound,
+                        format!(
+                            "touchid-prompt helper not found at {} — install it with \
+                             `bash tools/touchid-prompt/build.sh && \
+                             install -m 0755 target/touchid-prompt ~/.secretariat/bin/touchid-prompt`, \
+                             or rerun `sec init` (best-effort builds it via swiftc). \
+                             Override with $SECRETARIAT_TOUCHID_BINARY",
+                            self.binary_path.display()
+                        ),
+                    )
+                } else {
+                    e
+                }
+            })
             .map_err(SignerError::Io)?;
 
         if status.success() {

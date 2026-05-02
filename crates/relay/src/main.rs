@@ -30,10 +30,13 @@ struct Cli {
 #[derive(Subcommand, Debug)]
 enum Cmd {
     /// Start the relay server.
+    ///
+    /// Default bind: `0.0.0.0:$PORT` if `PORT` is set (Railway, Render, Fly,
+    /// etc. all set it), else `0.0.0.0:8443`. Override with `--bind`.
     Serve {
-        /// `host:port` to bind. Default: `127.0.0.1:8443` (loopback only).
-        #[arg(long, default_value = "127.0.0.1:8443")]
-        bind: SocketAddr,
+        /// `host:port` to bind. Overrides the `PORT` env var.
+        #[arg(long)]
+        bind: Option<SocketAddr>,
 
         /// Restrict registration to this comma-separated list of DIDs.
         /// Omit for open registration.
@@ -46,6 +49,20 @@ enum Cmd {
     },
 }
 
+/// Resolve the bind address. Order: explicit flag → `PORT` env var → 8443.
+fn resolve_bind(explicit: Option<SocketAddr>) -> Result<SocketAddr> {
+    if let Some(addr) = explicit {
+        return Ok(addr);
+    }
+    if let Ok(port) = std::env::var("PORT") {
+        let addr = format!("0.0.0.0:{port}");
+        return addr
+            .parse::<SocketAddr>()
+            .with_context(|| format!("invalid PORT env var value `{port}`"));
+    }
+    Ok("0.0.0.0:8443".parse().unwrap())
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     init_tracing();
@@ -56,7 +73,10 @@ async fn main() -> Result<()> {
             bind,
             allowlist,
             queue_ttl_days,
-        } => serve(bind, allowlist, queue_ttl_days).await,
+        } => {
+            let bind = resolve_bind(bind)?;
+            serve(bind, allowlist, queue_ttl_days).await
+        }
     }
 }
 
