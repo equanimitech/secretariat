@@ -3,7 +3,7 @@
 # ${PORT:-8443}, so distroless/cc — which lacks a shell — won't work).
 # Image size: ~85 MB.
 
-FROM rust:1.85-slim AS builder
+FROM rust:1.90-slim AS builder
 WORKDIR /build
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
