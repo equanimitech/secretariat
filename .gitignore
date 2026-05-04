@@ -31,3 +31,4 @@ target/
 *.njsproj
 *.sln
 *.sw?
+.tauri-keys/
