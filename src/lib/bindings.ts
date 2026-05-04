@@ -280,6 +280,20 @@ async setProfile(displayName: string) : Promise<Result<Profile, string>> {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * Create an invite at the principal's first registered relay. Returns
+ * the HTTPS claim URL the inviter shares (recipient's HTML landing
+ * page lives at the same URL with `Accept: text/html`). Optional
+ * `purpose` becomes the suggested contact name on the receiving side.
+ */
+async createInvite(purpose: string | null) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("create_invite", { purpose }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 

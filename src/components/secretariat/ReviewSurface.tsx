@@ -11,6 +11,7 @@ import {
   commands,
   type EnvelopeListing,
   type IdentityState,
+  type Profile,
   type SyncReport,
 } from '@/lib/bindings'
 
@@ -28,6 +29,7 @@ type EnvelopeBody = {
 
 export function ReviewSurface() {
   const [identity, setIdentity] = useState<IdentityState | null>(null)
+  const [profile, setProfile] = useState<Profile | null>(null)
   const [inbox, setInbox] = useState<EnvelopeListing[]>([])
   const [queue, setQueue] = useState<EnvelopeListing[]>([])
   const [selection, setSelection] = useState<Selection>(null)
@@ -38,14 +40,16 @@ export function ReviewSurface() {
 
   const refresh = useCallback(async () => {
     setError(null)
-    const ident = await commands.currentIdentity()
+    const [ident, prof, i, q] = await Promise.all([
+      commands.currentIdentity(),
+      commands.getProfile(),
+      commands.listInbox(),
+      commands.listReviewQueue(),
+    ])
     if (ident.status === 'ok') setIdentity(ident.data)
-
-    const i = await commands.listInbox()
+    if (prof.status === 'ok') setProfile(prof.data)
     if (i.status === 'ok') setInbox(i.data)
     else setError(i.error)
-
-    const q = await commands.listReviewQueue()
     if (q.status === 'ok') setQueue(q.data)
     else setError(q.error)
   }, [])
@@ -85,24 +89,24 @@ export function ReviewSurface() {
     }
   }, [])
 
-  if (!identity) {
-    return (
-      <div className="flex h-full items-center justify-center p-8">
-        <p className="text-muted-foreground">
-          No identity yet. Onboarding will land here in slice 4.
-        </p>
-      </div>
-    )
-  }
+  if (!identity) return null // routed by MainWindowContent; shouldn't reach here
+
+  const displayName = profile?.display_name ?? null
 
   return (
     <div className="flex h-full flex-col gap-4 p-4">
       <header className="flex items-center justify-between border-b pb-3">
-        <div className="text-sm">
-          <span className="text-muted-foreground">You: </span>
-          <code className="rounded bg-muted px-2 py-0.5 text-xs">
-            {identity.did}
-          </code>
+        <div className="flex items-center gap-3">
+          <PrincipalAvatar did={identity.did} name={displayName} />
+          <div className="text-sm">
+            <p className="font-medium">{displayName ?? 'You'}</p>
+            <code
+              className="block truncate text-xs text-muted-foreground"
+              title={identity.did}
+            >
+              {shortenDid(identity.did)}
+            </code>
+          </div>
         </div>
         <button
           type="button"
@@ -261,4 +265,37 @@ function EnvelopeReader({
 function filenameFromPath(p: string): string {
   const i = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'))
   return i >= 0 ? p.slice(i + 1) : p
+}
+
+function shortenDid(did: string): string {
+  if (did.length <= 24) return did
+  return `${did.slice(0, 12)}…${did.slice(-6)}`
+}
+
+function PrincipalAvatar({
+  did,
+  name,
+}: {
+  did: string
+  name: string | null
+}) {
+  const hue = hueFromDid(did)
+  const initial = (name?.trim()[0] || '?').toUpperCase()
+  return (
+    <div
+      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-medium text-white"
+      style={{ backgroundColor: `hsl(${hue}, 55%, 45%)` }}
+      title={did}
+    >
+      {initial}
+    </div>
+  )
+}
+
+function hueFromDid(did: string): number {
+  let h = 0
+  for (let i = 0; i < did.length; i++) {
+    h = (h * 31 + did.charCodeAt(i)) & 0xff_ff_ff
+  }
+  return h % 360
 }

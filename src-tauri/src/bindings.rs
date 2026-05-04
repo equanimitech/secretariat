@@ -26,6 +26,7 @@ pub fn generate_bindings() -> Builder<tauri::Wry> {
         secretariat::sync_now,
         secretariat::get_profile,
         secretariat::set_profile,
+        secretariat::create_invite,
     ])
 }
 

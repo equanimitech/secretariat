@@ -346,6 +346,58 @@ pub async fn sync_now() -> Result<SyncReport, String> {
     })
 }
 
+/// Create an invite at the principal's first registered relay. Returns
+/// the HTTPS claim URL the inviter shares (recipient's HTML landing
+/// page lives at the same URL with `Accept: text/html`). Optional
+/// `purpose` becomes the suggested contact name on the receiving side.
+#[tauri::command]
+#[specta::specta]
+pub async fn create_invite(purpose: Option<String>) -> Result<String, String> {
+    use secretariat_core::application::{
+        create_invite as core_create_invite, DEFAULT_INVITE_TTL_HOURS,
+    };
+    use secretariat_core::infrastructure::transport::RelayState;
+
+    let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
+    let did_file = paths.root.join("did");
+    let did_str = std::fs::read_to_string(&did_file)
+        .map_err(|e| format!("reading {}: {e}", did_file.display()))?;
+    let did = Did::parse(did_str.trim()).map_err(|e| format!("parsing DID: {e}"))?;
+    let key = load_signing_key(&paths.signing_key)
+        .map_err(|e| format!("loading signing key: {e}"))?;
+
+    let state = RelayState::load(&paths.relay_state)
+        .map_err(|e| format!("loading relay state: {e}"))?;
+    let endpoint = state
+        .iter()
+        .find(|r| r.registered)
+        .map(|r| r.endpoint.clone())
+        .ok_or_else(|| {
+            "no registered relay yet. Use Settings → Transports to register first."
+                .to_string()
+        })?;
+
+    // create_invite is sync (reqwest::blocking).
+    let purpose_clone = purpose.clone();
+    let endpoint_clone = endpoint.clone();
+    let did_clone = did.clone();
+    let key_clone = key.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        core_create_invite(
+            &endpoint_clone,
+            &did_clone,
+            &key_clone,
+            purpose_clone.as_deref(),
+            Some(DEFAULT_INVITE_TTL_HOURS),
+        )
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
+    .map_err(|e| format!("create_invite: {e}"))?;
+
+    Ok(result.claim_url)
+}
+
 // ---------------------------------------------------------------------------
 // Principal profile — display name (presence, not identity)
 // ---------------------------------------------------------------------------
