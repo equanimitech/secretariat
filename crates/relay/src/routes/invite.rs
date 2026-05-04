@@ -172,6 +172,7 @@ pub async fn create(
 pub async fn view(
     State(state): State<Arc<AppState>>,
     Path(token): Path<String>,
+    headers: axum::http::HeaderMap,
 ) -> impl IntoResponse {
     let invite = match state.get_invite(&token) {
         Some(i) => i,
@@ -180,6 +181,24 @@ pub async fn view(
     if invite.expires_at < Utc::now() && invite.claimed_by.is_none() {
         return error(StatusCode::GONE, "invite has expired".into());
     }
+
+    // Content negotiation: HTML for browsers, JSON for clients (default).
+    // The HTML view lets a not-yet-installed claimer see the invite, learn
+    // who's reaching out, click "Open in Secretariat" (deep link) or
+    // "Install Secretariat" (GitHub release). The minimal landing is the
+    // platform-install side-effect of the correspondence-invite primitive.
+    let wants_html = headers
+        .get(axum::http::header::ACCEPT)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.contains("text/html"))
+        .unwrap_or(false);
+
+    if wants_html {
+        let html = render_invite_html(&token, &invite);
+        return ([(axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8")], html)
+            .into_response();
+    }
+
     Json(ViewResponse {
         inviter_did: invite.inviter_did.as_str().to_string(),
         expires_at: invite.expires_at.to_rfc3339(),
@@ -188,6 +207,120 @@ pub async fn view(
         install_url: "https://github.com/equanimitech/secretariat/releases/latest".into(),
     })
     .into_response()
+}
+
+/// Minimal HTML landing page for an invite. Single static page, no JS
+/// framework, system fonts. Two affordances: "Open in Secretariat"
+/// (deep link `secretariat://invite/<token>`) and "Install Secretariat"
+/// (GitHub release). Lead with the relationship, not the platform —
+/// invites are correspondence relationships, not platform onboarding.
+fn render_invite_html(token: &str, invite: &crate::state::Invite) -> String {
+    let inviter_did = html_escape(invite.inviter_did.as_str());
+    let purpose_block = match invite.purpose.as_deref() {
+        Some(p) => format!(
+            "<p class=\"purpose\">Purpose: <em>{}</em></p>",
+            html_escape(p)
+        ),
+        None => String::new(),
+    };
+    let already_claimed_block = match invite.claimed_by.as_ref() {
+        Some(claimer) => format!(
+            "<p class=\"claimed\">This invite was already claimed by <code>{}</code>.</p>",
+            html_escape(claimer.as_str())
+        ),
+        None => String::new(),
+    };
+    let deep_link = format!("secretariat://invite/{}", html_escape(token));
+    let install_url = "https://github.com/equanimitech/secretariat/releases/latest";
+
+    format!(
+        r#"<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Correspondence invite — Secretariat</title>
+  <style>
+    :root {{ color-scheme: light dark; }}
+    html, body {{ height: 100%; }}
+    body {{
+      margin: 0;
+      font: 16px/1.5 -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
+      display: grid; place-items: center;
+      padding: 2rem;
+      background: Canvas; color: CanvasText;
+    }}
+    main {{
+      max-width: 32rem;
+      width: 100%;
+    }}
+    h1 {{ font-weight: 600; font-size: 1.5rem; margin: 0 0 0.5rem; }}
+    .lede {{ color: color-mix(in srgb, CanvasText 70%, transparent); margin: 0 0 1.5rem; }}
+    code {{
+      font: 0.85em ui-monospace, 'SF Mono', monospace;
+      background: color-mix(in srgb, CanvasText 6%, transparent);
+      padding: 0.1em 0.35em; border-radius: 4px;
+    }}
+    .purpose {{ font-size: 0.95rem; }}
+    .claimed {{ color: color-mix(in srgb, CanvasText 60%, transparent); font-size: 0.9rem; }}
+    .actions {{ display: flex; gap: 0.75rem; margin: 1.5rem 0 1rem; flex-wrap: wrap; }}
+    .btn {{
+      display: inline-block;
+      padding: 0.6rem 1.1rem;
+      border-radius: 8px;
+      text-decoration: none;
+      font-weight: 500;
+      border: 1px solid color-mix(in srgb, CanvasText 20%, transparent);
+    }}
+    .btn-primary {{ background: CanvasText; color: Canvas; border-color: CanvasText; }}
+    .footer {{
+      margin-top: 2rem;
+      font-size: 0.85rem;
+      color: color-mix(in srgb, CanvasText 55%, transparent);
+    }}
+    .footer a {{ color: inherit; }}
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Someone wants to start a stamped correspondence with you</h1>
+    <p class="lede">Inviter: <code>{inviter}</code></p>
+    {purpose}
+    {claimed}
+    <div class="actions">
+      <a class="btn btn-primary" href="{deep}">Open in Secretariat</a>
+      <a class="btn" href="{install}">Install Secretariat</a>
+    </div>
+    <p class="footer">
+      Secretariat is a cryptographically attested correspondence channel —
+      AI drafts, humans stamp. Every envelope you exchange carries a
+      biometric-attested signature. <a href="https://github.com/equanimitech/secretariat#readme">Learn more.</a>
+    </p>
+  </main>
+</body>
+</html>
+"#,
+        inviter = inviter_did,
+        purpose = purpose_block,
+        claimed = already_claimed_block,
+        deep = html_escape(&deep_link),
+        install = install_url,
+    )
+}
+
+fn html_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for ch in s.chars() {
+        match ch {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&#39;"),
+            _ => out.push(ch),
+        }
+    }
+    out
 }
 
 pub async fn claim(

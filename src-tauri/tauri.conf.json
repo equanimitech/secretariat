@@ -68,6 +68,12 @@
       ],
       "dialog": true,
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDdFMkFFMjM5ODY4MTgwMjkKUldRcGdJR0dPZUlxZmw4NUFwRitzcytvbGZhV1VyOHN0Y2ltdjFRZURRNXpXMnl2T1N3Y0kzTTQK"
+    },
+    "deep-link": {
+      "mobile": [],
+      "desktop": {
+        "schemes": ["secretariat"]
+      }
     }
   }
 }
