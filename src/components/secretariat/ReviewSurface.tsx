@@ -162,6 +162,10 @@ export function ReviewSurface() {
           envelope={selection.envelope}
           read={reading}
           onClose={() => handleSelect(null)}
+          onStamped={async () => {
+            await handleSelect(null)
+            await refresh()
+          }}
         />
       )}
     </div>
@@ -224,11 +228,42 @@ function EnvelopeReader({
   envelope,
   read,
   onClose,
+  onStamped,
 }: {
   envelope: EnvelopeListing
   read: EnvelopeBody
   onClose: () => void
+  onStamped: () => void
 }) {
+  const [stamping, setStamping] = useState(false)
+  const [stampError, setStampError] = useState<string | null>(null)
+  const [stampNote, setStampNote] = useState<string | null>(null)
+
+  const handleStamp = useCallback(async () => {
+    setStamping(true)
+    setStampError(null)
+    setStampNote(null)
+    try {
+      const result = await commands.stampEnvelope(envelope.file_path)
+      if (result.status === 'error') {
+        setStampError(result.error)
+        return
+      }
+      const r = result.data
+      if (r.delivered) {
+        setStampNote(`Stamped + delivered (relay id ${r.relay_assigned_id ?? '?'}).`)
+      } else if (r.delivery_warning) {
+        setStampNote(`Stamped. ${r.delivery_warning}`)
+      } else {
+        setStampNote('Stamped.')
+      }
+      // Brief delay so the principal sees the confirmation, then close.
+      setTimeout(() => onStamped(), 1200)
+    } finally {
+      setStamping(false)
+    }
+  }, [envelope.file_path, onStamped])
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-6">
       <div className="flex max-h-full w-full max-w-3xl flex-col gap-3 rounded-lg border bg-background p-5 shadow-lg">
@@ -249,12 +284,28 @@ function EnvelopeReader({
         <pre className="flex-1 overflow-auto whitespace-pre-wrap rounded-md bg-muted p-4 text-sm">
           {read.body}
         </pre>
-        <footer className="flex justify-between text-xs text-muted-foreground">
+        {stampError && (
+          <div className="rounded-md border border-destructive bg-destructive/10 p-3 text-sm text-destructive">
+            {stampError}
+          </div>
+        )}
+        {stampNote && (
+          <div className="rounded-md border bg-muted p-3 text-sm">
+            {stampNote}
+          </div>
+        )}
+        <footer className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
           <code className="truncate">{envelope.file_path}</code>
           {!envelope.stamped && (
-            <span>
-              Unstamped — stamp from CLI/MCP for now (Touch ID gate).
-            </span>
+            <button
+              type="button"
+              onClick={handleStamp}
+              disabled={stamping}
+              className="shrink-0 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+              title="Touch ID will prompt"
+            >
+              {stamping ? 'Touch ID…' : 'Stamp + send'}
+            </button>
           )}
         </footer>
       </div>

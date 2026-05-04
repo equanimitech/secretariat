@@ -27,6 +27,7 @@ pub fn generate_bindings() -> Builder<tauri::Wry> {
         secretariat::get_profile,
         secretariat::set_profile,
         secretariat::create_invite,
+        secretariat::stamp_envelope,
     ])
 }
 

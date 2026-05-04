@@ -346,6 +346,110 @@ pub async fn sync_now() -> Result<SyncReport, String> {
     })
 }
 
+/// Stamp an outbox draft and (best-effort) deliver it immediately. Touch
+/// ID fires from the app's window context. Returns the relay-assigned
+/// id on successful delivery, or stamp metadata only if delivery fails
+/// (the daemon's next sync tick retries — same fallback as the CLI's
+/// stamp-immediate-send path).
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
+pub struct StampReport {
+    pub stamped_path: String,
+    pub doc_hash: String,
+    pub stamped_at: String,
+    pub delivered: bool,
+    /// Relay-assigned envelope ID. String to avoid BigInt/JS-number
+    /// roundtripping (specta forbids `u64` directly).
+    pub relay_assigned_id: Option<String>,
+    pub delivery_warning: Option<String>,
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn stamp_envelope(file_path: String) -> Result<StampReport, String> {
+    use secretariat_core::application::{
+        send_stamped_envelope as core_send, stamp_document, SendError, StampError,
+    };
+    use secretariat_core::domain::StampAct;
+    use secretariat_core::infrastructure::biometric::build_signer;
+    use secretariat_core::infrastructure::contact_store::ContactBook;
+    use secretariat_core::ports::SignerError;
+
+    let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
+    let did_file = paths.root.join("did");
+    let did_str = std::fs::read_to_string(&did_file)
+        .map_err(|e| format!("reading {}: {e}", did_file.display()))?;
+    let did = Did::parse(did_str.trim()).map_err(|e| format!("parsing DID: {e}"))?;
+    let key = load_signing_key(&paths.signing_key)
+        .map_err(|e| format!("loading signing key: {e}"))?;
+
+    let path = std::path::PathBuf::from(file_path);
+
+    // Stamp lives in a blocking call (the Touch ID gate is sync via the
+    // touchid-prompt helper). spawn_blocking keeps the runtime healthy.
+    let path_for_stamp = path.clone();
+    let did_for_stamp = did.clone();
+    let key_for_stamp = key.clone();
+    let stamp_result = tauri::async_runtime::spawn_blocking(move || -> Result<_, String> {
+        let signer = build_signer(did_for_stamp, key_for_stamp, false)
+            .map_err(|e| format!("biometric gate setup: {e}"))?;
+        match stamp_document(&path_for_stamp, &signer, StampAct::Attest, false, chrono::Utc::now()) {
+            Ok(out) => Ok(out),
+            Err(StampError::AlreadyStamped) => Err("file is already stamped".to_string()),
+            Err(StampError::Signer(SignerError::BiometricRefused)) => {
+                Err("Touch ID refused or cancelled".to_string())
+            }
+            Err(e) => Err(format!("stamp failed: {e}")),
+        }
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))??;
+
+    let mut report = StampReport {
+        stamped_path: stamp_result.stamped_path.display().to_string(),
+        doc_hash: stamp_result.stamp.doc_hash.to_string(),
+        stamped_at: stamp_result.stamp.stamped_at.to_rfc3339(),
+        delivered: false,
+        relay_assigned_id: None,
+        delivery_warning: None,
+    };
+
+    // Best-effort delivery. On failure the daemon's regular sync picks it up.
+    let parent = stamp_result
+        .stamped_path
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| path.clone());
+    let sent_dir = parent.join("sent");
+    let contacts = match ContactBook::load(&paths.contacts) {
+        Ok(c) => c,
+        Err(e) => {
+            report.delivery_warning =
+                Some(format!("loading contacts for delivery: {e}"));
+            return Ok(report);
+        }
+    };
+
+    match core_send(&stamp_result.stamped_path, &contacts, &key, &sent_dir).await {
+        Ok(out) => {
+            report.delivered = true;
+            report.relay_assigned_id = Some(out.relay_assigned_id.to_string());
+            report.stamped_path = out.moved_to.display().to_string();
+        }
+        Err(SendError::NotStamped) => {
+            // Shouldn't happen — we just stamped. Surface as warning.
+            report.delivery_warning =
+                Some("internal error: stamp confirmed but file appears unstamped".into());
+        }
+        Err(e) => {
+            report.delivery_warning = Some(format!(
+                "stamped, queued for daemon delivery on next sync ({e})"
+            ));
+        }
+    }
+
+    Ok(report)
+}
+
 /// Create an invite at the principal's first registered relay. Returns
 /// the HTTPS claim URL the inviter shares (recipient's HTML landing
 /// page lives at the same URL with `Accept: text/html`). Optional
