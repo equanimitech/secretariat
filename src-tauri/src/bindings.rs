@@ -20,6 +20,9 @@ pub fn generate_bindings() -> Builder<tauri::Wry> {
         secretariat::current_identity,
         secretariat::secretariat_root,
         secretariat::claim_invite_url,
+        secretariat::list_inbox,
+        secretariat::list_review_queue,
+        secretariat::read_envelope,
     ])
 }
 

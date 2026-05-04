@@ -11,6 +11,9 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
+use secretariat_core::application::{
+    list_inbox_files, list_outbox_queue, read_envelope as core_read_envelope,
+};
 use secretariat_core::infrastructure::keys::{generate_keypair, save_signing_key, KeyPaths};
 use secretariat_core::Did;
 
@@ -203,6 +206,84 @@ mod tests {
         assert_eq!(normalize_invite_url("ftp://nope.example/x"), None);
         assert_eq!(normalize_invite_url("just-a-token"), None);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Review surface — inbox + outbox queue + envelope read
+// ---------------------------------------------------------------------------
+//
+// Per the review-session model (memory/feedback_review_session_model.md),
+// the Tauri app surfaces two collections to the principal: received
+// envelopes (inbox) and unstamped drafts awaiting review (outbox queue).
+// The principal opens the app at a chosen time, reads bodies, stamps
+// approved drafts. No notifications, no push.
+
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
+pub struct EnvelopeListing {
+    pub file_path: String,
+    pub from: Option<String>,
+    pub to: Option<String>,
+    pub stamped: bool,
+    pub encrypted: bool,
+}
+
+impl From<secretariat_core::application::ListedEnvelope> for EnvelopeListing {
+    fn from(e: secretariat_core::application::ListedEnvelope) -> Self {
+        Self {
+            file_path: e.file_path,
+            from: e.from,
+            to: e.to,
+            stamped: e.stamped,
+            encrypted: e.encrypted,
+        }
+    }
+}
+
+/// List received envelopes (`~/.secretariat/inbox/`).
+#[tauri::command]
+#[specta::specta]
+pub async fn list_inbox() -> Result<Vec<EnvelopeListing>, String> {
+    let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
+    let listed = list_inbox_files(&paths.inbox).map_err(|e| format!("list_inbox: {e}"))?;
+    Ok(listed.into_iter().map(EnvelopeListing::from).collect())
+}
+
+/// List the principal's review queue — outbox drafts awaiting a stamp.
+/// Excludes already-stamped drafts (those are in flight to the relay)
+/// and the `sent/` historical archive.
+#[tauri::command]
+#[specta::specta]
+pub async fn list_review_queue() -> Result<Vec<EnvelopeListing>, String> {
+    let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
+    let listed =
+        list_outbox_queue(&paths.outbox).map_err(|e| format!("list_review_queue: {e}"))?;
+    Ok(listed.into_iter().map(EnvelopeListing::from).collect())
+}
+
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
+pub struct EnvelopeRead {
+    pub body: String,
+    pub from: Option<String>,
+    pub to: Option<String>,
+    pub was_encrypted: bool,
+}
+
+/// Decrypt + return the body of an envelope file. Plaintext envelopes
+/// pass through unchanged; encrypted envelopes are decrypted using the
+/// local signing key (key never leaves the device).
+#[tauri::command]
+#[specta::specta]
+pub async fn read_envelope(file_path: String) -> Result<EnvelopeRead, String> {
+    let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
+    let path = PathBuf::from(file_path);
+    let res =
+        core_read_envelope(&path, &paths.signing_key).map_err(|e| format!("read_envelope: {e}"))?;
+    Ok(EnvelopeRead {
+        body: res.body,
+        from: res.envelope_from.map(|d| d.as_str().to_string()),
+        to: res.envelope_to.map(|d| d.as_str().to_string()),
+        was_encrypted: res.was_encrypted,
+    })
 }
 
 // Re-export for the bindings module so it can register these commands.
