@@ -1,13 +1,24 @@
 //! `sec stamp` — biometric attestation of a markdown file.
+//!
+//! After a successful stamp, immediately attempts to deliver the envelope
+//! to the recipient's relay. The principal's stamp is the "send" intent;
+//! decoupling that from delivery (waiting for the next daemon tick) is a
+//! T2FM blocker. If immediate-send fails (contact unknown, network error,
+//! relay unreachable), the file stays in the outbox and the daemon's next
+//! tick retries — so this is a best-effort accelerator, not a new failure
+//! surface.
 
 use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
 use clap::Parser;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use secretariat_core::application::{stamp_document, StampError};
+use secretariat_core::application::{
+    send_stamped_envelope, stamp_document, SendError, StampError,
+};
 use secretariat_core::domain::StampAct;
-use secretariat_core::infrastructure::keys::load_signing_key;
+use secretariat_core::infrastructure::contact_store::ContactBook;
+use secretariat_core::infrastructure::keys::{load_signing_key, KeyPaths};
 use secretariat_core::ports::SignerError;
 
 use super::biometric;
@@ -30,6 +41,12 @@ pub struct Args {
     /// in a release build. Refuses to honor those test gates otherwise.
     #[arg(long, default_value_t = false)]
     allow_test_biometrics: bool,
+
+    /// Stamp only — don't try to deliver immediately. The next daemon tick
+    /// will pick it up. Use when you're stamping a file that isn't an
+    /// outbox draft (e.g. a standalone markdown attestation).
+    #[arg(long, default_value_t = false)]
+    no_send: bool,
 }
 
 #[derive(clap::ValueEnum, Debug, Clone, Copy)]
@@ -59,19 +76,11 @@ pub fn run(args: Args) -> Result<()> {
     let key = load_signing_key(&paths.signing_key)
         .with_context(|| format!("loading {} (run `sec init` first)", paths.signing_key.display()))?;
 
-    let signer = biometric::build_signer(did.clone(), key, args.allow_test_biometrics)?;
+    let signer = biometric::build_signer(did.clone(), key.clone(), args.allow_test_biometrics)?;
     let act: StampAct = args.act.into();
 
-    match stamp_document(&args.file, &signer, act, args.force, Utc::now()) {
-        Ok(out) => {
-            println!(
-                "✓ stamped {} at {} (signer {})",
-                out.stamped_path.display(),
-                out.stamp.stamped_at,
-                out.stamp.signer
-            );
-            Ok(())
-        }
+    let outcome = match stamp_document(&args.file, &signer, act, args.force, Utc::now()) {
+        Ok(out) => out,
         Err(StampError::AlreadyStamped) => {
             eprintln!("file is already stamped — pass --force to re-stamp");
             std::process::exit(2);
@@ -80,7 +89,78 @@ pub fn run(args: Args) -> Result<()> {
             eprintln!("biometric refused or cancelled");
             std::process::exit(3);
         }
+        Err(e) => return Err(anyhow!(e)),
+    };
+
+    println!(
+        "✓ stamped {} at {} (signer {})",
+        outcome.stamped_path.display(),
+        outcome.stamp.stamped_at,
+        outcome.stamp.signer
+    );
+
+    if args.no_send {
+        return Ok(());
+    }
+
+    // Try immediate delivery. If anything goes wrong (file isn't in an
+    // outbox/<recipient>/ directory, contact unknown, network down), fall
+    // back silently to the daemon's regular tick — the file stays in the
+    // outbox.
+    match try_send_now(&outcome.stamped_path, &paths, &key) {
+        Ok(Some(out)) => println!(
+            "✓ delivered to {} (relay id {})",
+            out.relay_endpoint, out.relay_assigned_id
+        ),
+        Ok(None) => {
+            // Not an outbox file — nothing to deliver. Quiet success.
+        }
+        Err(e) => eprintln!(
+            "stamp ok; immediate delivery skipped ({e}). The daemon will retry on its next tick."
+        ),
+    }
+
+    Ok(())
+}
+
+/// Returns `Some(SendOutcome)` if the file was delivered, `None` if it
+/// wasn't an outbox draft (e.g. a standalone stamped attestation).
+fn try_send_now(
+    stamped_path: &Path,
+    paths: &KeyPaths,
+    key: &ed25519_dalek::SigningKey,
+) -> Result<Option<secretariat_core::application::SendOutcome>> {
+    // Only auto-deliver when the file lives under outbox/<recipient>/. Files
+    // stamped elsewhere (standalone attestations, draft repos) shouldn't be
+    // pushed to a relay.
+    let parent = match stamped_path.parent() {
+        Some(p) => p,
+        None => return Ok(None),
+    };
+    let outbox_canon = paths.outbox.canonicalize().ok();
+    let parent_canon = parent.canonicalize().ok();
+    let inside_outbox = match (outbox_canon.as_ref(), parent_canon.as_ref()) {
+        (Some(out), Some(par)) => par.starts_with(out) && par != out,
+        _ => false,
+    };
+    if !inside_outbox {
+        return Ok(None);
+    }
+    let sent_dir = parent.join("sent");
+
+    let contacts = ContactBook::load(&paths.contacts).context("loading contacts")?;
+
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .context("building tokio runtime for immediate send")?;
+
+    match runtime.block_on(send_stamped_envelope(stamped_path, &contacts, key, &sent_dir)) {
+        Ok(out) => Ok(Some(out)),
+        Err(SendError::NotStamped) => {
+            // Shouldn't happen — we just stamped it. But handle gracefully.
+            Ok(None)
+        }
         Err(e) => Err(anyhow!(e)),
     }
 }
-

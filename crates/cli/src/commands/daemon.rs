@@ -26,10 +26,11 @@ use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
 use clap::{Parser, Subcommand};
 use ed25519_dalek::SigningKey;
-use secretariat_core::application::{decide_poll, CadenceConfig, PollDecision};
+use secretariat_core::application::{
+    decide_poll, send_stamped_envelope, CadenceConfig, PollDecision, SendError,
+};
 use secretariat_core::infrastructure::contact_store::ContactBook;
 use secretariat_core::infrastructure::keys::{load_signing_key, KeyPaths};
-use secretariat_core::infrastructure::markdown::parse_document;
 use secretariat_core::infrastructure::transport::{RelayClient, RelayInbound, RelayState};
 use secretariat_core::Did;
 use tracing::{info, warn};
@@ -252,8 +253,6 @@ async fn drain_outbox(paths: &KeyPaths, _did: &Did, key: &SigningKey) -> Result<
             continue;
         }
         let sent_dir = recipient_dir.join("sent");
-        std::fs::create_dir_all(&sent_dir)
-            .with_context(|| format!("creating {}", sent_dir.display()))?;
 
         for inner in std::fs::read_dir(&recipient_dir)? {
             let inner = inner?;
@@ -264,59 +263,20 @@ async fn drain_outbox(paths: &KeyPaths, _did: &Did, key: &SigningKey) -> Result<
             if p.extension().and_then(|x| x.to_str()) != Some("md") {
                 continue;
             }
-            if let Err(e) = try_send_one(&p, &contacts, key, &sent_dir).await {
-                warn!(file = %p.display(), error = %e, "outbox send failed");
+            match send_stamped_envelope(&p, &contacts, key, &sent_dir).await {
+                Ok(out) => {
+                    info!(
+                        file = %out.moved_to.display(),
+                        id = out.relay_assigned_id,
+                        "sent and moved to sent/"
+                    );
+                }
+                // Unstamped drafts are normal in the outbox — skip silently.
+                Err(SendError::NotStamped) => continue,
+                Err(e) => warn!(file = %p.display(), error = %e, "outbox send failed"),
             }
         }
     }
-    Ok(())
-}
-
-async fn try_send_one(
-    path: &Path,
-    contacts: &ContactBook,
-    key: &SigningKey,
-    sent_dir: &Path,
-) -> Result<()> {
-    let raw = std::fs::read(path)
-        .with_context(|| format!("reading {}", path.display()))?;
-    let raw_str = std::str::from_utf8(&raw)
-        .with_context(|| format!("envelope {} is not valid utf-8", path.display()))?;
-    let parsed = parse_document(raw_str).context("parsing envelope")?;
-
-    let envelope = parsed
-        .envelope
-        .ok_or_else(|| anyhow!("envelope frontmatter missing — composer should have written it"))?;
-    if parsed.stamp.is_none() {
-        // Not stamped yet; principal hasn't approved. Skip silently.
-        return Ok(());
-    }
-    let recipient_did = envelope
-        .to
-        .as_ref()
-        .ok_or_else(|| anyhow!("envelope has no `to` — cannot route"))?;
-
-    let contact = contacts
-        .find_by_did(recipient_did)
-        .ok_or_else(|| anyhow!("no contact for recipient {recipient_did}"))?;
-    let endpoint = contact
-        .relay_endpoint
-        .as_ref()
-        .ok_or_else(|| anyhow!(
-            "contact `{}` has no relay_endpoint and v0 does not yet do live did:web service-endpoint discovery",
-            contact.display_name
-        ))?;
-
-    let client = RelayClient::new(endpoint.as_str(), envelope.from.clone(), key);
-    let id = client
-        .send(recipient_did, &raw, "text/markdown")
-        .await
-        .context("relay send")?;
-
-    let dest = sent_dir.join(path.file_name().unwrap());
-    std::fs::rename(path, &dest)
-        .with_context(|| format!("moving {} → {}", path.display(), dest.display()))?;
-    info!(file = %path.display(), id, "sent and moved to sent/");
     Ok(())
 }
 
