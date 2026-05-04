@@ -38,6 +38,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/v0/invite", post(routes::invite::create))
         .route("/v0/invite/:token", get(routes::invite::view))
         .route("/v0/invite/:token/claim", post(routes::invite::claim))
+        .route("/v0/invites/claimed", get(routes::invite::list_claimed))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }

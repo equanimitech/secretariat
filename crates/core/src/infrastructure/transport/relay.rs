@@ -396,6 +396,50 @@ impl<'a> RelayClient<'a> {
             })
             .collect()
     }
+
+    /// Pull every claimed invite where this principal is the inviter.
+    /// Used by the daemon to discover claim events and auto-add the
+    /// claimer as a contact (bidirectional contact-add — the defining
+    /// behavior of a correspondence invite).
+    ///
+    /// Idempotent on the relay side: returns the same list across calls
+    /// until the invite is pruned. The daemon dedupes against its local
+    /// contact book.
+    pub async fn claimed_invites(
+        &self,
+        token: &str,
+    ) -> Result<Vec<ClaimedInviteWire>, RelayClientError> {
+        let r = self
+            .http
+            .get(format!("{}/v0/invites/claimed", self.endpoint))
+            .header("authorization", format!("Bearer {token}"))
+            .send()
+            .await?;
+        let status = r.status();
+        if !status.is_success() {
+            let body = r.text().await.unwrap_or_default();
+            return Err(RelayClientError::BadStatus {
+                status: status.as_u16(),
+                body,
+            });
+        }
+        let parsed: ClaimedListWire = r.json().await?;
+        Ok(parsed.invites)
+    }
+}
+
+#[derive(serde::Deserialize, Debug, Clone)]
+pub struct ClaimedInviteWire {
+    pub token: String,
+    pub claimant_did: String,
+    pub claimed_at: String,
+    #[serde(default)]
+    pub purpose: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct ClaimedListWire {
+    invites: Vec<ClaimedInviteWire>,
 }
 
 // ---------------------------------------------------------------------------

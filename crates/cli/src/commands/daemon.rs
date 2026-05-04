@@ -143,9 +143,12 @@ async fn serve() -> Result<()> {
     }
 }
 
-/// One pass over: poll all registered relays for inbound, then drain outbox.
+/// One pass over: poll all registered relays for inbound, drain claim
+/// notifications (auto-add bilateral contacts from invite claims), then
+/// drain outbox.
 async fn tick(paths: &KeyPaths, did: &Did, key: &SigningKey) -> Result<()> {
     poll_all_relays(paths, did, key).await?;
+    drain_claimed_invites(paths, did, key).await?;
     drain_outbox(paths, did, key).await?;
     Ok(())
 }
@@ -167,6 +170,88 @@ async fn poll_all_relays(paths: &KeyPaths, did: &Did, key: &SigningKey) -> Resul
     }
 
     state.save(&paths.relay_state).context("saving relay state")?;
+    Ok(())
+}
+
+/// Pulls claim events from each registered relay, hands them to the
+/// `process_correspondence_claims` use case (which owns the naming +
+/// dedup policy), and logs outcomes. This function is intentionally
+/// IO orchestration only — no business logic.
+async fn drain_claimed_invites(
+    paths: &KeyPaths,
+    did: &Did,
+    key: &SigningKey,
+) -> Result<()> {
+    use chrono::DateTime;
+    use secretariat_core::application::{
+        process_correspondence_claims, CorrespondenceClaim,
+    };
+    use secretariat_core::RelayEndpoint;
+
+    let state = RelayState::load(&paths.relay_state).context("loading relay state")?;
+    let endpoints: Vec<(String, Option<String>)> = state
+        .iter()
+        .filter(|r| r.registered)
+        .map(|r| (r.endpoint.clone(), r.token.clone()))
+        .collect();
+
+    for (endpoint, token) in endpoints {
+        let Some(token) = token else { continue }; // poll_all_relays refreshes next tick
+
+        let client = RelayClient::new(&endpoint, did.clone(), key);
+        let wire = match client.claimed_invites(&token).await {
+            Ok(c) => c,
+            Err(e) => {
+                warn!(endpoint = %endpoint, error = %e, "claimed-invites poll failed");
+                continue;
+            }
+        };
+        if wire.is_empty() {
+            continue;
+        }
+
+        let endpoint_url = match RelayEndpoint::parse(&endpoint) {
+            Ok(u) => u,
+            Err(e) => {
+                warn!(endpoint = %endpoint, error = %e, "skipping bilateral add — relay endpoint unparseable");
+                continue;
+            }
+        };
+
+        // Wire → domain. Drop malformed entries with a warning rather than
+        // failing the whole batch.
+        let claims: Vec<CorrespondenceClaim> = wire
+            .into_iter()
+            .filter_map(|w| {
+                let claimant = secretariat_core::Did::parse(&w.claimant_did)
+                    .map_err(|e| warn!(claimant = %w.claimant_did, error = %e, "skipping malformed claimant_did"))
+                    .ok()?;
+                let claimed_at = DateTime::parse_from_rfc3339(&w.claimed_at)
+                    .map_err(|e| warn!(claimed_at = %w.claimed_at, error = %e, "skipping malformed claimed_at"))
+                    .ok()?
+                    .with_timezone(&chrono::Utc);
+                Some(CorrespondenceClaim {
+                    claimant,
+                    claimed_at,
+                    purpose: w.purpose,
+                })
+            })
+            .collect();
+
+        match process_correspondence_claims(claims, &paths.contacts, &endpoint_url) {
+            Ok(out) => {
+                for added in &out.added {
+                    info!(
+                        claimant = %added.did,
+                        name = %added.display_name,
+                        endpoint = %endpoint,
+                        "auto-added correspondence contact",
+                    );
+                }
+            }
+            Err(e) => warn!(endpoint = %endpoint, error = %e, "claim processing failed"),
+        }
+    }
     Ok(())
 }
 

@@ -264,6 +264,25 @@ impl AppState {
         self.invites.read().unwrap().get(token).cloned()
     }
 
+    /// Return all *claimed* invites where `inviter` is the inviter. Used by
+    /// the inviter's daemon to discover claim events and auto-add the
+    /// claimer as a contact (bidirectional contact-add — the defining
+    /// behavior of a correspondence invite, see
+    /// `docs/milestones/2026-05-04-tauri-front-door.md` slice 2).
+    ///
+    /// Idempotent: returns the same list across calls until the invite is
+    /// pruned by `prune_invites`. The daemon dedupes by checking its local
+    /// contact book — no relay-side ack state needed.
+    pub fn invites_claimed_for_inviter(&self, inviter: &Did) -> Vec<Invite> {
+        self.invites
+            .read()
+            .unwrap()
+            .values()
+            .filter(|i| &i.inviter_did == inviter && i.claimed_by.is_some())
+            .cloned()
+            .collect()
+    }
+
     /// Mark an invite as claimed. Returns the now-claimed invite, or `None`
     /// if the token is unknown or already claimed.
     pub fn claim_invite(

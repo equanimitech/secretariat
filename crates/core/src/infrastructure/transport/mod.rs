@@ -14,4 +14,6 @@
 
 pub mod relay;
 
-pub use relay::{RelayClient, RelayClientError, RelayInbound, RelayState, RelayStateError};
+pub use relay::{
+    ClaimedInviteWire, RelayClient, RelayClientError, RelayInbound, RelayState, RelayStateError,
+};

@@ -1,10 +1,15 @@
-//! `POST /v0/invite`               — create a one-shot invite token (inviter signs)
-//! `GET  /v0/invite/:token`        — public preview (no auth)
-//! `POST /v0/invite/:token/claim`  — claimant signs + (optionally) self-registers
+//! `POST /v0/invite`                  — create a one-shot invite token (inviter signs)
+//! `GET  /v0/invite/:token`           — public preview (no auth)
+//! `POST /v0/invite/:token/claim`     — claimant signs + (optionally) self-registers
+//! `GET  /v0/invites/claimed`         — inviter pulls list of claim events for
+//!                                       bidirectional contact-add (bearer auth)
 //!
-//! Invites are additive UX, not gatekeeping. Open registration remains the
-//! default path. Invites collapse Marcelo's setup from "init + register +
-//! contact-add + tell-Rafa-his-DID" to "click URL + run claim".
+//! Invites establish bilateral *correspondence* between two principals — see
+//! `docs/milestones/2026-05-04-tauri-front-door.md` slice 2. Bidirectional
+//! contact-add (the inviter learns the claimant) is the defining behavior,
+//! not a side feature. The platform-install side-effect for not-yet-installed
+//! claimers is incidental, handled by the relay-served HTML landing page on
+//! `GET /v0/invite/:token` with `Accept: text/html`.
 
 use std::sync::Arc;
 
@@ -283,6 +288,64 @@ pub async fn claim(
         registered,
     })
     .into_response()
+}
+
+/// `GET /v0/invites/claimed` — inviter pulls list of claim events.
+///
+/// Returns every claimed invite where the authenticated principal is the
+/// inviter, regardless of whether the daemon has seen it before. The
+/// daemon dedupes against its local contact book (idempotent). No
+/// relay-side ack state needed — keeps the relay stateless about the
+/// inviter's processing progress.
+#[derive(Serialize)]
+pub struct ClaimedInvite {
+    pub token: String,
+    pub claimant_did: String,
+    pub claimed_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub purpose: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct ClaimedListResponse {
+    pub invites: Vec<ClaimedInvite>,
+}
+
+pub async fn list_claimed(
+    State(state): State<std::sync::Arc<crate::state::AppState>>,
+    headers: axum::http::HeaderMap,
+) -> impl IntoResponse {
+    let token = match headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.strip_prefix("Bearer "))
+    {
+        Some(t) => t.to_string(),
+        None => return error(StatusCode::UNAUTHORIZED, "missing bearer token".into()),
+    };
+
+    let now = Utc::now();
+    let inviter_did = match state.auth.validate_token(&token, now) {
+        Ok(d) => d,
+        Err(e) => return error(StatusCode::UNAUTHORIZED, e.to_string()),
+    };
+
+    let invites: Vec<ClaimedInvite> = state
+        .invites_claimed_for_inviter(&inviter_did)
+        .into_iter()
+        .filter_map(|i| {
+            let claimant = i.claimed_by?;
+            let claimed_at = i.claimed_at?;
+            Some(ClaimedInvite {
+                token: i.token,
+                claimant_did: claimant.as_str().to_string(),
+                claimed_at: claimed_at.to_rfc3339(),
+                purpose: i.purpose,
+            })
+        })
+        .collect();
+
+    Json(ClaimedListResponse { invites }).into_response()
 }
 
 // ---------------------------------------------------------------------------

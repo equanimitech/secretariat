@@ -5,6 +5,7 @@ pub mod contact_ops;
 pub mod delivery_policy;
 pub mod inbox_ops;
 pub mod invite_ops;
+pub mod process_correspondence_claims;
 pub mod send_envelope;
 pub mod stamp_document;
 pub mod verify_document;
@@ -20,6 +21,10 @@ pub use inbox_ops::{
 pub use invite_ops::{
     claim_invite, create_invite, view_invite, InviteClaimed, InviteCreated, InviteError,
     InviteView, DEFAULT_INVITE_TTL_HOURS,
+};
+pub use process_correspondence_claims::{
+    process_correspondence_claims, ClaimProcessError, ClaimProcessOutcome, CorrespondenceClaim,
+    SkipReason,
 };
 pub use send_envelope::{send_stamped_envelope, SendError, SendOutcome};
 pub use stamp_document::{stamp_document, StampError, StampOutcome};
