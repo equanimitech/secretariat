@@ -2,6 +2,7 @@
 
 use std::collections::HashSet;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 
 use secretariat_core::Did;
 
@@ -31,6 +32,10 @@ pub struct Config {
     pub bind: SocketAddr,
     pub registration: RegistrationPolicy,
     pub queue_ttl: QueueTtlDays,
+    /// Directory holding `state.json`. When `None`, the relay runs purely
+    /// in-memory (acceptable for tests and ephemeral local dev). Railway
+    /// deploys mount a volume at `/data` and pass it in.
+    pub data_dir: Option<PathBuf>,
 }
 
 impl Default for Config {
@@ -39,6 +44,7 @@ impl Default for Config {
             bind: "127.0.0.1:8443".parse().unwrap(),
             registration: RegistrationPolicy::Open,
             queue_ttl: QueueTtlDays::default(),
+            data_dir: None,
         }
     }
 }

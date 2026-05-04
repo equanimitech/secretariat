@@ -11,6 +11,7 @@
 
 pub mod auth;
 pub mod config;
+pub mod persist;
 pub mod queue;
 pub mod routes;
 pub mod state;

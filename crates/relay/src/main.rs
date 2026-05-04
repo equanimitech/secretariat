@@ -46,6 +46,13 @@ enum Cmd {
         /// Days to keep queued envelopes before pruning. Default: 7.
         #[arg(long, default_value_t = 7)]
         queue_ttl_days: i64,
+
+        /// Directory holding `state.json` (registry, queues, invites).
+        /// On Railway, mount a persistent volume here. Falls back to the
+        /// `DATA_DIR` env var; if neither is set, the relay runs purely
+        /// in-memory (state lost on restart — fine for tests, not prod).
+        #[arg(long)]
+        data_dir: Option<std::path::PathBuf>,
     },
 }
 
@@ -73,9 +80,11 @@ async fn main() -> Result<()> {
             bind,
             allowlist,
             queue_ttl_days,
+            data_dir,
         } => {
             let bind = resolve_bind(bind)?;
-            serve(bind, allowlist, queue_ttl_days).await
+            let data_dir = data_dir.or_else(|| std::env::var("DATA_DIR").ok().map(Into::into));
+            serve(bind, allowlist, queue_ttl_days, data_dir).await
         }
     }
 }
@@ -89,7 +98,12 @@ fn init_tracing() {
         .init();
 }
 
-async fn serve(bind: SocketAddr, allowlist: Option<String>, queue_ttl_days: i64) -> Result<()> {
+async fn serve(
+    bind: SocketAddr,
+    allowlist: Option<String>,
+    queue_ttl_days: i64,
+    data_dir: Option<std::path::PathBuf>,
+) -> Result<()> {
     let registration = match allowlist {
         None => RegistrationPolicy::Open,
         Some(s) => parse_allowlist(&s)?,
@@ -99,12 +113,18 @@ async fn serve(bind: SocketAddr, allowlist: Option<String>, queue_ttl_days: i64)
         bind,
         registration: registration.clone(),
         queue_ttl: QueueTtlDays(queue_ttl_days),
+        data_dir: data_dir.clone(),
     };
-    let state = AppState::new(config);
 
+    let state = AppState::load(config).context("loading relay state from disk")?;
     spawn_prune_loop(state.clone(), queue_ttl_days);
 
-    info!(addr = %bind, ?registration, "starting sec-relay");
+    info!(
+        addr = %bind,
+        ?registration,
+        data_dir = ?data_dir,
+        "starting sec-relay"
+    );
     let listener = TcpListener::bind(bind)
         .await
         .with_context(|| format!("binding {bind}"))?;

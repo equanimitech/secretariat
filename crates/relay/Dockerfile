@@ -27,6 +27,13 @@ COPY --from=builder /build/target/release/sec-relay /usr/local/bin/sec-relay
 
 EXPOSE 8443
 
+# Persistent state lives here. Railway mounts a volume at /data; if no
+# volume is mounted (local `docker run`) the binary degrades to an
+# in-memory relay. Declared as VOLUME so anonymous mounts persist by
+# default if the operator forgets to attach one.
+VOLUME ["/data"]
+ENV DATA_DIR=/data
+
 # `sec-relay serve` reads `PORT` from the environment internally (Railway,
 # Render, Fly, etc. all set it). Falls back to 8443 if unset. Pure exec form
 # — no shell required, fewer ways to fail.

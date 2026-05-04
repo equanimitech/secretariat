@@ -35,16 +35,37 @@ fi
 
 # Hint to add ~/.local/bin to PATH if it isn't already.
 case ":${PATH}:" in
-  *":${INSTALL_DIR}:"*) ;;
+  *":${INSTALL_DIR}:"*) PATH_OK=1 ;;
   *)
+    PATH_OK=0
     echo
     echo "note: ${INSTALL_DIR} is not in your PATH. Add this line to your shell rc:"
     echo "    export PATH=\"${INSTALL_DIR}:\$PATH\""
     ;;
 esac
 
+# Wire sec-mcp into Claude Desktop / Claude Code automatically. Skipped
+# silently if neither is installed; a warning is enough — the user can
+# always re-run `sec mcp install` later.
+if [ "${PATH_OK:-0}" = "1" ] || [ -x "${INSTALL_DIR}/sec" ]; then
+  echo
+  echo "[install] wiring sec-mcp into Claude Desktop + Claude Code..."
+  if "${INSTALL_DIR}/sec" mcp install --binary "${INSTALL_DIR}/sec-mcp"; then
+    :
+  else
+    echo "[install] (MCP wiring skipped — re-run \`sec mcp install\` after Claude is installed.)"
+  fi
+fi
+
 echo
 echo "next steps:"
-echo "  sec init                                            # generate keypair + DID"
-echo "  sec daemon register --endpoint <relay-url>          # register with a relay"
-echo "  sec contact add --did <peer-did> --name <name>      # add your first contact"
+if grep -q . "${HOME}/.secretariat/did" 2>/dev/null; then
+  echo "  sec invite claim <url>                  # if someone sent you an invite"
+  echo "  sec invite create --purpose first-contact   # to invite someone yourself"
+else
+  echo "  sec init                                # generate keypair + DID"
+  echo "  sec invite claim <url>                  # if you have an invite"
+  echo "      OR"
+  echo "  sec daemon register --endpoint <url>    # register manually with a relay"
+  echo "  sec contact add --did <did> --name <n>  # add a peer"
+fi

@@ -8,6 +8,7 @@ pub mod daemon;
 pub mod init;
 pub mod invite;
 pub mod list;
+pub mod mcp;
 pub mod read;
 pub mod stamp;
 pub mod verify;

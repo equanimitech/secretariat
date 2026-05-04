@@ -1,32 +1,40 @@
 //! Per-tenant queue of envelopes waiting to be polled by the recipient.
 //!
-//! v0 keeps queues in memory only — restart loses queued envelopes.
-//! Acceptable because (a) recipients poll on a regular cadence so the gap is
-//! bounded, (b) senders retry on transport failure (deferred to v0.x), and
-//! (c) a disk-backed WAL can be added without changing the API surface.
+//! Persisted to disk when the relay is configured with a `data_dir` (Railway
+//! deploys mount a volume at `/data`); in-memory only otherwise. Each
+//! mutation triggers a state save, so restarts preserve queued envelopes.
 
 use std::collections::VecDeque;
 
 use chrono::{DateTime, Duration, Utc};
 use secretariat_core::Did;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// One envelope sitting in a recipient's queue.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueuedEnvelope {
     pub id: u64,
     pub queued_at: DateTime<Utc>,
     pub sender_did: Option<Did>,
     /// Raw envelope bytes (markdown with frontmatter, optionally encrypted body).
-    /// Serialized as base64 for JSON transport.
-    #[serde(serialize_with = "serialize_b64")]
+    /// Serialized as base64 for JSON transport + on-disk persistence.
+    #[serde(with = "body_b64")]
     pub body: Vec<u8>,
     pub content_type: String,
 }
 
-fn serialize_b64<S: serde::Serializer>(bytes: &[u8], s: S) -> Result<S::Ok, S::Error> {
+mod body_b64 {
     use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
-    s.serialize_str(&B64.encode(bytes))
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(bytes: &[u8], s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&B64.encode(bytes))
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<u8>, D::Error> {
+        let s = String::deserialize(d)?;
+        B64.decode(s).map_err(serde::de::Error::custom)
+    }
 }
 
 /// Per-tenant queue. Monotonic `next_id` so cursor pagination is stable.
@@ -34,7 +42,7 @@ fn serialize_b64<S: serde::Serializer>(bytes: &[u8], s: S) -> Result<S::Ok, S::E
 /// IDs start at 1 (not 0). Combined with the `id > after` semantics in
 /// [`since`], a fresh client passing `after=0` receives every queued
 /// envelope; subsequent polls pass the largest id they've seen.
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct TenantQueue {
     entries: VecDeque<QueuedEnvelope>,
     next_id: u64,
