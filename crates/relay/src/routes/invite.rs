@@ -194,7 +194,11 @@ pub async fn view(
         .unwrap_or(false);
 
     if wants_html {
-        let html = render_invite_html(&token, &invite);
+        let host = headers
+            .get(axum::http::header::HOST)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        let html = render_invite_html(&token, &invite, host);
         return ([(axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8")], html)
             .into_response();
     }
@@ -214,7 +218,7 @@ pub async fn view(
 /// (deep link `secretariat://invite/<token>`) and "Install Secretariat"
 /// (GitHub release). Lead with the relationship, not the platform —
 /// invites are correspondence relationships, not platform onboarding.
-fn render_invite_html(token: &str, invite: &crate::state::Invite) -> String {
+fn render_invite_html(token: &str, invite: &crate::state::Invite, host: &str) -> String {
     let inviter_did = html_escape(invite.inviter_did.as_str());
     let purpose_block = match invite.purpose.as_deref() {
         Some(p) => format!(
@@ -230,7 +234,15 @@ fn render_invite_html(token: &str, invite: &crate::state::Invite) -> String {
         ),
         None => String::new(),
     };
-    let deep_link = format!("secretariat://invite/{}", html_escape(token));
+    // Deep link mirrors the HTTPS claim URL with `secretariat://` in place
+    // of `https://`. This way the deep link carries the relay endpoint,
+    // so the app can claim against the right relay even when the user
+    // has no relay registered yet.
+    let deep_link = format!(
+        "secretariat://{}/v0/invite/{}",
+        html_escape(host),
+        html_escape(token)
+    );
     let install_url = "https://github.com/equanimitech/secretariat/releases/latest";
 
     format!(
