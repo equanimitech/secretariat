@@ -128,3 +128,46 @@ is the distribution shift. Slice 6 ties back to the Claude integration.
 - App auto-updates between 0.2.0 → 0.2.1 with no user action.
 - `sec` CLI continues to work end-to-end for power users (regression-free).
 - `sec-mcp` continues to work in Claude Code (regression-free).
+
+## Pending external steps (block release, not implementation)
+
+These cannot be automated. Defer until shaping + implementation are done;
+land them just before tagging `v0.2.0`. See
+`docs/developer/tauri-distribution-setup.md` for the how-to.
+
+### Apple Developer ID certs
+
+- [ ] Generate **Developer ID Application** cert via developer.apple.com or
+      Xcode (Settings → Accounts → Manage Certificates → "+")
+- [ ] Import `.cer` to keychain; verify with
+      `security find-identity -v -p codesigning`
+- [ ] Export from keychain to `.p12` with a strong password
+- [ ] Add GitHub repo secrets:
+  - [ ] `APPLE_CERTIFICATE` (base64 of `.p12`)
+  - [ ] `APPLE_CERTIFICATE_PASSWORD`
+  - [ ] `APPLE_SIGNING_IDENTITY` (full cert name)
+  - [ ] `APPLE_ID` (Apple account email)
+  - [ ] `APPLE_PASSWORD` (app-specific password from appleid.apple.com,
+        NOT account password)
+  - [ ] `APPLE_TEAM_ID` (10-char team ID, top-right of developer.apple.com)
+
+Without these, CI falls back to ad-hoc signing (Gatekeeper warns once
+on first open). Pipeline still produces a usable `.dmg`.
+
+### Tauri Updater key backup
+
+- [ ] Back up `.tauri-keys/secretariat-updater` to 1Password / Bitwarden
+      under "Secretariat / Tauri updater private key"
+- [ ] Add as GitHub repo secret `TAURI_SIGNING_PRIVATE_KEY`
+      (base64-encoded; command in dist setup doc)
+
+If the local copy is lost AND the GitHub secret is lost, every shipped
+copy of the app stops accepting updates. The pubkey is baked into
+released binaries. Recovery = ship a new pubkey via a migration release
+(`sec self-update` falls back to manual). High-cost loss; back up.
+
+### Single source of truth
+
+When all six Apple secrets + the Tauri secret exist, this checklist is
+complete. CI signs + notarizes + signs updates without further
+intervention.
