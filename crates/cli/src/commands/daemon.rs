@@ -20,19 +20,15 @@
 //! similar); no LaunchAgent install, no PID file, no `status` subcommand.
 //! Those land in v0.x.
 
-use std::path::Path;
-
 use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
 use clap::{Parser, Subcommand};
 use ed25519_dalek::SigningKey;
-use secretariat_core::application::{
-    decide_poll, send_stamped_envelope, CadenceConfig, PollDecision, SendError,
-};
-use secretariat_core::infrastructure::contact_store::ContactBook;
+use secretariat_core::application::{decide_poll, sync_now, CadenceConfig, PollDecision};
 use secretariat_core::infrastructure::keys::{load_signing_key, KeyPaths};
-use secretariat_core::infrastructure::transport::{RelayClient, RelayInbound, RelayState};
+use secretariat_core::infrastructure::transport::{RelayClient, RelayState};
 use secretariat_core::Did;
+use std::path::Path;
 use tracing::{info, warn};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
@@ -55,6 +51,9 @@ enum Cmd {
     },
     /// Run the foreground daemon loop.
     Serve,
+    /// Run a single sync cycle and exit. Useful for cron, post-stamp
+    /// pushes, and Tauri's "Sync now" debugging.
+    Tick,
     /// Install the daemon as a macOS LaunchAgent. Survives reboot, runs
     /// in the background. Idempotent — safe to re-run after upgrades.
     Install,
@@ -74,6 +73,7 @@ pub fn run(args: Args) -> Result<()> {
         match args.cmd {
             Cmd::Register { endpoint } => register(&endpoint).await,
             Cmd::Serve => serve().await,
+            Cmd::Tick => tick_once().await,
             Cmd::Install => install_launchagent().await,
             Cmd::Uninstall => uninstall_launchagent().await,
             Cmd::Status => report_status().await,
@@ -145,224 +145,47 @@ async fn serve() -> Result<()> {
 
 /// One pass over: poll all registered relays for inbound, drain claim
 /// notifications (auto-add bilateral contacts from invite claims), then
-/// drain outbox.
+/// drain outbox. Delegates to `core::application::sync_now`; this
+/// function only logs.
 async fn tick(paths: &KeyPaths, did: &Did, key: &SigningKey) -> Result<()> {
-    poll_all_relays(paths, did, key).await?;
-    drain_claimed_invites(paths, did, key).await?;
-    drain_outbox(paths, did, key).await?;
-    Ok(())
-}
-
-async fn poll_all_relays(paths: &KeyPaths, did: &Did, key: &SigningKey) -> Result<()> {
-    let mut state = RelayState::load(&paths.relay_state).context("loading relay state")?;
-
-    // Collect endpoints up-front; we mutate state inside the loop.
-    let endpoints: Vec<String> = state
-        .iter()
-        .filter(|r| r.registered)
-        .map(|r| r.endpoint.clone())
-        .collect();
-
-    for endpoint in endpoints {
-        if let Err(e) = poll_one(&mut state, &endpoint, did, key, paths).await {
-            warn!(endpoint = %endpoint, error = %e, "poll failed; will retry next tick");
+    let outcome = sync_now(paths, did, key).await.context("sync_now")?;
+    for r in &outcome.per_relay {
+        if r.inbound_count > 0 {
+            info!(endpoint = %r.endpoint, count = r.inbound_count, "filed inbound envelopes");
+        }
+        if r.auto_added_contacts > 0 {
+            info!(
+                endpoint = %r.endpoint,
+                added = r.auto_added_contacts,
+                "auto-added correspondence contacts"
+            );
+        }
+        for w in &r.warnings {
+            warn!(endpoint = %r.endpoint, warning = %w, "relay sync warning");
         }
     }
-
-    state.save(&paths.relay_state).context("saving relay state")?;
-    Ok(())
-}
-
-/// Pulls claim events from each registered relay, hands them to the
-/// `process_correspondence_claims` use case (which owns the naming +
-/// dedup policy), and logs outcomes. This function is intentionally
-/// IO orchestration only — no business logic.
-async fn drain_claimed_invites(
-    paths: &KeyPaths,
-    did: &Did,
-    key: &SigningKey,
-) -> Result<()> {
-    use chrono::DateTime;
-    use secretariat_core::application::{
-        process_correspondence_claims, CorrespondenceClaim,
-    };
-    use secretariat_core::RelayEndpoint;
-
-    let state = RelayState::load(&paths.relay_state).context("loading relay state")?;
-    let endpoints: Vec<(String, Option<String>)> = state
-        .iter()
-        .filter(|r| r.registered)
-        .map(|r| (r.endpoint.clone(), r.token.clone()))
-        .collect();
-
-    for (endpoint, token) in endpoints {
-        let Some(token) = token else { continue }; // poll_all_relays refreshes next tick
-
-        let client = RelayClient::new(&endpoint, did.clone(), key);
-        let wire = match client.claimed_invites(&token).await {
-            Ok(c) => c,
-            Err(e) => {
-                warn!(endpoint = %endpoint, error = %e, "claimed-invites poll failed");
-                continue;
-            }
-        };
-        if wire.is_empty() {
-            continue;
-        }
-
-        let endpoint_url = match RelayEndpoint::parse(&endpoint) {
-            Ok(u) => u,
-            Err(e) => {
-                warn!(endpoint = %endpoint, error = %e, "skipping bilateral add — relay endpoint unparseable");
-                continue;
-            }
-        };
-
-        // Wire → domain. Drop malformed entries with a warning rather than
-        // failing the whole batch.
-        let claims: Vec<CorrespondenceClaim> = wire
-            .into_iter()
-            .filter_map(|w| {
-                let claimant = secretariat_core::Did::parse(&w.claimant_did)
-                    .map_err(|e| warn!(claimant = %w.claimant_did, error = %e, "skipping malformed claimant_did"))
-                    .ok()?;
-                let claimed_at = DateTime::parse_from_rfc3339(&w.claimed_at)
-                    .map_err(|e| warn!(claimed_at = %w.claimed_at, error = %e, "skipping malformed claimed_at"))
-                    .ok()?
-                    .with_timezone(&chrono::Utc);
-                Some(CorrespondenceClaim {
-                    claimant,
-                    claimed_at,
-                    purpose: w.purpose,
-                })
-            })
-            .collect();
-
-        match process_correspondence_claims(claims, &paths.contacts, &endpoint_url) {
-            Ok(out) => {
-                for added in &out.added {
-                    info!(
-                        claimant = %added.did,
-                        name = %added.display_name,
-                        endpoint = %endpoint,
-                        "auto-added correspondence contact",
-                    );
-                }
-            }
-            Err(e) => warn!(endpoint = %endpoint, error = %e, "claim processing failed"),
-        }
+    if outcome.sent_envelopes > 0 {
+        info!(count = outcome.sent_envelopes, "sent stamped envelopes");
+    }
+    for w in &outcome.outbox_warnings {
+        warn!(warning = %w, "outbox drain warning");
     }
     Ok(())
 }
 
-async fn poll_one(
-    state: &mut RelayState,
-    endpoint: &str,
-    did: &Did,
-    key: &SigningKey,
-    paths: &KeyPaths,
-) -> Result<()> {
-    let client = RelayClient::new(endpoint, did.clone(), key);
+// Sync orchestration (poll inbound + drain claim notifications + drain
+// outbox) lives in `core::application::sync_now` so the CLI daemon, the
+// CLI's `sec daemon tick` one-shot, and the Tauri app's "Sync now" command
+// share one source of truth. This file contains only the daemon's
+// schedule-and-log loop + the LaunchAgent install/uninstall surface.
 
-    // Refresh token if missing or near expiry.
-    let needs_auth = match state.entry(endpoint) {
-        Some(e) => match (e.token.as_ref(), e.token_expires_at) {
-            (Some(_), Some(exp)) => Utc::now() >= exp - chrono::Duration::minutes(5),
-            _ => true,
-        },
-        None => true,
-    };
-    if needs_auth {
-        let (token, expires_at) = client.authenticate().await.context("relay authenticate")?;
-        let entry = state.entry_mut(endpoint);
-        entry.token = Some(token);
-        entry.token_expires_at = Some(expires_at);
-    }
-
-    let (token, cursor) = {
-        let e = state.entry(endpoint).expect("just upserted");
-        (e.token.clone().unwrap(), e.cursor)
-    };
-
-    let inbound = client.poll(&token, cursor).await.context("relay poll")?;
-    let mut max_id = cursor;
-    for env in &inbound {
-        if let Err(e) = file_inbound(paths, env) {
-            warn!(id = env.id, error = %e, "could not file inbound envelope");
-            continue;
-        }
-        if env.id > max_id {
-            max_id = env.id;
-        }
-    }
-    if !inbound.is_empty() {
-        info!(endpoint = %endpoint, count = inbound.len(), "filed inbound envelopes");
-    }
-    state.entry_mut(endpoint).cursor = max_id;
-    Ok(())
-}
-
-fn file_inbound(paths: &KeyPaths, env: &RelayInbound) -> Result<()> {
-    let sender_short = env
-        .sender_did
-        .as_ref()
-        .map(|d| short_did(d.as_str()))
-        .unwrap_or_else(|| "unknown".to_string());
-    let timestamp = env.queued_at.format("%Y-%m-%dT%H-%M-%SZ");
-    let filename = format!("{timestamp}-{sender_short}-id{:06}.md", env.id);
-    let path = paths.inbox.join(filename);
-    std::fs::write(&path, &env.body)
-        .with_context(|| format!("writing inbox file {}", path.display()))?;
-    Ok(())
-}
-
-fn short_did(s: &str) -> String {
-    s.replace([':', '/'], "_")
-        .chars()
-        .take(48)
-        .collect()
-}
-
-async fn drain_outbox(paths: &KeyPaths, _did: &Did, key: &SigningKey) -> Result<()> {
-    if !paths.outbox.exists() {
-        return Ok(());
-    }
-    let contacts = ContactBook::load(&paths.contacts).context("loading contacts")?;
-
-    // Iterate outbox/<recipient-did>/*.md (one level deep, excluding the
-    // `sent/` subdirectory).
-    for entry in std::fs::read_dir(&paths.outbox)? {
-        let entry = entry?;
-        let recipient_dir = entry.path();
-        if !recipient_dir.is_dir() {
-            continue;
-        }
-        let sent_dir = recipient_dir.join("sent");
-
-        for inner in std::fs::read_dir(&recipient_dir)? {
-            let inner = inner?;
-            let p = inner.path();
-            if !p.is_file() {
-                continue;
-            }
-            if p.extension().and_then(|x| x.to_str()) != Some("md") {
-                continue;
-            }
-            match send_stamped_envelope(&p, &contacts, key, &sent_dir).await {
-                Ok(out) => {
-                    info!(
-                        file = %out.moved_to.display(),
-                        id = out.relay_assigned_id,
-                        "sent and moved to sent/"
-                    );
-                }
-                // Unstamped drafts are normal in the outbox — skip silently.
-                Err(SendError::NotStamped) => continue,
-                Err(e) => warn!(file = %p.display(), error = %e, "outbox send failed"),
-            }
-        }
-    }
-    Ok(())
+async fn tick_once() -> Result<()> {
+    init_tracing();
+    let paths = key_paths()?;
+    let did = load_did(&paths)?;
+    let key = load_signing_key(&paths.signing_key)
+        .with_context(|| format!("loading signing key from {}", paths.signing_key.display()))?;
+    tick(&paths, &did, &key).await
 }
 
 // -----------------------------------------------------------------------------

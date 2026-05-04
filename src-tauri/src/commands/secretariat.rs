@@ -13,8 +13,11 @@ use std::path::PathBuf;
 
 use secretariat_core::application::{
     list_inbox_files, list_outbox_queue, read_envelope as core_read_envelope,
+    sync_now as core_sync_now,
 };
-use secretariat_core::infrastructure::keys::{generate_keypair, save_signing_key, KeyPaths};
+use secretariat_core::infrastructure::keys::{
+    generate_keypair, load_signing_key, save_signing_key, KeyPaths,
+};
 use secretariat_core::Did;
 
 /// What `init_identity` reports back to the front-end.
@@ -283,6 +286,59 @@ pub async fn read_envelope(file_path: String) -> Result<EnvelopeRead, String> {
         from: res.envelope_from.map(|d| d.as_str().to_string()),
         to: res.envelope_to.map(|d| d.as_str().to_string()),
         was_encrypted: res.was_encrypted,
+    })
+}
+
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
+pub struct RelaySyncReport {
+    pub endpoint: String,
+    pub inbound_count: u32,
+    pub auto_added_contacts: u32,
+    pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
+pub struct SyncReport {
+    pub per_relay: Vec<RelaySyncReport>,
+    pub sent_envelopes: u32,
+    pub outbox_warnings: Vec<String>,
+}
+
+/// Run one sync cycle against every registered relay. Pulls inbound
+/// envelopes, auto-adds contacts from claim events, drains stamped
+/// drafts from the outbox. Principal-initiated per the review-session
+/// model — no background push.
+///
+/// Idempotent and safe to call repeatedly. Returns a report the UI can
+/// surface (counts + non-fatal warnings).
+#[tauri::command]
+#[specta::specta]
+pub async fn sync_now() -> Result<SyncReport, String> {
+    let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
+    let did_file = paths.root.join("did");
+    let did_str = std::fs::read_to_string(&did_file)
+        .map_err(|e| format!("reading {}: {e}", did_file.display()))?;
+    let did = Did::parse(did_str.trim()).map_err(|e| format!("parsing DID: {e}"))?;
+    let key = load_signing_key(&paths.signing_key)
+        .map_err(|e| format!("loading signing key: {e}"))?;
+
+    let outcome = core_sync_now(&paths, &did, &key)
+        .await
+        .map_err(|e| format!("sync_now: {e}"))?;
+
+    Ok(SyncReport {
+        per_relay: outcome
+            .per_relay
+            .into_iter()
+            .map(|r| RelaySyncReport {
+                endpoint: r.endpoint,
+                inbound_count: r.inbound_count as u32,
+                auto_added_contacts: r.auto_added_contacts as u32,
+                warnings: r.warnings,
+            })
+            .collect(),
+        sent_envelopes: outcome.sent_envelopes as u32,
+        outbox_warnings: outcome.outbox_warnings,
     })
 }
 

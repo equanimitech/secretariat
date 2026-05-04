@@ -8,6 +8,7 @@ pub mod invite_ops;
 pub mod process_correspondence_claims;
 pub mod review_queue;
 pub mod send_envelope;
+pub mod sync;
 pub mod stamp_document;
 pub mod verify_document;
 
@@ -29,5 +30,6 @@ pub use process_correspondence_claims::{
 };
 pub use review_queue::list_outbox_queue;
 pub use send_envelope::{send_stamped_envelope, SendError, SendOutcome};
+pub use sync::{sync_now, RelaySyncReport, SyncError, SyncOutcome};
 pub use stamp_document::{stamp_document, StampError, StampOutcome};
 pub use verify_document::{verify_document, VerifyError, VerifyOutcome};

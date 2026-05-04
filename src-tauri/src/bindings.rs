@@ -23,6 +23,7 @@ pub fn generate_bindings() -> Builder<tauri::Wry> {
         secretariat::list_inbox,
         secretariat::list_review_queue,
         secretariat::read_envelope,
+        secretariat::sync_now,
     ])
 }
 
