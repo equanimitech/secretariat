@@ -155,12 +155,15 @@ mod tests {
     use chrono::TimeZone;
     use tempfile::TempDir;
 
-    fn rafa_did() -> Did {
-        Did::parse("did:key:z6MkjB8PQaN1vuUzdtnJsxyXR2f8d3tckGHkUYZMDytQsfak").unwrap()
+    /// Synthetic DIDs for tests — derived from deterministic seed bytes
+    /// so we never embed a real principal's DID in source. See
+    /// `memory/feedback_no_real_dids_in_tests.md`.
+    fn alice_did() -> Did {
+        Did::from_ed25519_public_key(&[0xa1; 32])
     }
 
-    fn marcelo_did() -> Did {
-        Did::parse("did:key:z6MkgyXNWdhXxW2xEEymYdRGCiohke8s8dskU1yW1TuGEddx").unwrap()
+    fn bob_did() -> Did {
+        Did::from_ed25519_public_key(&[0xb0; 32])
     }
 
     fn relay() -> RelayEndpoint {
@@ -172,7 +175,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let contacts = dir.path().join("contacts.json");
         let claim = CorrespondenceClaim {
-            claimant: marcelo_did(),
+            claimant: bob_did(),
             claimed_at: Utc.with_ymd_and_hms(2026, 5, 4, 17, 0, 0).unwrap(),
             purpose: Some("co-author book".into()),
         };
@@ -188,7 +191,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let contacts = dir.path().join("contacts.json");
         let claim = CorrespondenceClaim {
-            claimant: marcelo_did(),
+            claimant: bob_did(),
             claimed_at: Utc::now(),
             purpose: None,
         };
@@ -203,7 +206,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let contacts = dir.path().join("contacts.json");
         let claim = CorrespondenceClaim {
-            claimant: marcelo_did(),
+            claimant: bob_did(),
             claimed_at: Utc::now(),
             purpose: Some("first-contact".into()),
         };
@@ -225,7 +228,7 @@ mod tests {
 
         // Pre-populate with a contact that occupies the slug "first-contact".
         let pre = Contact::new(
-            rafa_did(),
+            alice_did(),
             DisplayName::parse("first-contact").unwrap(),
             Some(relay()),
         );
@@ -234,7 +237,7 @@ mod tests {
         book.save(&contacts).unwrap();
 
         let claim = CorrespondenceClaim {
-            claimant: marcelo_did(),
+            claimant: bob_did(),
             claimed_at: Utc::now(),
             purpose: Some("first-contact".into()),
         };

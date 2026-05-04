@@ -38,20 +38,33 @@ mod tests {
     use std::fs;
     use tempfile::TempDir;
 
-    const RAFA_DID: &str = "did:key:z6MkjB8PQaN1vuUzdtnJsxyXR2f8d3tckGHkUYZMDytQsfak";
-    const MARCELO_DID: &str = "did:key:z6MkgyXNWdhXxW2xEEymYdRGCiohke8s8dskU1yW1TuGEddx";
+    /// Synthetic DIDs for tests — derived from deterministic seed bytes
+    /// so we never embed a real principal's DID in source. See
+    /// `memory/feedback_no_real_dids_in_tests.md`.
+    fn alice_did() -> String {
+        crate::Did::from_ed25519_public_key(&[0xa1; 32])
+            .as_str()
+            .to_string()
+    }
+    fn bob_did() -> String {
+        crate::Did::from_ed25519_public_key(&[0xb0; 32])
+            .as_str()
+            .to_string()
+    }
 
     fn write_envelope(dir: &Path, name: &str, stamped: bool) {
         fs::create_dir_all(dir).unwrap();
+        let from = alice_did();
+        let to = bob_did();
         let stamp_block = if stamped {
             format!(
-                "$attestation:\n  $type: tech.equanimi.secretariat.stamp\n  signer: {RAFA_DID}\n  act: attest\n  docHash: sha256:7d289c3de73f3dc1b0bd26f1e908bcdcc6b8e3242a33d478d356ce1cfb878547\n  docFilename: x.md\n  stampedAt: 2026-05-04T00:00:00Z\n  signature: ed25519:5t0ypQ0NmRzJrK0F9wKCkTwFCeSuhbxaZ7kpDfXOX3IZWDeCugRr8qpLQZ5B9MgK87uuz1PP6T8WOrNEEdLnCQ==\n"
+                "$attestation:\n  $type: tech.equanimi.secretariat.stamp\n  signer: {from}\n  act: attest\n  docHash: sha256:7d289c3de73f3dc1b0bd26f1e908bcdcc6b8e3242a33d478d356ce1cfb878547\n  docFilename: x.md\n  stampedAt: 2026-05-04T00:00:00Z\n  signature: ed25519:5t0ypQ0NmRzJrK0F9wKCkTwFCeSuhbxaZ7kpDfXOX3IZWDeCugRr8qpLQZ5B9MgK87uuz1PP6T8WOrNEEdLnCQ==\n"
             )
         } else {
             String::new()
         };
         let body = format!(
-            "---\n$envelope:\n  $type: tech.equanimi.secretariat.envelope\n  from: {RAFA_DID}\n  to: {MARCELO_DID}\n  depth: subtle\n  urgency: soon\n  source: test\n{stamp_block}---\n# Hello\n"
+            "---\n$envelope:\n  $type: tech.equanimi.secretariat.envelope\n  from: {from}\n  to: {to}\n  depth: subtle\n  urgency: soon\n  source: test\n{stamp_block}---\n# Hello\n"
         );
         fs::write(dir.join(name), body).unwrap();
     }
