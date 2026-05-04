@@ -2,6 +2,10 @@
 # Installs Secretariat from the extracted release tarball:
 #   - `sec` + `sec-mcp` → ~/.local/bin (CLI on PATH)
 #   - `touchid-prompt`  → ~/.secretariat/bin (helper looked up by Touch ID gate)
+#   - wires sec-mcp into Claude Desktop + Claude Code (no JSON editing)
+#
+# Onboarding (init, invite claim, daemon) happens AFTER this — through
+# MCP tools, once Claude Code/Desktop is restarted to pick up the server.
 #
 # Run after extracting the release tarball:
 #

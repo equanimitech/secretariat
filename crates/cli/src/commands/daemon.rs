@@ -54,6 +54,13 @@ enum Cmd {
     },
     /// Run the foreground daemon loop.
     Serve,
+    /// Install the daemon as a macOS LaunchAgent. Survives reboot, runs
+    /// in the background. Idempotent — safe to re-run after upgrades.
+    Install,
+    /// Uninstall the LaunchAgent.
+    Uninstall,
+    /// Report whether the LaunchAgent is loaded + last-known status.
+    Status,
 }
 
 pub fn run(args: Args) -> Result<()> {
@@ -66,6 +73,9 @@ pub fn run(args: Args) -> Result<()> {
         match args.cmd {
             Cmd::Register { endpoint } => register(&endpoint).await,
             Cmd::Serve => serve().await,
+            Cmd::Install => install_launchagent().await,
+            Cmd::Uninstall => uninstall_launchagent().await,
+            Cmd::Status => report_status().await,
         }
     })
 }
@@ -307,5 +317,168 @@ async fn try_send_one(
     std::fs::rename(path, &dest)
         .with_context(|| format!("moving {} → {}", path.display(), dest.display()))?;
     info!(file = %path.display(), id, "sent and moved to sent/");
+    Ok(())
+}
+
+// -----------------------------------------------------------------------------
+// LaunchAgent (install / uninstall / status)
+// -----------------------------------------------------------------------------
+
+const LAUNCHAGENT_LABEL: &str = "tech.equanimi.secretariat.daemon";
+
+fn launchagent_plist_path() -> Result<std::path::PathBuf> {
+    let home = dirs::home_dir().ok_or_else(|| anyhow!("no home directory"))?;
+    Ok(home.join(format!("Library/LaunchAgents/{LAUNCHAGENT_LABEL}.plist")))
+}
+
+fn render_plist(sec_binary: &Path, log_dir: &Path) -> String {
+    let bin = sec_binary.display();
+    let stdout = log_dir.join("daemon.stdout.log");
+    let stderr = log_dir.join("daemon.stderr.log");
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>{LAUNCHAGENT_LABEL}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{bin}</string>
+        <string>daemon</string>
+        <string>serve</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>{}</string>
+    <key>StandardErrorPath</key>
+    <string>{}</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>
+"#,
+        stdout.display(),
+        stderr.display()
+    )
+}
+
+async fn install_launchagent() -> Result<()> {
+    if !cfg!(target_os = "macos") {
+        return Err(anyhow!(
+            "LaunchAgent install is macOS-only; on Linux/Windows, run `sec daemon serve` under your supervisor of choice."
+        ));
+    }
+
+    let paths = key_paths()?;
+    paths.ensure_dirs()?;
+    let log_dir = paths.root.join("logs");
+    std::fs::create_dir_all(&log_dir)
+        .with_context(|| format!("creating {}", log_dir.display()))?;
+
+    // Resolve the actual `sec` binary path so the LaunchAgent doesn't depend
+    // on the LaunchAgent process inheriting the user's PATH.
+    let sec_binary = std::env::current_exe()
+        .context("resolving sec binary path")?
+        .canonicalize()
+        .context("canonicalizing sec binary path")?;
+
+    let plist_path = launchagent_plist_path()?;
+    if let Some(parent) = plist_path.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("creating {}", parent.display()))?;
+    }
+
+    let body = render_plist(&sec_binary, &log_dir);
+    std::fs::write(&plist_path, body)
+        .with_context(|| format!("writing {}", plist_path.display()))?;
+
+    // Reload: try unload first (idempotent on first install — ignored if not loaded).
+    let _ = std::process::Command::new("launchctl")
+        .args(["unload", plist_path.to_string_lossy().as_ref()])
+        .output();
+
+    let load = std::process::Command::new("launchctl")
+        .args(["load", "-w", plist_path.to_string_lossy().as_ref()])
+        .output()
+        .context("invoking launchctl load")?;
+    if !load.status.success() {
+        return Err(anyhow!(
+            "launchctl load failed: {}",
+            String::from_utf8_lossy(&load.stderr)
+        ));
+    }
+
+    eprintln!(
+        "[sec] LaunchAgent installed at {}",
+        plist_path.display()
+    );
+    eprintln!("[sec]   binary:  {}", sec_binary.display());
+    eprintln!("[sec]   stdout:  {}/daemon.stdout.log", log_dir.display());
+    eprintln!("[sec]   stderr:  {}/daemon.stderr.log", log_dir.display());
+    eprintln!(
+        "[sec] daemon now runs in the background and survives reboots. \
+         Verify with `sec daemon status`."
+    );
+    Ok(())
+}
+
+async fn uninstall_launchagent() -> Result<()> {
+    if !cfg!(target_os = "macos") {
+        return Err(anyhow!("LaunchAgent uninstall is macOS-only"));
+    }
+    let plist_path = launchagent_plist_path()?;
+    if !plist_path.exists() {
+        eprintln!("[sec] no LaunchAgent installed at {}", plist_path.display());
+        return Ok(());
+    }
+    let _ = std::process::Command::new("launchctl")
+        .args(["unload", plist_path.to_string_lossy().as_ref()])
+        .output();
+    std::fs::remove_file(&plist_path)
+        .with_context(|| format!("removing {}", plist_path.display()))?;
+    eprintln!("[sec] LaunchAgent uninstalled.");
+    Ok(())
+}
+
+async fn report_status() -> Result<()> {
+    let plist_path = launchagent_plist_path()?;
+    let installed = plist_path.exists();
+
+    let loaded_output = std::process::Command::new("launchctl")
+        .args(["list", LAUNCHAGENT_LABEL])
+        .output();
+    let loaded = matches!(&loaded_output, Ok(o) if o.status.success());
+
+    println!("LaunchAgent label:    {LAUNCHAGENT_LABEL}");
+    println!("plist installed:      {installed} ({})", plist_path.display());
+    println!("loaded (launchctl):   {loaded}");
+    if loaded {
+        // launchctl list <label> prints PID + status; dump it.
+        let output = loaded_output.unwrap();
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        for line in stdout.lines().take(8) {
+            println!("  {line}");
+        }
+    }
+
+    // Also list registered relays + queued outbox files for at-a-glance health.
+    let paths = key_paths()?;
+    if let Ok(state) = secretariat_core::infrastructure::transport::RelayState::load(
+        &paths.relay_state,
+    ) {
+        let count = state.iter().count();
+        println!("registered relays:    {count}");
+        for r in state.iter() {
+            let cursor = r.cursor;
+            println!("  {} (cursor={cursor})", r.endpoint);
+        }
+    }
     Ok(())
 }

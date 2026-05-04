@@ -257,6 +257,35 @@ pub struct InviteClaimOutput {
     pub contact_added: bool,
 }
 
+#[derive(Debug, Deserialize, JsonSchema, Default)]
+pub struct InitParams {
+    /// Optional did:web override; e.g. `did:web:rafa.equanimi.tech`. Omit
+    /// to derive a `did:key` from the freshly-generated public key (zero
+    /// hosting needed).
+    #[serde(default)]
+    pub did: Option<String>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct InitOutput {
+    pub did: String,
+    pub root: String,
+    pub message: String,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct DaemonInstallOutput {
+    pub plist_path: String,
+    pub message: String,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct DaemonStatusOutput {
+    pub installed: bool,
+    pub loaded: bool,
+    pub raw_output: String,
+}
+
 // ---------------------------------------------------------------------------
 // Tool router
 // ---------------------------------------------------------------------------
@@ -539,6 +568,112 @@ impl SecretariatServer {
     }
 
     #[tool(
+        name = "init",
+        description = "Generate the principal's ed25519 keypair + DID, seed \
+        ~/.secretariat/template.md and attention-envelope.md, and write the \
+        principal's `did` file. Idempotent-safe: refuses if a key already \
+        exists (won't overwrite). Pair with `invite_claim` to onboard against \
+        a relay in one round trip. Default DID method is `did:key` (zero \
+        hosting); pass `did` to opt into `did:web` if the principal owns a \
+        domain to host the DID document at."
+    )]
+    async fn init(
+        &self,
+        Parameters(params): Parameters<InitParams>,
+    ) -> Result<Json<InitOutput>, ErrorData> {
+        let mut cmd = std::process::Command::new("sec");
+        cmd.arg("init");
+        if let Some(did) = params.did.as_deref() {
+            cmd.arg("--did").arg(did);
+        }
+        let output = cmd
+            .output()
+            .map_err(|e| invalid_request(format!("invoking `sec init`: {e}")))?;
+        if !output.status.success() {
+            return Err(invalid_request(format!(
+                "sec init failed (exit {}): {}",
+                output.status,
+                String::from_utf8_lossy(&output.stderr)
+            )));
+        }
+
+        let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+        let did = stderr
+            .lines()
+            .find(|l| l.contains("did") && l.contains("did:"))
+            .and_then(|l| l.split_whitespace().last())
+            .map(|s| s.to_string())
+            .unwrap_or_default();
+
+        info!(did = %did, "sec init via MCP");
+
+        Ok(Json(InitOutput {
+            did,
+            root: self.paths.root.display().to_string(),
+            message: stderr,
+        }))
+    }
+
+    #[tool(
+        name = "daemon_install",
+        description = "Install the daemon as a macOS LaunchAgent so it runs \
+        in the background, survives reboot, and auto-restarts on crash. \
+        Idempotent — re-running after upgrades replaces the plist with the \
+        current binary path. macOS only."
+    )]
+    async fn daemon_install(
+        &self,
+        Parameters(_): Parameters<EmptyParams>,
+    ) -> Result<Json<DaemonInstallOutput>, ErrorData> {
+        let output = std::process::Command::new("sec")
+            .args(["daemon", "install"])
+            .output()
+            .map_err(|e| invalid_request(format!("invoking `sec daemon install`: {e}")))?;
+        if !output.status.success() {
+            return Err(invalid_request(format!(
+                "sec daemon install failed (exit {}): {}",
+                output.status,
+                String::from_utf8_lossy(&output.stderr)
+            )));
+        }
+
+        let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+        let plist_path = home_relative_plist();
+
+        info!("daemon LaunchAgent installed via MCP");
+
+        Ok(Json(DaemonInstallOutput {
+            plist_path,
+            message: stderr,
+        }))
+    }
+
+    #[tool(
+        name = "daemon_status",
+        description = "Report whether the daemon LaunchAgent is installed + \
+        loaded + (when launchctl reports it) the PID/exit-status. Useful for \
+        verifying the background process is running after `daemon_install`."
+    )]
+    async fn daemon_status(
+        &self,
+        Parameters(_): Parameters<EmptyParams>,
+    ) -> Result<Json<DaemonStatusOutput>, ErrorData> {
+        let output = std::process::Command::new("sec")
+            .args(["daemon", "status"])
+            .output()
+            .map_err(|e| invalid_request(format!("invoking `sec daemon status`: {e}")))?;
+        let raw = String::from_utf8_lossy(&output.stdout).into_owned();
+        let installed = raw.contains("plist installed:      true");
+        let loaded = raw.contains("loaded (launchctl):   true");
+
+        Ok(Json(DaemonStatusOutput {
+            installed,
+            loaded,
+            raw_output: raw,
+        }))
+    }
+
+    #[tool(
         name = "invite_claim",
         description = "Claim an invite issued by another principal. Auto-registers \
         the local DID with the relay if not already registered, and adds the \
@@ -676,6 +811,16 @@ fn relay_origin_from_claim_url(claim_url: &str) -> Result<String, ErrorData> {
         .find("/v0/invite/")
         .ok_or_else(|| invalid_request("claim URL does not contain `/v0/invite/`".to_string()))?;
     Ok(claim_url[..idx].to_string())
+}
+
+fn home_relative_plist() -> String {
+    if let Some(home) = dirs::home_dir() {
+        home.join("Library/LaunchAgents/tech.equanimi.secretariat.daemon.plist")
+            .display()
+            .to_string()
+    } else {
+        "~/Library/LaunchAgents/tech.equanimi.secretariat.daemon.plist".to_string()
+    }
 }
 
 fn default_display_for_did(did: &Did) -> Result<DisplayName, ErrorData> {
