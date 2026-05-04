@@ -1,9 +1,0 @@
-{
-  "mcpServers": {
-    "secretariat": {
-      "command": "sec-mcp",
-      "args": [],
-      "env": {}
-    }
-  }
-}

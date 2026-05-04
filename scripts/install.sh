@@ -63,13 +63,19 @@ fi
 
 echo
 echo "next steps:"
+echo "  1. Restart Claude Code (or Claude Desktop) so the new MCP server loads."
+echo "  2. In the new session, ask your assistant to run the secretariat tools:"
+echo "       secretariat__init           — generate your keypair + DID"
+echo "       secretariat__invite_claim   — claim an invite URL (auto-registers + adds inviter)"
+echo "       secretariat__daemon_install — install the LaunchAgent (background poller)"
+echo "       secretariat__daemon_status  — confirm it's running"
+echo
+echo "Or, if you prefer the terminal:"
 if grep -q . "${HOME}/.secretariat/did" 2>/dev/null; then
-  echo "  sec invite claim <url>                  # if someone sent you an invite"
-  echo "  sec invite create --purpose first-contact   # to invite someone yourself"
+  echo "  sec invite claim <url>"
+  echo "  sec daemon install"
 else
-  echo "  sec init                                # generate keypair + DID"
-  echo "  sec invite claim <url>                  # if you have an invite"
-  echo "      OR"
-  echo "  sec daemon register --endpoint <url>    # register manually with a relay"
-  echo "  sec contact add --did <did> --name <n>  # add a peer"
+  echo "  sec init"
+  echo "  sec invite claim <url>      (or  sec daemon register --endpoint <url>)"
+  echo "  sec daemon install"
 fi
