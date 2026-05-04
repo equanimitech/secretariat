@@ -43,6 +43,9 @@ enum Cmd {
 
     /// Wire `sec-mcp` into Claude Desktop / Claude Code (no JSON editing).
     Mcp(commands::mcp::Args),
+
+    /// Manage the principal's display name (presence, distinct from identity).
+    Profile(commands::profile::Args),
 }
 
 fn main() -> Result<()> {
@@ -58,5 +61,6 @@ fn main() -> Result<()> {
         Cmd::Read(a) => commands::read::run(a),
         Cmd::Invite(a) => commands::invite::run(a),
         Cmd::Mcp(a) => commands::mcp::run(a),
+        Cmd::Profile(a) => commands::profile::run(a),
     }
 }

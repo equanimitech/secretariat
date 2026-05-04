@@ -15,8 +15,12 @@ use secretariat_core::application::{
     list_inbox_files, list_outbox_queue, read_envelope as core_read_envelope,
     sync_now as core_sync_now,
 };
+use secretariat_core::domain::DisplayName;
 use secretariat_core::infrastructure::keys::{
     generate_keypair, load_signing_key, save_signing_key, KeyPaths,
+};
+use secretariat_core::infrastructure::profile_store::{
+    load_profile as core_load_profile, save_profile as core_save_profile, PrincipalProfile,
 };
 use secretariat_core::Did;
 
@@ -340,6 +344,57 @@ pub async fn sync_now() -> Result<SyncReport, String> {
         sent_envelopes: outcome.sent_envelopes as u32,
         outbox_warnings: outcome.outbox_warnings,
     })
+}
+
+// ---------------------------------------------------------------------------
+// Principal profile — display name (presence, not identity)
+// ---------------------------------------------------------------------------
+//
+// The DID is identity; the profile is presence. The principal sets a
+// display name during onboarding (and can edit later). Stored locally
+// only — never sent over the wire.
+
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
+pub struct Profile {
+    pub display_name: String,
+}
+
+impl From<PrincipalProfile> for Profile {
+    fn from(p: PrincipalProfile) -> Self {
+        Self {
+            display_name: p.display_name.to_string(),
+        }
+    }
+}
+
+/// Read the principal's profile. Returns null when no profile has been
+/// set yet (fresh install pre-onboarding).
+#[tauri::command]
+#[specta::specta]
+pub async fn get_profile() -> Result<Option<Profile>, String> {
+    let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
+    let profile = core_load_profile(&paths.profile).map_err(|e| format!("load_profile: {e}"))?;
+    Ok(profile.map(Profile::from))
+}
+
+/// Set the principal's display name. Idempotent — overwrites whatever
+/// was there. The DisplayName parser enforces validity (non-empty,
+/// reasonable length, etc.).
+#[tauri::command]
+#[specta::specta]
+pub async fn set_profile(display_name: String) -> Result<Profile, String> {
+    let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
+    paths
+        .ensure_dirs()
+        .map_err(|e| format!("creating directories: {e}"))?;
+    let parsed = DisplayName::parse(&display_name)
+        .map_err(|e| format!("invalid name: {e}"))?;
+    let profile = PrincipalProfile {
+        display_name: parsed,
+    };
+    core_save_profile(&paths.profile, &profile)
+        .map_err(|e| format!("save_profile: {e}"))?;
+    Ok(profile.into())
 }
 
 // Re-export for the bindings module so it can register these commands.

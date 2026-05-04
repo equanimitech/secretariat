@@ -56,6 +56,7 @@ pub struct KeyPaths {
     pub bin: PathBuf,
     pub template: PathBuf,
     pub attention_envelope: PathBuf,
+    pub profile: PathBuf,
 }
 
 impl KeyPaths {
@@ -76,6 +77,7 @@ impl KeyPaths {
             bin: root.join("bin"),
             template: root.join("template.md"),
             attention_envelope: root.join("attention-envelope.md"),
+            profile: root.join("profile.json"),
             root,
         }
     }

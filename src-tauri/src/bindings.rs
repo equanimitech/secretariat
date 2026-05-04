@@ -24,6 +24,8 @@ pub fn generate_bindings() -> Builder<tauri::Wry> {
         secretariat::list_review_queue,
         secretariat::read_envelope,
         secretariat::sync_now,
+        secretariat::get_profile,
+        secretariat::set_profile,
     ])
 }
 

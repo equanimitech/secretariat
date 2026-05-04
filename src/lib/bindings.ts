@@ -255,6 +255,31 @@ async syncNow() : Promise<Result<SyncReport, string>> {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * Read the principal's profile. Returns null when no profile has been
+ * set yet (fresh install pre-onboarding).
+ */
+async getProfile() : Promise<Result<Profile | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_profile") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Set the principal's display name. Idempotent — overwrites whatever
+ * was there. The DisplayName parser enforces validity (non-empty,
+ * reasonable length, etc.).
+ */
+async setProfile(displayName: string) : Promise<Result<Profile, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_profile", { displayName }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -306,6 +331,7 @@ export type InviteClaimReport = { inviter_did: string; claimant_did: string; cla
  */
 registered: boolean }
 export type JsonValue = null | boolean | number | string | JsonValue[] | Partial<{ [key in string]: JsonValue }>
+export type Profile = { display_name: string }
 /**
  * Error types for recovery operations (typed for frontend matching)
  */

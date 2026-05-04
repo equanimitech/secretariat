@@ -10,6 +10,7 @@ pub mod did_web_resolver;
 pub mod ed25519_signer;
 pub mod keys;
 pub mod markdown;
+pub mod profile_store;
 #[cfg(target_os = "macos")]
 pub mod touchid;
 pub mod transport;
@@ -22,5 +23,6 @@ pub use did_web_resolver::DidWebResolver;
 pub use ed25519_signer::{AlwaysAllowGate, BiometricGate, Ed25519Signer};
 pub use keys::{generate_keypair, load_signing_key, save_signing_key, write_did_document, KeyError, KeyPaths};
 pub use markdown::{embed_stamp, parse_document, MarkdownError, ParsedDocument};
+pub use profile_store::{load_profile, save_profile, PrincipalProfile, ProfileStoreError};
 #[cfg(target_os = "macos")]
 pub use touchid::TouchIdGate;
