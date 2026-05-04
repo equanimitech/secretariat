@@ -79,30 +79,106 @@ What changes architecturally:
 - Windows / Linux. Tauri is cross-platform but the front-door pivot ships
   macOS-only first (matches AGENTS.md "Mac-only Day 1").
 
-## Slices
+## The model — review session, not real-time (locked 2026-05-04)
+
+Refined after first pass at slicing. The original plan leaned toward a
+chat-like UX (push notifications, real-time delivery, in-app compose
+textarea). That's wrong direction. The tagline locks the model:
+
+> *"Async generative communication for professionals, stamped by humans."*
+
+Three pillars:
+
+- **Drafting is async and non-blocking.** The AI assistant (Claude Code,
+  ChatGPT, etc.) drafts envelopes throughout the day; nothing waits on
+  the principal. Drafts queue in the outbox.
+- **Stamping is principal-initiated, batched.** The principal opens
+  Secretariat at a chosen time, runs a *review session* — sees the
+  queue, reads bodies, stamps approved drafts. Stamp = approval = send.
+- **No surprises, no notifications.** No push, no banner, no badge that
+  pulls attention. Sync happens when the principal initiates it (open
+  app, run "sync now"). Background poll exists at the floor (15min) but
+  produces no surface — it's just keeping local state warm.
+
+The app's only jobs are:
+
+1. **Onboarding** (one-time) — explain the draft/review/stamp/send flow,
+   wire identity, claim invite, register `sec-mcp` into Claude.
+2. **Review surface** — inbox view + outbox-queue review session,
+   batch-stamp affordance.
+3. **Self-update** silently.
+
+What the app explicitly does *not* do:
+
+- ✗ Notifications — drop entirely. Principal owns when they look.
+- ✗ Push-on-enqueue (relay-side) — same reason; replaced by an explicit
+  "sync now" button / MCP tool / CLI command.
+- ✗ Compose textarea (v0.2) — drafting lives in the AI assistant.
+  *Tiny in-app editing/drafting tools may land in v0.3+ as a quality-of-life
+  add for principals who want to tweak a draft before stamping; not v0.2.*
+
+## Slices (v2 — review-session model)
 
 Vertical slices, smallest first:
 
-1. **Identity slice** — Tauri command `init_identity()` + `current_did()`,
-   wired through `secretariat-core`. Minimal "Welcome → Generate identity"
-   onboarding screen. Replaces `sec init` for the app path.
-2. **Invite slice** — `claim_invite(url)` + `create_invite(purpose)`. Paste
-   URL into onboarding screen → done.
-3. **Inbox slice** — `list_inbox()` + `read_envelope(id)`. Background task
-   polls relay every 15min (same cadence as daemon); on new envelope, fires
-   notification.
-4. **Compose + stamp slice** — `compose_draft(to, body, ...)` writes file;
-   `stamp_draft(path)` triggers Touch ID; `send_now(path)` flushes outbox.
-   Compose form has a textarea (no body-drop bug class).
-5. **Distribution slice** — `tauri build` configured with real updater
-   endpoint + Ed25519 signer + notarization in CI. First `Secretariat-0.2.0.dmg`.
-6. **MCP-on-first-launch slice** — app calls `sec mcp install` on first
-   launch (via process plugin or shelled cmd) so Claude Code integration
-   stays one-step.
+1. **Identity slice** — Tauri commands `init_identity()`, `current_identity()`,
+   `secretariat_root()`. ✅ shipped 2026-05-04.
 
-Slices 1–4 are pure Tauri command additions, no UX rebuild required (the
-React shell already has windows + command palette + preferences). Slice 5
-is the distribution shift. Slice 6 ties back to the Claude integration.
+2. **Correspondence-invite slice** — invites establish *bilateral
+   correspondence*, not platform onboarding. The invite-claim flow is
+   semantically "let's be contacts who exchange stamped envelopes," not
+   "join Secretariat via my link." This reframe maps directly to the
+   book's Agent Contract concept (every correspondence is a bilateral
+   contract between two principals).
+
+   Concrete:
+   - Register `secretariat://invite/<token>` URL scheme; clicking opens
+     the app and claims the invite.
+   - Minimal landing page served by the **relay itself** at
+     `<relay>/v0/invite/<token>` (HTML view alongside the existing JSON
+     via Accept header / `?view=html`): shows inviter DID + purpose, an
+     "Open in Secretariat" button (deep link), fallback "Install
+     Secretariat" link to the latest GitHub release. Single static HTML,
+     no JS framework.
+   - **Bidirectional contact-add becomes the defining behavior**: on
+     claim, the relay records both DIDs and exposes a notification queue
+     the inviter's daemon drains so it auto-adds the claimer as a
+     contact. (Was tracked as separate "C. Bidirectional contact"; folds
+     in here naturally.)
+   - Optional richer relationship metadata may grow over time —
+     suggested-name, purpose, an initial bilateral contract document
+     signed by both. Out of scope for v0.2; the slice ships with just
+     DID + purpose.
+   - CLI paste flow stays as fallback for installed power users.
+
+3. **Review surface slice** — Tauri commands `list_inbox()`, `list_outbox_queue()`,
+   `read_envelope(path)`, `sync_now()` (explicit pull from registered relays).
+   Frontend: a single review window with two tabs (Inbox / Outbox queue).
+   Outbox-queue items show body inline + Touch ID stamp button; batch-select
+   for stamping multiple at once. Background poll continues at 15min floor
+   but renders nothing visible.
+
+4. **Onboarding slice** — multi-step welcome the first time the app opens:
+   1. Identity (calls `init_identity`)
+   2. Claim invite (paste field; auto-filled if launched via deep link)
+   3. Wire MCP into Claude (calls `sec mcp install`)
+   4. Explainer: draft/review/stamp/send flow, with diagram or step-by-step.
+   5. End state: "Ready to receive your first envelope."
+
+5. **Distribution slice** — `tauri build` + signed/notarized .dmg + Tauri
+   Updater bundle. ✅ workflow scaffolded; awaits Apple cert + secret config
+   (see release prereqs Things task).
+
+6. **MCP-on-first-launch slice** — folded into onboarding step 3.
+
+### Out of v0.2
+
+- In-app compose / drafting tools (v0.3+ quality-of-life)
+- Push-on-enqueue (philosophy mismatch)
+- Notifications (philosophy mismatch)
+- (was: web landing page punted — pulled back into slice 2 as a relay-served minimal HTML view)
+- Boilerplate library (separate pain doc; v0.3+)
+- (was: bidirectional contact treated as separate — folded into slice 2 as the defining behavior of a correspondence invite)
 
 ## Decision log
 
