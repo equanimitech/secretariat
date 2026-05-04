@@ -13,7 +13,7 @@
   "volumes": [
     {
       "mountPath": "/data",
-      "name": "secretariat-state"
+      "name": "secretariat-relay-volume"
     }
   ]
 }

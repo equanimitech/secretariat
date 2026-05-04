@@ -1,6 +1,4 @@
-# Multi-stage build: compile with full toolchain, ship with a slim Debian
-# runtime that has /bin/sh (Railway's startCommand uses shell expansion for
-# ${PORT:-8443}, so distroless/cc — which lacks a shell — won't work).
+# Multi-stage build: compile with full toolchain, ship with slim Debian.
 # Image size: ~85 MB.
 
 FROM rust:1.90-slim AS builder
@@ -16,7 +14,7 @@ COPY src-tauri ./src-tauri
 
 RUN cargo build --release --bin sec-relay -p secretariat-relay
 
-# Runtime stage — needs /bin/sh + ca-certificates for HTTPS DID resolution.
+# Runtime stage — ca-certificates for HTTPS DID resolution.
 FROM debian:bookworm-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -27,14 +25,12 @@ COPY --from=builder /build/target/release/sec-relay /usr/local/bin/sec-relay
 
 EXPOSE 8443
 
-# Persistent state lives here. Railway mounts a volume at /data; if no
-# volume is mounted (local `docker run`) the binary degrades to an
-# in-memory relay. Declared as VOLUME so anonymous mounts persist by
-# default if the operator forgets to attach one.
-VOLUME ["/data"]
+# Persistent state lives here. Railway mounts its managed volume at /data
+# (declared in railway.json `volumes`); local `docker run` should pass
+# `-v sec-relay-data:/data` explicitly. No VOLUME directive — Railway
+# rejects it, and anonymous mounts aren't portable across providers.
 ENV DATA_DIR=/data
 
-# `sec-relay serve` reads `PORT` from the environment internally (Railway,
-# Render, Fly, etc. all set it). Falls back to 8443 if unset. Pure exec form
-# — no shell required, fewer ways to fail.
+# `sec-relay serve` reads `PORT` from environment (Railway/Render/Fly set
+# it). Falls back to 8443 if unset.
 CMD ["/usr/local/bin/sec-relay", "serve"]
