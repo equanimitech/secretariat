@@ -6,18 +6,21 @@
 //!
 //! ## Anti-compulsion default
 //!
-//! v0 defaults to **hourly** polling, with a hard floor of 15 minutes.
-//! Tighter cadences are not exposed: even self-discipline cannot fight a
-//! substrate that delivers in 30 seconds. See `AGENTS.md` invariant
-//! "Equanimity by default" and the milestone doc's "Anti-compulsion rituals"
-//! section.
+//! Background polling defaults to **15 minutes** (the floor); tighter
+//! cadences are not exposed. The reasoning: a substrate that delivers in
+//! 30 seconds collapses into chat. The principal opts into immediacy
+//! intentionally via the `sync_now` MCP tool / `sec daemon tick` CLI —
+//! that's a deliberate act, not background pull.
+//!
+//! See `AGENTS.md` invariant "Equanimity by default" and the milestone
+//! doc's "Anti-compulsion rituals" section.
 //!
 //! ## Config
 //!
 //! `~/.secretariat/cadence.toml`:
 //!
 //! ```toml
-//! poll_interval_minutes = 60   # default 60, min 15
+//! poll_interval_minutes = 15   # default 15, min 15
 //! ```
 //!
 //! Missing file is fine — the daemon uses [`CadenceConfig::default`].
@@ -28,7 +31,7 @@ use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-const DEFAULT_POLL_INTERVAL_MIN: i64 = 60;
+const DEFAULT_POLL_INTERVAL_MIN: i64 = 15;
 const MIN_POLL_INTERVAL_MIN: i64 = 15;
 
 #[derive(Debug, Error)]
@@ -122,8 +125,8 @@ mod tests {
     }
 
     #[test]
-    fn default_is_hourly() {
-        assert_eq!(CadenceConfig::default().poll_interval_minutes, 60);
+    fn default_is_quarter_hourly() {
+        assert_eq!(CadenceConfig::default().poll_interval_minutes, 15);
     }
 
     #[test]
@@ -137,9 +140,9 @@ mod tests {
     fn second_poll_waits_for_interval() {
         let cfg = CadenceConfig::default();
         let last = t(10, 0);
-        // 30 minutes later: still under the hourly window.
-        let d = decide_poll(&cfg, t(10, 30), Some(last));
-        assert_eq!(d, PollDecision::WaitUntil(t(11, 0)));
+        // 5 minutes later: still under the 15-minute window.
+        let d = decide_poll(&cfg, t(10, 5), Some(last));
+        assert_eq!(d, PollDecision::WaitUntil(t(10, 15)));
     }
 
     #[test]
@@ -147,9 +150,9 @@ mod tests {
         let cfg = CadenceConfig::default();
         let last = t(10, 0);
         // exactly at interval boundary
-        assert_eq!(decide_poll(&cfg, t(11, 0), Some(last)), PollDecision::PollNow);
+        assert_eq!(decide_poll(&cfg, t(10, 15), Some(last)), PollDecision::PollNow);
         // and after
-        assert_eq!(decide_poll(&cfg, t(11, 1), Some(last)), PollDecision::PollNow);
+        assert_eq!(decide_poll(&cfg, t(10, 16), Some(last)), PollDecision::PollNow);
     }
 
     #[test]

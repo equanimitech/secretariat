@@ -307,6 +307,12 @@ impl SecretariatServer {
         let urgency = parse_urgency(params.urgency.as_deref())?;
         let from = load_principal_did(&self.paths)?;
 
+        let body = if params.body.trim().is_empty() {
+            None
+        } else {
+            Some(params.body)
+        };
+
         let req = ComposeRequest {
             from,
             to: Some(to),
@@ -314,23 +320,19 @@ impl SecretariatServer {
             urgency,
             source: params.source.unwrap_or_else(|| "mcp".to_string()),
             cadence_hint: params.cadence_hint,
+            body,
         };
 
         let path = compose_envelope(req, &self.paths.template, &self.paths.outbox, Utc::now())
             .map_err(|e| invalid_request(format!("compose failed: {e}")))?;
 
-        // Body is currently sourced from the AG template. v0 doesn't yet wire
-        // the user-supplied body into the file — it goes through the template
-        // by design. Note this in the response so the principal knows.
-        let _ = params.body;
-
         info!(file = %path.display(), "composed envelope via MCP");
 
         Ok(Json(ComposeOutput {
             file_path: path.display().to_string(),
-            note: "Draft written to outbox via the AG template. Edit the file to insert the \
-                   body, then stamp it manually (biometric-gated). The daemon will deliver \
-                   after stamping."
+            note: "Draft written to outbox. Show the body to the principal, get explicit \
+                   confirmation, then stamp via the `stamp` tool (biometric-gated). The daemon \
+                   will deliver after stamping; on macOS the LaunchAgent polls every 15 minutes."
                 .to_string(),
         }))
     }

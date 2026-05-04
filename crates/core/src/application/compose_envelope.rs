@@ -36,6 +36,10 @@ pub struct ComposeRequest {
     pub urgency: EnvelopeUrgency,
     pub source: String,
     pub cadence_hint: Option<String>,
+    /// Raw markdown body. When `Some`, it replaces the AG template entirely —
+    /// caller is responsible for shape. When `None`, the user's template at
+    /// `~/.secretariat/template.md` is used as a scaffold.
+    pub body: Option<String>,
 }
 
 pub fn compose_envelope(
@@ -44,11 +48,6 @@ pub fn compose_envelope(
     outbox_root: &Path,
     now: DateTime<Utc>,
 ) -> Result<PathBuf, ComposeError> {
-    let template = fs::read_to_string(template_path).map_err(|e| ComposeError::Io {
-        path: template_path.to_path_buf(),
-        source: e,
-    })?;
-
     let envelope = build_envelope(&request);
     let recipient_dir_name = match &request.to {
         Some(did) => sanitize_did_for_filename(did.as_str()),
@@ -64,7 +63,17 @@ pub fn compose_envelope(
     let filename = generate_filename(now);
     let target_path = target_dir.join(filename);
 
-    let body = strip_existing_frontmatter(&template);
+    let body_owned: String;
+    let body: &str = match &request.body {
+        Some(b) => b.as_str(),
+        None => {
+            body_owned = fs::read_to_string(template_path).map_err(|e| ComposeError::Io {
+                path: template_path.to_path_buf(),
+                source: e,
+            })?;
+            strip_existing_frontmatter(&body_owned)
+        }
+    };
     let content = embed_stamp(body, Some(&envelope), None)?;
 
     fs::write(&target_path, content).map_err(|e| ComposeError::Io {
@@ -150,6 +159,7 @@ mod tests {
             urgency: EnvelopeUrgency::Soon,
             source: "test".into(),
             cadence_hint: None,
+            body: None,
         };
 
         let now = Utc.with_ymd_and_hms(2026, 4, 30, 14, 25, 0).unwrap();
@@ -186,6 +196,7 @@ mod tests {
             urgency: EnvelopeUrgency::Whenever,
             source: "test".into(),
             cadence_hint: None,
+            body: None,
         };
 
         let now = Utc.with_ymd_and_hms(2026, 4, 30, 9, 0, 0).unwrap();
@@ -211,6 +222,7 @@ mod tests {
             urgency: EnvelopeUrgency::Whenever,
             source: "test".into(),
             cadence_hint: None,
+            body: None,
         };
 
         let now = Utc.with_ymd_and_hms(2026, 4, 30, 9, 0, 0).unwrap();

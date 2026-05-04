@@ -36,6 +36,12 @@ pub struct Args {
     /// Optional cadence hint for the receiver (e.g. "morning", "weekly").
     #[arg(long)]
     cadence_hint: Option<String>,
+
+    /// Raw markdown body. When supplied, replaces the AG template entirely —
+    /// the caller is responsible for shape. When omitted, the user's
+    /// `~/.secretariat/template.md` scaffold is used.
+    #[arg(long)]
+    body: Option<String>,
 }
 
 #[derive(clap::ValueEnum, Debug, Clone, Copy)]
@@ -91,6 +97,7 @@ pub fn run(args: Args) -> Result<()> {
         urgency: args.urgency.into(),
         source: args.source,
         cadence_hint: args.cadence_hint,
+        body: args.body,
     };
 
     let path = compose_envelope(req, &paths.template, &paths.outbox, Utc::now())
