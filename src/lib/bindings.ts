@@ -142,6 +142,119 @@ async updateQuickPaneShortcut(shortcut: string | null) : Promise<Result<null, st
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * Ensure the principal has an identity. Idempotent — generates a fresh
+ * did:key on first call, returns the existing one thereafter.
+ * 
+ * Mirrors `sec init` (without the optional `--did did:web:...` flag, which
+ * is a power-user case that can stay in the CLI for now).
+ */
+async initIdentity() : Promise<Result<IdentityState, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("init_identity") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Surface the current identity without generating one. Returns `None`
+ * (serialized as `null`) if no identity exists yet — the front-end can
+ * use this to decide whether to show onboarding or the main UI.
+ */
+async currentIdentity() : Promise<Result<IdentityState | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("current_identity") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Diagnostic — returns the absolute path to `~/.secretariat/`. Useful for
+ * "open in Finder" buttons and for surfacing where keys live.
+ */
+async secretariatRoot() : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("secretariat_root") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Claim a correspondence invite from a deep link or HTTPS URL.
+ * 
+ * Accepts either form:
+ * - `secretariat://<host>/v0/invite/<token>` (deep link from landing page)
+ * - `https://<host>/v0/invite/<token>` (raw HTTPS URL the inviter shared)
+ * 
+ * Generates a fresh identity if none exists yet (so a deep link click is
+ * the only step a first-time recipient needs). Maps to the existing
+ * `secretariat-core::application::claim_invite` use case.
+ */
+async claimInviteUrl(deepLinkOrUrl: string) : Promise<Result<InviteClaimReport, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("claim_invite_url", { deepLinkOrUrl }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * List received envelopes (`~/.secretariat/inbox/`).
+ */
+async listInbox() : Promise<Result<EnvelopeListing[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_inbox") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * List the principal's review queue — outbox drafts awaiting a stamp.
+ * Excludes already-stamped drafts (those are in flight to the relay)
+ * and the `sent/` historical archive.
+ */
+async listReviewQueue() : Promise<Result<EnvelopeListing[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_review_queue") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Decrypt + return the body of an envelope file. Plaintext envelopes
+ * pass through unchanged; encrypted envelopes are decrypted using the
+ * local signing key (key never leaves the device).
+ */
+async readEnvelope(filePath: string) : Promise<Result<EnvelopeRead, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("read_envelope", { filePath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Run one sync cycle against every registered relay. Pulls inbound
+ * envelopes, auto-adds contacts from claim events, drains stamped
+ * drafts from the outbox. Principal-initiated per the review-session
+ * model — no background push.
+ * 
+ * Idempotent and safe to call repeatedly. Returns a report the UI can
+ * surface (counts + non-fatal warnings).
+ */
+async syncNow() : Promise<Result<SyncReport, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("sync_now") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -170,6 +283,28 @@ quick_pane_shortcut: string | null;
  * If None, uses system locale detection
  */
 language: string | null }
+export type EnvelopeListing = { file_path: string; from: string | null; to: string | null; stamped: boolean; encrypted: boolean }
+export type EnvelopeRead = { body: string; from: string | null; to: string | null; was_encrypted: boolean }
+/**
+ * What `init_identity` reports back to the front-end.
+ */
+export type IdentityState = { 
+/**
+ * The principal's DID — `did:key:z…` for a fresh install.
+ */
+did: string; 
+/**
+ * Whether this call generated a new identity (true) or surfaced an
+ * existing one (false). The UI uses this to switch between
+ * "Welcome — your identity is …" vs "Welcome back — you're …".
+ */
+created: boolean }
+export type InviteClaimReport = { inviter_did: string; claimant_did: string; claimed_at: string; 
+/**
+ * True when the relay registered this principal as part of the claim
+ * (first-time onboarding). False when the principal was already a tenant.
+ */
+registered: boolean }
 export type JsonValue = null | boolean | number | string | JsonValue[] | Partial<{ [key in string]: JsonValue }>
 /**
  * Error types for recovery operations (typed for frontend matching)
@@ -195,6 +330,8 @@ export type RecoveryError =
  * JSON serialization/deserialization error
  */
 { type: "ParseError"; message: string }
+export type RelaySyncReport = { endpoint: string; inbound_count: number; auto_added_contacts: number; warnings: string[] }
+export type SyncReport = { per_relay: RelaySyncReport[]; sent_envelopes: number; outbox_warnings: string[] }
 
 /** tauri-specta globals **/
 

@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { check } from '@tauri-apps/plugin-updater'
 import { relaunch } from '@tauri-apps/plugin-process'
+import { onOpenUrl } from '@tauri-apps/plugin-deep-link'
 import { initializeCommandSystem } from './lib/commands'
 import { buildAppMenu, setupMenuLanguageListener } from './lib/menu'
 import { initializeLanguage } from './i18n/language-init'
@@ -108,7 +109,39 @@ function App() {
 
     // Check for updates 5 seconds after app loads
     const updateTimer = setTimeout(checkForUpdates, 5000)
-    return () => clearTimeout(updateTimer)
+
+    // Deep link listener — `secretariat://<host>/v0/invite/<token>` URLs
+    // arrive here when the user clicks "Open in Secretariat" on the
+    // relay's HTML landing page (or pastes a URL into a registered
+    // handler). Fires the Tauri claim command, which auto-runs init for
+    // first-time recipients.
+    let deepLinkUnsub: (() => void) | undefined
+    onOpenUrl(async urls => {
+      for (const url of urls) {
+        logger.info(`Deep link received: ${url}`)
+        const result = await commands.claimInviteUrl(url)
+        if (result.status === 'ok') {
+          logger.info('Invite claimed', { ...result.data })
+          alert(
+            `Connected to ${result.data.inviter_did}.\nYou can now exchange envelopes.`
+          )
+        } else {
+          logger.error(`Claim failed: ${result.error}`)
+          alert(`Could not claim invite:\n${result.error}`)
+        }
+      }
+    })
+      .then(unsub => {
+        deepLinkUnsub = unsub
+      })
+      .catch(err => {
+        logger.warn('Failed to register deep link handler', { error: err })
+      })
+
+    return () => {
+      clearTimeout(updateTimer)
+      deepLinkUnsub?.()
+    }
   }, [])
 
   return (
