@@ -141,6 +141,58 @@ pub fn run() {
             // NOTE: Application menu is built from JavaScript for i18n support
             // See src/lib/menu.ts for the menu implementation
 
+            // Background sync — keeps state warm without surfacing notifications.
+            // Per the review-session model
+            // (memory/feedback_review_session_model.md), the principal-initiated
+            // "Sync now" button is the primary affordance; this loop just
+            // means the inbox isn't empty when they open the app. Cadence
+            // honors `~/.secretariat/cadence.toml` (default 15-min floor,
+            // see core::application::delivery_policy).
+            tauri::async_runtime::spawn(async {
+                use secretariat_core::application::{sync_now, CadenceConfig};
+                use secretariat_core::infrastructure::keys::{load_signing_key, KeyPaths};
+                use secretariat_core::Did;
+
+                loop {
+                    let interval_min = match KeyPaths::discover() {
+                        Ok(paths) => CadenceConfig::load_or_default(
+                            &paths.root.join("cadence.toml"),
+                        )
+                        .map(|c| c.poll_interval_minutes)
+                        .unwrap_or(15),
+                        Err(_) => 15,
+                    };
+                    tauri::async_runtime::spawn_blocking(move || {
+                        std::thread::sleep(std::time::Duration::from_secs(
+                            (interval_min as u64).saturating_mul(60),
+                        ))
+                    })
+                    .await
+                    .ok();
+
+                    // Skip silently if no identity yet (pre-onboarding) or
+                    // if key/DID load fails. Errors don't kill the loop —
+                    // try again next tick.
+                    let Ok(paths) = KeyPaths::discover() else { continue };
+                    let did_file = paths.root.join("did");
+                    if !paths.signing_key.exists() || !did_file.exists() {
+                        continue;
+                    }
+                    let Ok(did_str) = std::fs::read_to_string(&did_file) else {
+                        continue;
+                    };
+                    let Ok(did) = Did::parse(did_str.trim()) else {
+                        continue;
+                    };
+                    let Ok(key) = load_signing_key(&paths.signing_key) else {
+                        continue;
+                    };
+                    if let Err(e) = sync_now(&paths, &did, &key).await {
+                        log::warn!("background sync failed: {e}");
+                    }
+                }
+            });
+
             Ok(())
         })
         .invoke_handler(builder.invoke_handler())
