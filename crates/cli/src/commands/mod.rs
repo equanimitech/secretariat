@@ -6,6 +6,7 @@ pub mod compose;
 pub mod contact;
 pub mod daemon;
 pub mod init;
+pub mod invite;
 pub mod list;
 pub mod read;
 pub mod stamp;

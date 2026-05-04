@@ -1,10 +1,11 @@
-//! Secretariat MCP server — stdio transport, 7 tools.
+//! Secretariat MCP server — stdio transport, 8 tools.
 //!
 //! Tools exposed:
 //!
 //! | Tool | Purpose |
 //! |---|---|
 //! | `compose` | Write an envelope to the outbox (principal stamps separately) |
+//! | `stamp` | Trigger biometric stamp on a draft (Touch ID gates regardless of caller) |
 //! | `list_outbox` | Pending drafts (stamped + unstamped) |
 //! | `list_inbox` | Verified inbound envelopes |
 //! | `read` | Decrypt + return body of an envelope |
@@ -12,11 +13,16 @@
 //! | `list_contacts` | Known peers |
 //! | `add_contact` | Manual contact entry |
 //!
+//! On `stamp`: the call only *initiates* the ceremony; the platform
+//! biometric gate (Touch ID via the Swift helper) blocks until the
+//! principal physically authorizes. Claude cannot bypass that. The
+//! tradeoff vs. principal-only initiation (rule 4 in earlier AGENTS.md
+//! drafts) is recorded explicitly: phishing/habituation risk is accepted
+//! because the dialog still requires a fingerprint, and the alternative
+//! (principal must context-switch to a terminal) eroded the workflow.
+//!
 //! Tools deliberately **not** exposed:
 //!
-//! - `stamp` — principal-only via the menubar (or `sec stamp` CLI). Rule 4
-//!   in `AGENTS.md`: only the principal stamps. If Claude could stamp, the
-//!   primitive collapses to forgery.
 //! - `send` — daemon-only. Once a principal stamps an envelope, the daemon
 //!   transmits it on cadence. Cleaner three-actor separation: Claude
 //!   composes, principal stamps, daemon transmits.
@@ -35,14 +41,17 @@ use rmcp::{
 };
 use schemars::JsonSchema;
 use secretariat_core::application::{
-    add_contact, compose_envelope, find_by_slug, list_contacts, list_inbox_files,
-    list_outbox_files, read_envelope, verify_document, ComposeRequest, ListedEnvelope,
-    VerifyOutcome,
+    add_contact, claim_invite, compose_envelope, create_invite, find_by_slug, list_contacts,
+    list_inbox_files, list_outbox_files, read_envelope, stamp_document, verify_document,
+    view_invite, ComposeRequest, ListedEnvelope, StampError, VerifyOutcome,
 };
-use secretariat_core::domain::DidMethod;
+use secretariat_core::domain::{DidMethod, StampAct};
+use secretariat_core::infrastructure::biometric::build_signer;
 use secretariat_core::infrastructure::composite_did_resolver::CompositeDidResolver;
 use secretariat_core::infrastructure::did_web_resolver::DidWebResolver;
-use secretariat_core::infrastructure::keys::KeyPaths;
+use secretariat_core::infrastructure::keys::{load_signing_key, KeyPaths};
+use secretariat_core::infrastructure::transport::RelayState;
+use secretariat_core::ports::SignerError;
 use secretariat_core::{Contact, Did, DisplayName, EnvelopeDepth, EnvelopeUrgency, RelayEndpoint};
 use serde::{Deserialize, Serialize};
 use tracing::info;
@@ -138,6 +147,24 @@ pub struct ReadOutput {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct StampParams {
+    /// Absolute path to the draft to stamp. Typically lives under
+    /// `~/.secretariat/outbox/<recipient-did>/`.
+    pub file_path: String,
+    /// Re-stamp even if a stamp is already present.
+    #[serde(default)]
+    pub force: bool,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct StampOutput {
+    pub stamped_path: String,
+    pub signer: String,
+    pub stamped_at: String,
+    pub doc_hash: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct VerifyParams {
     pub file_path: String,
 }
@@ -187,6 +214,49 @@ pub struct AddContactOutput {
     pub display_name: String,
 }
 
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct InviteCreateParams {
+    /// Free-form purpose hint shown to the recipient (e.g. "first-contact").
+    #[serde(default)]
+    pub purpose: Option<String>,
+    /// Token TTL in hours. Default: 168 (7 days). Server caps at 720.
+    #[serde(default)]
+    pub ttl_hours: Option<i64>,
+    /// Override the relay endpoint. Defaults to the first registered relay
+    /// in `~/.secretariat/relay-state.json`.
+    #[serde(default)]
+    pub endpoint: Option<String>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct InviteCreateOutput {
+    pub token: String,
+    pub claim_url: String,
+    pub expires_at: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct InviteClaimParams {
+    /// Claim URL the inviter shared
+    /// (e.g. `https://secretariat.equanimi.tech/v0/invite/<token>`).
+    pub claim_url: String,
+    /// Display name to give the inviter in the local contact book.
+    /// Defaults to the host portion of their DID.
+    #[serde(default)]
+    pub name: Option<String>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct InviteClaimOutput {
+    pub inviter_did: String,
+    pub claimant_did: String,
+    pub claimed_at: String,
+    /// Whether the relay registered the claimant's DID during this call.
+    pub registered: bool,
+    /// Whether the inviter was added to the local contact book.
+    pub contact_added: bool,
+}
+
 // ---------------------------------------------------------------------------
 // Tool router
 // ---------------------------------------------------------------------------
@@ -233,6 +303,71 @@ impl SecretariatServer {
                    body, then stamp it manually (biometric-gated). The daemon will deliver \
                    after stamping."
                 .to_string(),
+        }))
+    }
+
+    #[tool(
+        name = "stamp",
+        description = "Stamp a draft envelope. Computes the canonical body hash, \
+        triggers the platform biometric gate (Touch ID on macOS), embeds the \
+        ed25519 signature into the file's frontmatter, and writes it back. The \
+        biometric prompt blocks until the principal physically authorizes — the \
+        tool cannot bypass it. \
+        \
+        REQUIRED PRE-CALL CHECKLIST (do not skip — phishing/habituation defense): \
+        (1) Call `read` on the same `file_path` first. \
+        (2) Render the FULL decrypted body to the user verbatim, in a code block \
+        or quoted region — never a summary, never paraphrase. \
+        (3) Wait for the user to explicitly say 'stamp it' (or equivalent) AFTER \
+        seeing the body. Implicit consent from the prior turn does not count if \
+        the body has changed since. \
+        (4) Only then call `stamp`. \
+        \
+        The Touch ID dialog reason string includes the document's first-line \
+        headline plus a short hash prefix; the user can cross-check that against \
+        the body you displayed. If they differ, it means a different file was \
+        stamped — abort and investigate. \
+        \
+        Returns signer DID, timestamp, and full document hash on success. \
+        Errors: user cancelled Touch ID; file already stamped (pass \
+        `force: true` to re-stamp); helper missing."
+    )]
+    async fn stamp(
+        &self,
+        Parameters(params): Parameters<StampParams>,
+    ) -> Result<Json<StampOutput>, ErrorData> {
+        let path = PathBuf::from(&params.file_path);
+        let did = load_principal_did(&self.paths)?;
+        let key = load_signing_key(&self.paths.signing_key).map_err(|e| {
+            invalid_request(format!(
+                "loading signing key from {}: {e} (run `sec init` first)",
+                self.paths.signing_key.display()
+            ))
+        })?;
+        // `allow_test_biometrics=false`: in production the only honored gates are
+        // Touch ID (macOS) and explicitly-debug AlwaysAllow/AlwaysDeny. MCP never
+        // sees an `--allow-test-biometrics` CLI flag, so this is correct.
+        let signer = build_signer(did, key, false)
+            .map_err(|e| invalid_request(format!("biometric gate setup failed: {e}")))?;
+
+        let outcome = stamp_document(&path, &signer, StampAct::Attest, params.force, Utc::now())
+            .map_err(|e| match e {
+                StampError::AlreadyStamped => invalid_request(
+                    "file already has a stamp; pass `force: true` to re-stamp".into(),
+                ),
+                StampError::Signer(SignerError::BiometricRefused) => {
+                    invalid_request("biometric refused or cancelled".into())
+                }
+                other => invalid_request(format!("stamp failed: {other}")),
+            })?;
+
+        info!(file = %outcome.stamped_path.display(), "stamped envelope via MCP");
+
+        Ok(Json(StampOutput {
+            stamped_path: outcome.stamped_path.display().to_string(),
+            signer: outcome.stamp.signer.as_str().to_string(),
+            stamped_at: outcome.stamp.stamped_at.to_rfc3339(),
+            doc_hash: outcome.stamp.doc_hash.to_string(),
         }))
     }
 
@@ -360,6 +495,108 @@ impl SecretariatServer {
             display_name: display_str,
         }))
     }
+
+    #[tool(
+        name = "invite_create",
+        description = "Create a one-shot invite token at the relay. The principal \
+        must already be a registered tenant of `endpoint` (or the first registered \
+        relay in relay-state.json). Returns a claim URL the principal can share \
+        with a peer. Default TTL is 168 hours (7 days). Pair with `invite_claim` \
+        on the recipient side."
+    )]
+    async fn invite_create(
+        &self,
+        Parameters(params): Parameters<InviteCreateParams>,
+    ) -> Result<Json<InviteCreateOutput>, ErrorData> {
+        let did = load_principal_did(&self.paths)?;
+        let key = load_signing_key(&self.paths.signing_key).map_err(|e| {
+            invalid_request(format!(
+                "loading signing key from {}: {e} (run `sec init` first)",
+                self.paths.signing_key.display()
+            ))
+        })?;
+        let endpoint = match params.endpoint {
+            Some(s) => s,
+            None => first_registered_relay(&self.paths.relay_state)?,
+        };
+
+        let invite = create_invite(
+            &endpoint,
+            &did,
+            &key,
+            params.purpose.as_deref(),
+            params.ttl_hours,
+        )
+        .map_err(|e| invalid_request(format!("create_invite failed: {e}")))?;
+
+        info!(token = %invite.token, "invite created via MCP");
+
+        Ok(Json(InviteCreateOutput {
+            token: invite.token,
+            claim_url: invite.claim_url,
+            expires_at: invite.expires_at.to_rfc3339(),
+        }))
+    }
+
+    #[tool(
+        name = "invite_claim",
+        description = "Claim an invite issued by another principal. Auto-registers \
+        the local DID with the relay if not already registered, and adds the \
+        inviter to the local contact book. Returns inviter DID + claim metadata. \
+        Pair with `invite_create` on the inviter side."
+    )]
+    async fn invite_claim(
+        &self,
+        Parameters(params): Parameters<InviteClaimParams>,
+    ) -> Result<Json<InviteClaimOutput>, ErrorData> {
+        let did = load_principal_did(&self.paths)?;
+        let key = load_signing_key(&self.paths.signing_key).map_err(|e| {
+            invalid_request(format!(
+                "loading signing key from {}: {e} (run `sec init` first)",
+                self.paths.signing_key.display()
+            ))
+        })?;
+
+        // Preview first — refuse to claim an already-claimed invite.
+        let preview = view_invite(&params.claim_url)
+            .map_err(|e| invalid_request(format!("invite preview failed: {e}")))?;
+        if let Some(claimed_by) = &preview.claimed_by {
+            return Err(invalid_request(format!(
+                "invite has already been claimed (by {claimed_by})"
+            )));
+        }
+
+        let claimed = claim_invite(&params.claim_url, &did, &key)
+            .map_err(|e| invalid_request(format!("claim_invite failed: {e}")))?;
+
+        // Auto-add inviter as a contact, plus persist the relay endpoint.
+        let endpoint_origin = relay_origin_from_claim_url(&params.claim_url)?;
+        let display = match params.name.as_deref() {
+            Some(s) => DisplayName::parse(s)
+                .map_err(|e| invalid_request(format!("invalid name: {e}")))?,
+            None => default_display_for_did(&claimed.inviter_did)?,
+        };
+        let endpoint = RelayEndpoint::parse(&endpoint_origin)
+            .map_err(|e| invalid_request(format!("derived relay endpoint invalid: {e}")))?;
+        let contact = Contact::new(claimed.inviter_did.clone(), display, Some(endpoint));
+        let contact_added = add_contact(&self.paths.contacts, contact).is_ok();
+
+        if let Ok(mut state) = RelayState::load(&self.paths.relay_state) {
+            let entry = state.entry_mut(&endpoint_origin);
+            entry.registered = true;
+            let _ = state.save(&self.paths.relay_state);
+        }
+
+        info!(inviter = %claimed.inviter_did, "invite claimed via MCP");
+
+        Ok(Json(InviteClaimOutput {
+            inviter_did: claimed.inviter_did.as_str().to_string(),
+            claimant_did: claimed.claimant_did.as_str().to_string(),
+            claimed_at: claimed.claimed_at.to_rfc3339(),
+            registered: claimed.registered,
+            contact_added,
+        }))
+    }
 }
 
 #[tool_handler]
@@ -416,6 +653,42 @@ fn load_principal_did(paths: &KeyPaths) -> Result<Did, ErrorData> {
         ))
     })?;
     Did::parse(raw.trim()).map_err(|e| invalid_request(format!("malformed did file: {e}")))
+}
+
+fn first_registered_relay(path: &std::path::Path) -> Result<String, ErrorData> {
+    let state = RelayState::load(path)
+        .map_err(|e| invalid_request(format!("loading relay-state: {e}")))?;
+    let endpoint = state
+        .iter()
+        .find(|r| r.registered)
+        .map(|r| r.endpoint.clone());
+    endpoint.ok_or_else(|| {
+        invalid_request(
+            "no registered relay yet; run `sec daemon register --endpoint <url>` first \
+             or pass `endpoint` explicitly"
+                .to_string(),
+        )
+    })
+}
+
+fn relay_origin_from_claim_url(claim_url: &str) -> Result<String, ErrorData> {
+    let idx = claim_url
+        .find("/v0/invite/")
+        .ok_or_else(|| invalid_request("claim URL does not contain `/v0/invite/`".to_string()))?;
+    Ok(claim_url[..idx].to_string())
+}
+
+fn default_display_for_did(did: &Did) -> Result<DisplayName, ErrorData> {
+    let s = did.as_str();
+    let name = if let Some(rest) = s.strip_prefix("did:web:") {
+        rest.split(':').next().unwrap_or(rest).to_string()
+    } else if let Some(rest) = s.strip_prefix("did:key:") {
+        format!("did-key-{}", &rest.chars().take(8).collect::<String>())
+    } else {
+        s.to_string()
+    };
+    DisplayName::parse(name)
+        .map_err(|e| invalid_request(format!("default display name invalid: {e}")))
 }
 
 fn verify_outcome_to_view(outcome: VerifyOutcome) -> VerifyOutput {

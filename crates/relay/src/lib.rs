@@ -34,6 +34,9 @@ pub fn router(state: Arc<AppState>) -> Router {
             "/v0/inbox/:did",
             post(routes::inbox::post).get(routes::inbox::get),
         )
+        .route("/v0/invite", post(routes::invite::create))
+        .route("/v0/invite/:token", get(routes::invite::view))
+        .route("/v0/invite/:token/claim", post(routes::invite::claim))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }

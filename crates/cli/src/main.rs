@@ -37,6 +37,9 @@ enum Cmd {
 
     /// Decrypt + print the body of an envelope (encrypted or plaintext).
     Read(commands::read::Args),
+
+    /// Create or claim invite tokens against the relay.
+    Invite(commands::invite::Args),
 }
 
 fn main() -> Result<()> {
@@ -50,5 +53,6 @@ fn main() -> Result<()> {
         Cmd::Contact(a) => commands::contact::run(a),
         Cmd::Daemon(a) => commands::daemon::run(a),
         Cmd::Read(a) => commands::read::run(a),
+        Cmd::Invite(a) => commands::invite::run(a),
     }
 }

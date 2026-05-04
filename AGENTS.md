@@ -32,10 +32,25 @@ These are non-negotiable. They override the template's defaults where they confl
    under `lexicons/` — that directory is the source of truth for the on-wire
    shape, even though it does not yet drive runtime validation.
 
-4. **Never inline-stamp.** Only the principal stamps. Claude never calls
-   `sec stamp` on its own. Claude composes envelopes; the principal triggers
-   stamping at cadence. The biometric gate is the firewall — if Claude could
-   stamp, the whole primitive collapses to forgery.
+4. **Stamp ceremony is principal-attested, not Claude-attested.** Claude
+   *may* initiate `stamp` (via the MCP tool or `sec stamp`) but MUST first
+   show the principal the full decrypted body verbatim — code block or
+   quoted region, never a summary — and obtain explicit confirmation in
+   the same turn. Implicit consent from a prior turn does not count if the
+   file changed.
+
+   The biometric gate (Touch ID) blocks until the principal physically
+   authorizes; the dialog's reason string carries the document's first-line
+   headline + a short hash prefix so the principal can cross-check what
+   they're signing against what Claude displayed. If those differ, abort.
+
+   Tradeoff recorded explicitly: an earlier draft of this rule forbade
+   Claude from initiating stamp at all (terminal-only). That eroded the
+   workflow without meaningfully changing the threat model — Touch ID
+   already gates regardless of caller, and the principal's responsibility
+   is to read what they're stamping, not to type the command. Phishing
+   risk is mitigated by the show-body-first contract + headline-in-dialog,
+   not by who-types-the-command.
 
 5. **Compose envelopes following `~/.secretariat/template.md`.** This is the
    user-customizable AG (attentional-granularity) template, owned by the
@@ -169,6 +184,21 @@ When making decisions, optimize for these two flows.
   before claiming work complete.
 - **No unsolicited commits.** Only commit when the user explicitly asks.
 - **Removing files:** always use `rm -f`.
+- **Every principal-facing primitive ships on both interfaces.** When adding
+  any new operation that the principal uses (compose, contact ops, invite,
+  read, etc.), implement the four surfaces in parallel:
+  1. **Application use case** in `crates/core/src/application/<verb>_ops.rs` —
+     pure orchestration, IO via the existing port traits.
+  2. **CLI command** in `crates/cli/src/commands/<verb>.rs`, registered in
+     `cli/src/main.rs`.
+  3. **MCP tool** in `crates/mcp/src/server.rs`, exposed via `#[tool]` —
+     same parameter shape as the CLI flags, same return shape as the use
+     case's output struct.
+  4. **Tests** for the use case (unit) + integration tests for the CLI
+     and/or MCP surface where the cross-layer contract matters.
+
+  Daemon-only operations (poll, send) and principal-only operations
+  (stamp ceremony) are exceptions — see rule 4 and the milestone doc.
 
 ## Reuse — skills shipped with this user's `~/.claude/`
 

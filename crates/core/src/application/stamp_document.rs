@@ -66,10 +66,14 @@ pub fn stamp_document<S: Signer>(
         .and_then(|s| s.to_str())
         .map(|s| s.to_string());
 
-    let reason = match &basename {
-        Some(b) => format!("Stamp Secretariat envelope: {b}"),
-        None => "Stamp Secretariat envelope".to_string(),
-    };
+    // Reason string surfaced in the Touch ID dialog. Includes the first-line
+    // headline + a short hash prefix so the principal can spot a mismatch
+    // between what they think they're stamping and what the file actually
+    // contains. Defense against a compromised composer slipping different
+    // bytes between display and sign.
+    let headline = extract_headline(&parsed.body);
+    let short_hash = canonical_short_hash(&hash);
+    let reason = build_stamp_reason(basename.as_deref(), headline.as_deref(), &short_hash);
     let signature = signer.sign(&hash, &reason)?;
 
     let stamp = Stamp::new(
@@ -98,6 +102,47 @@ pub fn stamp_document<S: Signer>(
         stamped_path: file_path.to_path_buf(),
         stamp,
     })
+}
+
+/// Pull the first non-empty body line, strip leading markdown heading marks,
+/// trim, and cap at 80 chars. Returns `None` if the body has no usable line.
+fn extract_headline(body: &str) -> Option<String> {
+    for raw in body.lines() {
+        let line = raw.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let stripped = line.trim_start_matches('#').trim();
+        if stripped.is_empty() {
+            continue;
+        }
+        let mut out: String = stripped.chars().take(80).collect();
+        if stripped.chars().count() > 80 {
+            out.push('…');
+        }
+        return Some(out);
+    }
+    None
+}
+
+/// First 8 hex chars of the doc hash. Short enough to read aloud, long
+/// enough that flipping it requires a near-collision (~2^32 work).
+fn canonical_short_hash(hash: &crate::domain::DocHash) -> String {
+    hex::encode(&hash.as_bytes()[..4])
+}
+
+fn build_stamp_reason(
+    basename: Option<&str>,
+    headline: Option<&str>,
+    short_hash: &str,
+) -> String {
+    // macOS Touch ID dialogs render a single-line reason; keep it tight.
+    // Format: `<headline> [<short_hash>] — <basename>`
+    let head = headline.unwrap_or("Secretariat envelope");
+    match basename {
+        Some(b) => format!("{head} [{short_hash}] — {b}"),
+        None => format!("{head} [{short_hash}]"),
+    }
 }
 
 #[cfg(test)]
