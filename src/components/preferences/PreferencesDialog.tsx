@@ -1,6 +1,5 @@
 import { useState } from 'react'
-import { useTranslation } from 'react-i18next'
-import { Settings, Palette, Zap } from 'lucide-react'
+import { User } from 'lucide-react'
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -26,46 +25,37 @@ import {
   SidebarProvider,
 } from '@/components/ui/sidebar'
 import { useUIStore } from '@/store/ui-store'
-import { GeneralPane } from './panes/GeneralPane'
-import { AppearancePane } from './panes/AppearancePane'
-import { AdvancedPane } from './panes/AdvancedPane'
+import { ProfilePane } from './panes/ProfilePane'
 
-type PreferencePane = 'general' | 'appearance' | 'advanced'
+// Template panes (Appearance / General / Advanced) are intentionally
+// not imported. They remain on disk under `panes/` so we can repurpose
+// later — see `memory/project_settings_pane_shape.md`.
+
+type PreferencePane = 'profile'
 
 const navigationItems = [
   {
-    id: 'general' as const,
-    labelKey: 'preferences.general',
-    icon: Settings,
-  },
-  {
-    id: 'appearance' as const,
-    labelKey: 'preferences.appearance',
-    icon: Palette,
-  },
-  {
-    id: 'advanced' as const,
-    labelKey: 'preferences.advanced',
-    icon: Zap,
+    id: 'profile' as const,
+    label: 'Profile',
+    icon: User,
   },
 ] as const
 
 export function PreferencesDialog() {
-  const { t } = useTranslation()
-  const [activePane, setActivePane] = useState<PreferencePane>('general')
+  const [activePane, setActivePane] = useState<PreferencePane>('profile')
   const preferencesOpen = useUIStore(state => state.preferencesOpen)
   const setPreferencesOpen = useUIStore(state => state.setPreferencesOpen)
 
   const getPaneTitle = (pane: PreferencePane): string => {
-    return t(`preferences.${pane}`)
+    return navigationItems.find(item => item.id === pane)?.label ?? pane
   }
 
   return (
     <Dialog open={preferencesOpen} onOpenChange={setPreferencesOpen}>
       <DialogContent className="overflow-hidden p-0 md:max-h-[600px] md:max-w-[900px] lg:max-w-[1000px] font-sans rounded-xl">
-        <DialogTitle className="sr-only">{t('preferences.title')}</DialogTitle>
+        <DialogTitle className="sr-only">Settings</DialogTitle>
         <DialogDescription className="sr-only">
-          {t('preferences.description')}
+          Manage your Secretariat profile, identity, and storage.
         </DialogDescription>
 
         <SidebarProvider className="items-start">
@@ -85,7 +75,7 @@ export function PreferencesDialog() {
                             className="w-full"
                           >
                             <item.icon />
-                            <span>{t(item.labelKey)}</span>
+                            <span>{item.label}</span>
                           </button>
                         </SidebarMenuButton>
                       </SidebarMenuItem>
@@ -103,14 +93,12 @@ export function PreferencesDialog() {
                   <BreadcrumbList>
                     <BreadcrumbItem className="hidden md:block">
                       <BreadcrumbLink asChild>
-                        <span>{t('preferences.title')}</span>
+                        <span>Settings</span>
                       </BreadcrumbLink>
                     </BreadcrumbItem>
                     <BreadcrumbSeparator className="hidden md:block" />
                     <BreadcrumbItem>
-                      <BreadcrumbPage>
-                        {getPaneTitle(activePane)}
-                      </BreadcrumbPage>
+                      <BreadcrumbPage>{getPaneTitle(activePane)}</BreadcrumbPage>
                     </BreadcrumbItem>
                   </BreadcrumbList>
                 </Breadcrumb>
@@ -118,9 +106,7 @@ export function PreferencesDialog() {
             </header>
 
             <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4 pt-0 max-h-[calc(600px-4rem)]">
-              {activePane === 'general' && <GeneralPane />}
-              {activePane === 'appearance' && <AppearancePane />}
-              {activePane === 'advanced' && <AdvancedPane />}
+              {activePane === 'profile' && <ProfilePane />}
             </div>
           </main>
         </SidebarProvider>

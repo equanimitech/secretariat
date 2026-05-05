@@ -9,6 +9,7 @@
 // walker ships.
 
 import { useCallback, useEffect, useState } from 'react'
+import { toast } from 'sonner'
 import {
   commands,
   type IdentityState,
@@ -70,16 +71,12 @@ export function ReviewSurface() {
         <ReviewButton
           label="Review inbox"
           count={inboxCount}
-          onClick={() => {
-            // walker lands next; placeholder for now.
-          }}
+          onClick={() => copyPromptToClipboard('inbox', inboxCount)}
         />
         <ReviewButton
           label="Review outbox"
           count={queueCount}
-          onClick={() => {
-            // walker lands next; placeholder for now.
-          }}
+          onClick={() => copyPromptToClipboard('outbox', queueCount)}
         />
       </div>
 
@@ -99,6 +96,35 @@ export function ReviewSurface() {
       )}
     </div>
   )
+}
+
+/// Copy a Claude-ready prompt to the clipboard. The cadenced in-app
+/// walker is still future work (see `docs/ideas/two-buttons-cadenced-reviews.md`),
+/// so the bridge today is: principal clicks button, prompt lands in
+/// clipboard, paste into Claude Code/Desktop, Claude walks the queue
+/// via the MCP tools.
+async function copyPromptToClipboard(
+  kind: 'inbox' | 'outbox',
+  count: number
+) {
+  const prompt =
+    kind === 'inbox'
+      ? `Walk me through my Secretariat inbox. There ${
+          count === 1 ? 'is 1 envelope' : `are ${count} envelopes`
+        } waiting. Use the Secretariat MCP tools — list_inbox and read — to show me each one in turn. After each, ask if I want to reply.`
+      : `Walk me through my Secretariat outbox queue. There ${
+          count === 1 ? 'is 1 draft' : `are ${count} drafts`
+        } awaiting review. Use the Secretariat MCP tools — list_review_queue and read — to show me each draft. For each, show the body, ask if I want to stamp it. Do not stamp without my explicit go.`
+  try {
+    await navigator.clipboard.writeText(prompt)
+    toast.success(
+      kind === 'inbox'
+        ? 'Inbox-review prompt copied — paste into Claude'
+        : 'Outbox-review prompt copied — paste into Claude'
+    )
+  } catch (err) {
+    toast.error(`Could not copy to clipboard: ${String(err)}`)
+  }
 }
 
 function ReviewButton({
