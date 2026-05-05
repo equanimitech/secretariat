@@ -1,39 +1,41 @@
-import {
-  ResizablePanelGroup,
-  ResizablePanel,
-  ResizableHandle,
-} from '@/components/ui/resizable'
+// Template chrome (sidebars, command palette, preferences dialog popup)
+// is commented out for v0.2.x — see `memory/project_settings_pane_shape.md`
+// + `memory/project_two_buttons_home.md`. Preserved verbatim so we can
+// uncomment when repurposing as menubar dropdown content / quick-pane host.
+//
+// import {
+//   ResizablePanelGroup,
+//   ResizablePanel,
+//   ResizableHandle,
+// } from '@/components/ui/resizable'
+// import { LeftSideBar } from './LeftSideBar'
+// import { RightSideBar } from './RightSideBar'
+// import { CommandPalette } from '@/components/command-palette/CommandPalette'
+// import { PreferencesDialog } from '@/components/preferences/PreferencesDialog'
+// import { useUIStore } from '@/store/ui-store'
+// import { cn } from '@/lib/utils'
+
 import { TitleBar } from '@/components/titlebar/TitleBar'
-import { LeftSideBar } from './LeftSideBar'
-import { RightSideBar } from './RightSideBar'
 import { MainWindowContent } from './MainWindowContent'
-import { CommandPalette } from '@/components/command-palette/CommandPalette'
-import { PreferencesDialog } from '@/components/preferences/PreferencesDialog'
 import { Toaster } from 'sonner'
 import { useTheme } from '@/hooks/use-theme'
-import { useUIStore } from '@/store/ui-store'
 import { useMainWindowEventListeners } from '@/hooks/useMainWindowEventListeners'
-import { cn } from '@/lib/utils'
 
-/**
- * Layout sizing configuration for resizable panels.
- * All values are percentages of total width.
- * Sidebar defaults + main default must equal 100.
- */
-const LAYOUT = {
-  leftSidebar: { default: 20, min: 15, max: 40 },
-  rightSidebar: { default: 20, min: 15, max: 40 },
-  main: { min: 30 },
-} as const
-
-// Main content default is calculated to ensure totals sum to 100%
-const MAIN_CONTENT_DEFAULT =
-  100 - LAYOUT.leftSidebar.default - LAYOUT.rightSidebar.default
+// Layout sizing for the resizable panels — kept here for when the
+// chrome comes back. Currently unused.
+//
+// const LAYOUT = {
+//   leftSidebar: { default: 20, min: 15, max: 40 },
+//   rightSidebar: { default: 20, min: 15, max: 40 },
+//   main: { min: 30 },
+// } as const
+// const MAIN_CONTENT_DEFAULT =
+//   100 - LAYOUT.leftSidebar.default - LAYOUT.rightSidebar.default
 
 export function MainWindow() {
   const { theme } = useTheme()
-  const leftSidebarVisible = useUIStore(state => state.leftSidebarVisible)
-  const rightSidebarVisible = useUIStore(state => state.rightSidebarVisible)
+  // const leftSidebarVisible = useUIStore(state => state.leftSidebarVisible)
+  // const rightSidebarVisible = useUIStore(state => state.rightSidebarVisible)
 
   // Set up global event listeners (keyboard shortcuts, etc.)
   useMainWindowEventListeners()
@@ -43,6 +45,10 @@ export function MainWindow() {
       <TitleBar />
 
       <div className="flex flex-1 overflow-hidden">
+        <MainWindowContent />
+        {/* Resizable sidebars commented out — restore by reinstating
+            `<ResizablePanelGroup direction="horizontal">` etc.
+
         <ResizablePanelGroup direction="horizontal">
           <ResizablePanel
             defaultSize={LAYOUT.leftSidebar.default}
@@ -73,11 +79,14 @@ export function MainWindow() {
             <RightSideBar />
           </ResizablePanel>
         </ResizablePanelGroup>
+        */}
       </div>
 
-      {/* Global UI Components (hidden until triggered) */}
-      <CommandPalette />
-      <PreferencesDialog />
+      {/* Global UI Components — hidden until triggered (template chrome).
+          Restored by uncommenting the imports above and the lines below.
+        <CommandPalette />
+        <PreferencesDialog />
+      */}
       <Toaster
         position="bottom-right"
         theme={
