@@ -27,11 +27,22 @@ the cost of one enum, one newtype, one field, and one projection union
 
 This is one merged project, not two parallel ones.
 
+## Substrate update — queues are the primitive (2026-05-05, post-implementation)
+
+Mid-slice-1 the substrate collapsed once more. The final shape is a
+flat `Recipient { owner: Did, handle: QueueHandle }` struct — no enum
+variants. Direct messages, local captures, and channel/newsletter
+posts all share that shape; routing is by `owner == self_did?`
+predicate, not by type. Stamps are allowed on any envelope. Wire
+format: `to: <owner-did>` + `handle: <namespace:slug>`, both always
+present. See `memory/project_substrate_simplifications.md` for the
+rationale; the slice descriptions below have been updated to match.
+
 ## Simplification accounting
 
 | Slice | Adds | Removes | Net |
 |---|---|---|---|
-| 1 — Substrate | `Recipient` enum, `EnvelopeKind`, `QueueHandle`, projection union (~150 LOC, 6 tests) | Future per-kind data models that won't need to exist (ideas pool, pains pool, agent-bid pool) | **subtractive in concept** |
+| 1 — Substrate | `Recipient` struct, `QueueHandle`, `capture_to_queue`, projection union (~280 LOC, 9 tests) | `Option<Did>` recipient, `EnvelopeKind`, `Recipient` enum + variants, `allows_stamp` invariant, `as_peer_did`/`as_queue_handle`/`SelfAddressed`/`LocalQueue` (~80 LOC) + parallel data models (ideas pool, pains pool, agent-bid pool) | **subtractive in concept, modestly additive in code** |
 | 2 — `/idea` skill migrates | `idea_capture` MCP tool (~40 LOC) | `Write to docs/ideas/*.md` skill body (~10 LOC); future per-skill capture handlers | **subtractive** |
 | 3 — Tray icon | `TrayIconBuilder` setup (~80 LOC) | Original menubar pitch's popover plan (never built); two-buttons home in `<ReviewSurface>` (built, now removable) | **subtractive in plan, +~80 LOC code** |
 | 4 — Window-less lifecycle + popover carve-out + 2-name profile | Lifecycle conditional (~30 LOC), NSPanel anchoring (~20 LOC), profile v2 schema migration (~30 LOC) | Persistent main-window assumption (already commented out, can now delete); auto-show on launch | **subtractive** |
@@ -45,62 +56,75 @@ roadmap, planned-but-unbuilt UI. The codebase ends slightly larger
 capture path, one review path. Subsequent versions stay simple by
 discipline.
 
-## The merged model — H↔H + H↔A on the same primitive
+## The merged model — one primitive for everything
 
 ```
-                        ┌────────────────────┐
-                        │    Envelope.to     │
-                        └─────────┬──────────┘
-                                  │
-                  ┌───────────────┴───────────────┐
-                  ▼                               ▼
-         Recipient::Peer(Did)         Recipient::LocalQueue(handle)
-              │                                   │
-       (crosses H↔H boundary)            (stays inside the principal)
-              │                                   │
-   stamp eventually required             stamp forbidden by invariant
-              │                                   │
-              ▼                                   ▼
-   ~/.secretariat/outbox/<did>/.md      ~/.secretariat/queues/<handle>/*.md
+                Envelope.recipient = (owner: Did, handle: QueueHandle)
+                            │
+        ┌───────────────────┴───────────────────┐
+        │                                       │
+   owner == self_did                       owner != self_did
+   (local capture)                  (peer DM, channel post, agent bid)
+        │                                       │
+   stays on disk                       deliver to owner's relay
+        │                                       │
+        ▼                                       ▼
+   ~/.secretariat/queues/<ns>/<slug>/   ~/.secretariat/outbox/<sanitized_did>/
 ```
 
-`EnvelopeKind = Letter | Idea` (v1). Walker projection unions both file
-trees — same markdown, same frontmatter, same domain entity, different
-recipient kind.
+Stamps are allowed on **any** envelope. Tamper-evident self-attestation
+of one's own captures is a valid use case. The send-routing rule
+decides what *happens* to a stamped envelope.
+
+Three real-world cases collapse to one shape:
+
+- **Direct message** — `(peer_did, inbox:default)`. Default DM handle.
+- **Local capture** — `(self_did, inbox:triage)` etc. Stays on disk.
+- **Channel post** — `(publisher_did, channel:foo)`. Multi-subscriber
+  polling on the relay side; domain-layer no-op.
+
+Walker projection unions `outbox/<sanitized_did>/` AND `queues/<ns>/<slug>/`
+— same markdown, same frontmatter, same domain entity, discriminated
+at the UI by `to == self_did?`.
 
 ## Sequencing
 
 Six slices. Strictly ordered: each depends on what's before. Stop at
 any slice; partial release still useful.
 
-### Slice 1 — Substrate (1 day)
+### Slice 1 — Substrate (DONE 2026-05-05)
 
-The wire-format change lands first because all UI choices depend on it.
+The wire-format change landed first because all UI choices depend on it.
 
-**What changes:**
+**What changed (final, post-collapse):**
 - `crates/core/src/domain/envelope.rs` — `Envelope.to: Option<Did>`
-  becomes `Envelope.recipient: Recipient`. New enum
-  `Recipient::Peer(Did) | Recipient::LocalQueue(QueueHandle)`. Existing
-  serialization for `Peer` matches today's `Some(Did)` byte-for-byte.
+  becomes `Envelope.recipient: Recipient`. Wire format unified:
+  `to: <owner-did>` + `handle: <namespace:slug>`, both always present.
+  Legacy `to:`-only envelopes synthesize `inbox:default` on read.
+- New value object `crates/core/src/domain/recipient.rs` — flat struct
+  `{ owner: Did, handle: QueueHandle }`. No enum variants. `is_local(me)`
+  predicate replaces variant matching.
 - New value object `crates/core/src/domain/queue_handle.rs` — newtype
-  parsing `^[a-z]+:[a-z0-9-]+$`, only `inbox:*` recognized in v1.
-- New field `Envelope.kind: EnvelopeKind` (`Letter` default for back-compat,
-  `Idea` for local-queue captures).
-- Domain invariant: `Recipient::LocalQueue` rejects stamps at construction.
-- Application layer: new `capture_to_queue(handle, kind, body)` use case
-  in `crates/core/src/application/capture_ops.rs`. Walker projection
-  (`list_review_queue` / `list_outbox_queue`) extended to union
-  `outbox/<peer>/` AND `queues/<handle>/`.
-- Lexicon: update `lexicons/tech.equanimi.secretariat.envelope` with the
-  new fields. Schema is mutable until self-use validates.
-- Tests: domain (4-6 cases for Recipient/QueueHandle/invariants),
-  application (capture roundtrip, projection union), MCP boundary.
+  parsing `^[a-z]+:[a-z0-9-]+$`, free-form namespaces.
+- Stamp invariant **dropped**. Stamps allowed on any envelope including
+  self-addressed local captures. `send_envelope` rejects only
+  `owner == from` (would have nowhere to deliver to).
+- Application layer: new `capture_to_queue` use case in
+  `crates/core/src/application/capture_ops.rs`. Walker projection
+  (`list_review_queue`) unions `outbox/<peer>/` AND `queues/<ns>/<slug>/`.
+- Lexicon: `lexicons/tech.equanimi.secretariat.envelope` documents the
+  unified `(to, handle)` pair.
+- Surfaces wired: CLI `sec compose --to <did> [--handle <h>]`,
+  `sec capture --queue <ns:slug>`. MCP `compose` (with optional
+  `handle` param), MCP `capture`. Tauri `list_review_queue` unions
+  both streams. tauri-specta bindings regenerated.
+- Tests: 175 core (was 168 pre-substrate), v0_correspondence including
+  a non-default-handle DM round-trip.
 
-**Demo:** `sec capture --kind=idea --queue=inbox:triage "tell dad chapter
-3 needs more pressure"` → file lands at
-`~/.secretariat/queues/inbox/triage/<timestamp>.md`. `sec list review`
-(or the existing list_review_queue) shows the idea alongside any
-unstamped peer drafts. Doesn't touch the app yet.
+**Demo:** `sec capture --queue=inbox:triage --body="tell dad chapter 3
+needs more pressure"` → file lands at
+`~/.secretariat/queues/inbox/triage/<timestamp>.md`. The principal's
+review session sees it alongside any unstamped peer drafts.
 
 ### Slice 2 — Migrate `/idea` skill to use the substrate (½ day)
 
@@ -109,13 +133,11 @@ building UI on top of it.
 
 **What changes:**
 - `~/.claude/skills/idea/SKILL.md` — rewrite the skill body. Instead of
-  `Write` to `docs/ideas/<slug>.md`, call `sec capture --kind=idea
-  --queue=inbox:triage` with the user's raw phrasing as body.
-- Add MCP tool `idea_capture` (or just `capture`) wrapping the
-  application use case so the skill can call it via tauri-specta when
-  Secretariat is wired into Claude.
+  `Write` to `docs/ideas/<slug>.md`, call the MCP `capture` tool with
+  `queue: inbox:triage` and the user's raw phrasing as body.
+- Same treatment for `/pain` (queue: `inbox:pain`).
 - Existing `docs/ideas/*.md` files stay on disk (no migration). New
-  ideas go to the substrate from this point forward.
+  captures go to the substrate from this point forward.
 
 **Demo:** in any Claude conversation, `/idea something I want to send
 later` → idea lands in `~/.secretariat/queues/inbox/triage/`, visible in
