@@ -13,8 +13,8 @@ use std::path::PathBuf;
 
 use secretariat_core::application::{
     archive_envelope as core_archive_envelope, defer_envelope as core_defer_envelope,
-    list_inbox_files, list_outbox_queue, read_envelope as core_read_envelope,
-    sync_now as core_sync_now,
+    list_inbox_files, list_review_queue as core_list_review_queue,
+    read_envelope as core_read_envelope, sync_now as core_sync_now,
 };
 use secretariat_core::domain::DisplayName;
 use secretariat_core::infrastructure::keys::{
@@ -230,7 +230,14 @@ mod tests {
 pub struct EnvelopeListing {
     pub file_path: String,
     pub from: Option<String>,
+    /// DID of the queue *owner* (recipient). Always set on well-formed
+    /// envelopes. UI compares to the principal's own DID to discriminate
+    /// local capture (`to == self`) from peer/channel post (`to != self`).
     pub to: Option<String>,
+    /// Queue handle on the owner's machine (`<namespace>:<slug>`). Always
+    /// set on well-formed envelopes alongside `to`. Direct messages
+    /// conventionally use `inbox:default`.
+    pub queue: Option<String>,
     pub stamped: bool,
     pub encrypted: bool,
 }
@@ -241,6 +248,7 @@ impl From<secretariat_core::application::ListedEnvelope> for EnvelopeListing {
             file_path: e.file_path,
             from: e.from,
             to: e.to,
+            queue: e.queue,
             stamped: e.stamped,
             encrypted: e.encrypted,
         }
@@ -256,15 +264,19 @@ pub async fn list_inbox() -> Result<Vec<EnvelopeListing>, String> {
     Ok(listed.into_iter().map(EnvelopeListing::from).collect())
 }
 
-/// List the principal's review queue — outbox drafts awaiting a stamp.
-/// Excludes already-stamped drafts (those are in flight to the relay)
-/// and the `sent/` historical archive.
+/// List the principal's review queue — every unstamped envelope
+/// addressed to a queue, peer or local. Substrate v0.3 (queues-as-
+/// primitive) unions `outbox/<peer>/*.md` (peer letters waiting to be
+/// stamped) with `queues/<ns>/<slug>/*.md` (local captures: ideas,
+/// journal, future-self notes). Both `to` and `queue` are populated
+/// on every entry — discriminate local vs peer by comparing `to` to
+/// the principal's own DID.
 #[tauri::command]
 #[specta::specta]
 pub async fn list_review_queue() -> Result<Vec<EnvelopeListing>, String> {
     let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
-    let listed =
-        list_outbox_queue(&paths.outbox).map_err(|e| format!("list_review_queue: {e}"))?;
+    let listed = core_list_review_queue(&paths.outbox, &paths.queues)
+        .map_err(|e| format!("list_review_queue: {e}"))?;
     Ok(listed.into_iter().map(EnvelopeListing::from).collect())
 }
 
@@ -272,7 +284,10 @@ pub async fn list_review_queue() -> Result<Vec<EnvelopeListing>, String> {
 pub struct EnvelopeRead {
     pub body: String,
     pub from: Option<String>,
+    /// DID of the queue *owner* (recipient).
     pub to: Option<String>,
+    /// Queue handle on the owner's machine (`<namespace>:<slug>`).
+    pub queue: Option<String>,
     pub was_encrypted: bool,
 }
 
@@ -290,6 +305,7 @@ pub async fn read_envelope(file_path: String) -> Result<EnvelopeRead, String> {
         body: res.body,
         from: res.envelope_from.map(|d| d.as_str().to_string()),
         to: res.envelope_to.map(|d| d.as_str().to_string()),
+        queue: res.envelope_queue.map(|h| h.as_str().to_string()),
         was_encrypted: res.was_encrypted,
     })
 }

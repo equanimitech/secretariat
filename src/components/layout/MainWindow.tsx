@@ -44,8 +44,10 @@ export function MainWindow() {
     <div className="flex h-screen w-full flex-col overflow-hidden rounded-[var(--app-corner-radius)] bg-background">
       <TitleBar />
 
-      <div className="flex flex-1 overflow-hidden">
-        <MainWindowContent />
+      <div className="flex w-full flex-1 overflow-hidden">
+        <div className="flex w-full flex-1">
+          <MainWindowContent />
+        </div>
         {/* Resizable sidebars commented out — restore by reinstating
             `<ResizablePanelGroup direction="horizontal">` etc.
 

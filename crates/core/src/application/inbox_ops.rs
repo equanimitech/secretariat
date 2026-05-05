@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use thiserror::Error;
 
-use crate::domain::Did;
+use crate::domain::{Did, QueueHandle};
 use crate::infrastructure::crypto::sealed::{open, signing_to_x25519, OpenError, SealedBox};
 use crate::infrastructure::keys::{load_signing_key, KeyError};
 use crate::infrastructure::markdown::{parse_document, MarkdownError};
@@ -37,7 +37,14 @@ pub enum InboxOpError {
 pub struct ListedEnvelope {
     pub file_path: String,
     pub from: Option<String>,
+    /// DID of the queue owner (recipient). Same field as `to` in older
+    /// API revisions — under the queues-as-primitive collapse this is
+    /// always the queue owner; consumers compute `is_local` by comparing
+    /// to the principal's own DID.
     pub to: Option<String>,
+    /// Queue handle (`<namespace>:<slug>`). Always present alongside
+    /// `to`, since every envelope is addressed to a queue.
+    pub queue: Option<String>,
     pub stamped: bool,
     pub encrypted: bool,
 }
@@ -46,7 +53,12 @@ pub struct ListedEnvelope {
 pub struct ReadResult {
     pub body: String,
     pub envelope_from: Option<Did>,
+    /// Owner DID of the recipient queue. None only if the envelope had
+    /// no frontmatter (malformed file).
     pub envelope_to: Option<Did>,
+    /// Handle of the recipient queue. None only if the envelope had no
+    /// frontmatter.
+    pub envelope_queue: Option<QueueHandle>,
     pub was_encrypted: bool,
 }
 
@@ -103,6 +115,9 @@ pub fn read_envelope(file_path: &Path, signing_key_path: &Path) -> Result<ReadRe
     let parsed = parse_document(&raw)?;
     let envelope = parsed.envelope.ok_or(InboxOpError::NoEnvelope)?;
 
+    let envelope_to = Some(envelope.recipient.owner.clone());
+    let envelope_queue = Some(envelope.recipient.handle.clone());
+
     if envelope.is_encrypted() {
         let signing = load_signing_key(signing_key_path)?;
         let x25519_secret = signing_to_x25519(&signing);
@@ -112,14 +127,16 @@ pub fn read_envelope(file_path: &Path, signing_key_path: &Path) -> Result<ReadRe
         Ok(ReadResult {
             body: String::from_utf8_lossy(&plaintext).into_owned(),
             envelope_from: Some(envelope.from),
-            envelope_to: envelope.to,
+            envelope_to,
+            envelope_queue,
             was_encrypted: true,
         })
     } else {
         Ok(ReadResult {
             body: parsed.body,
             envelope_from: Some(envelope.from),
-            envelope_to: envelope.to,
+            envelope_to,
+            envelope_queue,
             was_encrypted: false,
         })
     }
@@ -156,18 +173,20 @@ fn push_envelope(out: &mut Vec<ListedEnvelope>, path: &Path) -> Result<(), Inbox
         source: e,
     })?;
     let parsed = parse_document(&raw)?;
-    let (from, to, encrypted) = match &parsed.envelope {
+    let (from, to, queue, encrypted) = match &parsed.envelope {
         Some(e) => (
             Some(e.from.as_str().to_string()),
-            e.to.as_ref().map(|d| d.as_str().to_string()),
+            Some(e.recipient.owner.as_str().to_string()),
+            Some(e.recipient.handle.as_str().to_string()),
             e.is_encrypted(),
         ),
-        None => (None, None, false),
+        None => (None, None, None, false),
     };
     out.push(ListedEnvelope {
         file_path: path.display().to_string(),
         from,
         to,
+        queue,
         stamped: parsed.stamp.is_some(),
         encrypted,
     });
@@ -177,7 +196,7 @@ fn push_envelope(out: &mut Vec<ListedEnvelope>, path: &Path) -> Result<(), Inbox
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::EnvelopeBuilder;
+    use crate::domain::{EnvelopeBuilder, Recipient};
     use crate::infrastructure::markdown::embed_stamp;
     use tempfile::TempDir;
 
@@ -185,10 +204,15 @@ mod tests {
         Did::parse("did:web:rafa.equanimi.tech").unwrap()
     }
 
+    fn self_recipient() -> Recipient {
+        Recipient::new(rafa_did(), QueueHandle::parse("inbox:default").unwrap())
+    }
+
     #[test]
     fn list_inbox_returns_files() {
         let dir = TempDir::new().unwrap();
-        let env = EnvelopeBuilder::new(rafa_did()).build();
+        let env =
+            EnvelopeBuilder::new(rafa_did(), self_recipient()).build();
         let body = "hello\n";
         let content = embed_stamp(body, Some(&env), None).unwrap();
         std::fs::write(dir.path().join("a.md"), content).unwrap();
@@ -211,7 +235,8 @@ mod tests {
     #[test]
     fn read_plaintext_envelope_returns_body() {
         let dir = TempDir::new().unwrap();
-        let env = EnvelopeBuilder::new(rafa_did()).build();
+        let env =
+            EnvelopeBuilder::new(rafa_did(), self_recipient()).build();
         let body = "the body content\n";
         let content = embed_stamp(body, Some(&env), None).unwrap();
         let path = dir.path().join("envelope.md");

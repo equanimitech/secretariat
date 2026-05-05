@@ -32,8 +32,8 @@ pub enum SendError {
     ParseEnvelope(#[from] MarkdownError),
     #[error("envelope frontmatter missing — composer should have written it")]
     EnvelopeMissing,
-    #[error("envelope has no `to` field — cannot route")]
-    RecipientMissing,
+    #[error("envelope is addressed to its own sender ({did}) — local queue, not a peer; cannot route to relay")]
+    SelfAddressed { did: String },
     #[error("envelope is not stamped yet — principal must approve before sending")]
     NotStamped,
     #[error("no contact for recipient {recipient}")]
@@ -79,7 +79,12 @@ pub async fn send_stamped_envelope(
     if parsed.stamp.is_none() {
         return Err(SendError::NotStamped);
     }
-    let recipient_did = envelope.to.as_ref().ok_or(SendError::RecipientMissing)?;
+    let recipient_did = &envelope.recipient.owner;
+    if recipient_did == &envelope.from {
+        return Err(SendError::SelfAddressed {
+            did: recipient_did.as_str().to_string(),
+        });
+    }
 
     let contact = contacts
         .find_by_did(recipient_did)

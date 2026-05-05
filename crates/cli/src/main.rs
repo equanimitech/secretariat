@@ -20,6 +20,9 @@ enum Cmd {
     /// Scaffold an AG-shaped envelope into ~/.secretariat/outbox/.
     Compose(commands::compose::Args),
 
+    /// Capture a body of text into a local queue (idea, journal, future-self note).
+    Capture(commands::capture::Args),
+
     /// Embed a biometric-attested stamp into a markdown file.
     Stamp(commands::stamp::Args),
 
@@ -53,6 +56,7 @@ fn main() -> Result<()> {
     match cli.cmd {
         Cmd::Init(a) => commands::init::run(a),
         Cmd::Compose(a) => commands::compose::run(a),
+        Cmd::Capture(a) => commands::capture::run(a),
         Cmd::Stamp(a) => commands::stamp::run(a),
         Cmd::Verify(a) => commands::verify::run(a),
         Cmd::List(a) => commands::list::run(a),

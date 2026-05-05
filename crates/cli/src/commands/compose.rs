@@ -5,16 +5,24 @@ use chrono::Utc;
 use clap::Parser;
 
 use secretariat_core::application::{compose_envelope, ComposeRequest};
-use secretariat_core::domain::{Did, EnvelopeDepth, EnvelopeUrgency};
+use secretariat_core::domain::{
+    Did, EnvelopeDepth, EnvelopeUrgency, QueueHandle, Recipient,
+};
 
 use super::paths::{key_paths, load_did};
 
 #[derive(Parser, Debug)]
 pub struct Args {
-    /// Recipient DID. If omitted, the envelope is self-addressed
-    /// (lands in `outbox/_self/`).
+    /// Peer recipient DID. Required — for self-captures use `sec capture`.
     #[arg(long)]
-    to: Option<String>,
+    to: String,
+
+    /// Recipient queue handle on the peer's machine. Defaults to
+    /// `inbox:default` (the conventional handle for direct messages).
+    /// Use a different value to address a non-default queue, e.g. a
+    /// channel the peer publishes (`channel:book-progress`).
+    #[arg(long, default_value_t = String::from("inbox:default"))]
+    handle: String,
 
     /// Sender DID. Defaults to the principal's DID, derived from the seeded
     /// did.json. Pass `--from` only if you maintain multiple identities.
@@ -84,15 +92,14 @@ pub fn run(args: Args) -> Result<()> {
         Some(s) => Did::parse(s).map_err(|e| anyhow!("invalid --from: {e}"))?,
         None => load_did(&paths)?,
     };
-    let to = args
-        .to
-        .map(Did::parse)
-        .transpose()
-        .map_err(|e| anyhow!("invalid --to: {e}"))?;
+    let owner = Did::parse(&args.to).map_err(|e| anyhow!("invalid --to: {e}"))?;
+    let handle = QueueHandle::parse(&args.handle)
+        .map_err(|e| anyhow!("invalid --handle `{}`: {e}", args.handle))?;
+    let recipient = Recipient::new(owner, handle);
 
     let req = ComposeRequest {
         from,
-        to,
+        recipient,
         depth: args.depth.into(),
         urgency: args.urgency.into(),
         source: args.source,

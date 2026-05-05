@@ -181,7 +181,7 @@ mod tests {
     use super::*;
     use crate::domain::{
         canonical_body_hash, AttestedDocument, Did, DocHash, EnvelopeBuilder, EnvelopeDepth,
-        EnvelopeUrgency, Signature, StampAct,
+        EnvelopeUrgency, QueueHandle, Recipient, Signature, StampAct,
     };
     use chrono::TimeZone;
     use chrono::Utc;
@@ -191,12 +191,17 @@ mod tests {
     }
 
     fn fixture_envelope() -> crate::domain::Envelope {
-        EnvelopeBuilder::new(rafa_did())
-            .to(Did::parse("did:web:marcelo.ballestiero.com").unwrap())
-            .depth(EnvelopeDepth::Subtle)
-            .urgency(EnvelopeUrgency::Soon)
-            .source("claude-code-2026-04-30T14:22:00Z")
-            .build()
+        EnvelopeBuilder::new(
+            rafa_did(),
+            Recipient::new(
+                Did::parse("did:web:marcelo.ballestiero.com").unwrap(),
+                QueueHandle::parse("inbox:default").unwrap(),
+            ),
+        )
+        .depth(EnvelopeDepth::Subtle)
+        .urgency(EnvelopeUrgency::Soon)
+        .source("claude-code-2026-04-30T14:22:00Z")
+        .build()
     }
 
     fn fixture_stamp_for(hash: DocHash) -> Stamp {
@@ -303,10 +308,15 @@ mod tests {
         let body_wire = sealed.to_wire_string();
 
         // 3. Compose envelope with encryption marker.
-        let envelope = EnvelopeBuilder::new(rafa_did())
-            .to(Did::parse("did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK").unwrap())
-            .encryption(EncryptionScheme::X25519XChaCha20Poly1305)
-            .build();
+        let envelope = EnvelopeBuilder::new(
+            rafa_did(),
+            Recipient::new(
+                Did::parse("did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK").unwrap(),
+                QueueHandle::parse("inbox:default").unwrap(),
+            ),
+        )
+        .encryption(EncryptionScheme::X25519XChaCha20Poly1305)
+        .build();
 
         // 4. Stamp covers the wire-string body bytes.
         let body_hash = canonical_body_hash(&body_wire);

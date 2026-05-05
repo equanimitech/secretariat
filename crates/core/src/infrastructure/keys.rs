@@ -53,6 +53,9 @@ pub struct KeyPaths {
     pub peers_cache: PathBuf,
     pub inbox: PathBuf,
     pub outbox: PathBuf,
+    /// Local-queue captures (substrate v0.3 — `Recipient::LocalQueue`).
+    /// Files land at `<queues>/<namespace>/<slug>/<timestamp>.md`.
+    pub queues: PathBuf,
     pub bin: PathBuf,
     pub template: PathBuf,
     pub attention_envelope: PathBuf,
@@ -74,6 +77,7 @@ impl KeyPaths {
             peers_cache: root.join("peers"),
             inbox: root.join("inbox"),
             outbox: root.join("outbox"),
+            queues: root.join("queues"),
             bin: root.join("bin"),
             template: root.join("template.md"),
             attention_envelope: root.join("attention-envelope.md"),
@@ -83,7 +87,14 @@ impl KeyPaths {
     }
 
     pub fn ensure_dirs(&self) -> Result<(), KeyError> {
-        for dir in [&self.root, &self.peers_cache, &self.inbox, &self.outbox, &self.bin] {
+        for dir in [
+            &self.root,
+            &self.peers_cache,
+            &self.inbox,
+            &self.outbox,
+            &self.queues,
+            &self.bin,
+        ] {
             fs::create_dir_all(dir).map_err(|e| KeyError::Io {
                 path: dir.clone(),
                 source: e,

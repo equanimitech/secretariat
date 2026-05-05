@@ -2,6 +2,7 @@
 //!
 //! Each command exposes an `Args` struct (clap-derived) and a `run(Args)` entrypoint.
 
+pub mod capture;
 pub mod compose;
 pub mod contact;
 pub mod daemon;

@@ -214,9 +214,13 @@ async listInbox() : Promise<Result<EnvelopeListing[], string>> {
 }
 },
 /**
- * List the principal's review queue — outbox drafts awaiting a stamp.
- * Excludes already-stamped drafts (those are in flight to the relay)
- * and the `sent/` historical archive.
+ * List the principal's review queue — every unstamped envelope
+ * addressed to a queue, peer or local. Substrate v0.3 (queues-as-
+ * primitive) unions `outbox/<peer>/*.md` (peer letters waiting to be
+ * stamped) with `queues/<ns>/<slug>/*.md` (local captures: ideas,
+ * journal, future-self notes). Both `to` and `queue` are populated
+ * on every entry — discriminate local vs peer by comparing `to` to
+ * the principal's own DID.
  */
 async listReviewQueue() : Promise<Result<EnvelopeListing[], string>> {
     try {
@@ -354,8 +358,28 @@ quick_pane_shortcut: string | null;
  * If None, uses system locale detection
  */
 language: string | null }
-export type EnvelopeListing = { file_path: string; from: string | null; to: string | null; stamped: boolean; encrypted: boolean }
-export type EnvelopeRead = { body: string; from: string | null; to: string | null; was_encrypted: boolean }
+export type EnvelopeListing = { file_path: string; from: string | null; 
+/**
+ * DID of the queue *owner* (recipient). Always set on well-formed
+ * envelopes. UI compares to the principal's own DID to discriminate
+ * local capture (`to == self`) from peer/channel post (`to != self`).
+ */
+to: string | null; 
+/**
+ * Queue handle on the owner's machine (`<namespace>:<slug>`). Always
+ * set on well-formed envelopes alongside `to`. Direct messages
+ * conventionally use `inbox:default`.
+ */
+queue: string | null; stamped: boolean; encrypted: boolean }
+export type EnvelopeRead = { body: string; from: string | null; 
+/**
+ * DID of the queue *owner* (recipient).
+ */
+to: string | null; 
+/**
+ * Queue handle on the owner's machine (`<namespace>:<slug>`).
+ */
+queue: string | null; was_encrypted: boolean }
 /**
  * What `init_identity` reports back to the front-end.
  */

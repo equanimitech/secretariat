@@ -12,7 +12,9 @@ use chrono::{DateTime, Utc};
 use rand::Rng;
 use thiserror::Error;
 
-use crate::domain::{Did, Envelope, EnvelopeBuilder, EnvelopeDepth, EnvelopeUrgency};
+use crate::domain::{
+    Did, Envelope, EnvelopeBuilder, EnvelopeDepth, EnvelopeUrgency, Recipient,
+};
 use crate::infrastructure::did_web_resolver::sanitize_did_for_filename;
 use crate::infrastructure::markdown::{embed_stamp, MarkdownError};
 
@@ -31,7 +33,7 @@ pub enum ComposeError {
 #[derive(Debug, Clone)]
 pub struct ComposeRequest {
     pub from: Did,
-    pub to: Option<Did>,
+    pub recipient: Recipient,
     pub depth: EnvelopeDepth,
     pub urgency: EnvelopeUrgency,
     pub source: String,
@@ -49,11 +51,7 @@ pub fn compose_envelope(
     now: DateTime<Utc>,
 ) -> Result<PathBuf, ComposeError> {
     let envelope = build_envelope(&request);
-    let recipient_dir_name = match &request.to {
-        Some(did) => sanitize_did_for_filename(did.as_str()),
-        None => "_self".to_string(),
-    };
-
+    let recipient_dir_name = sanitize_did_for_filename(request.recipient.owner.as_str());
     let target_dir = outbox_root.join(recipient_dir_name);
     fs::create_dir_all(&target_dir).map_err(|e| ComposeError::Io {
         path: target_dir.clone(),
@@ -84,13 +82,10 @@ pub fn compose_envelope(
 }
 
 fn build_envelope(req: &ComposeRequest) -> Envelope {
-    let mut b = EnvelopeBuilder::new(req.from.clone())
+    let mut b = EnvelopeBuilder::new(req.from.clone(), req.recipient.clone())
         .depth(req.depth)
         .urgency(req.urgency)
         .source(req.source.clone());
-    if let Some(to) = &req.to {
-        b = b.to(to.clone());
-    }
     if let Some(hint) = &req.cadence_hint {
         b = b.cadence_hint(hint.clone());
     }
@@ -141,6 +136,7 @@ fn strip_existing_frontmatter(s: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::QueueHandle;
     use crate::infrastructure::markdown::parse_document;
     use chrono::TimeZone;
     use tempfile::TempDir;
@@ -154,7 +150,10 @@ mod tests {
 
         let req = ComposeRequest {
             from: Did::parse("did:web:rafa.equanimi.tech").unwrap(),
-            to: Some(Did::parse("did:web:marcelo.ballestiero.com").unwrap()),
+            recipient: Recipient::new(
+                Did::parse("did:web:marcelo.ballestiero.com").unwrap(),
+                QueueHandle::parse("inbox:default").unwrap(),
+            ),
             depth: EnvelopeDepth::Subtle,
             urgency: EnvelopeUrgency::Soon,
             source: "test".into(),
@@ -183,15 +182,22 @@ mod tests {
     }
 
     #[test]
-    fn composes_self_addressed_when_no_to() {
+    fn composes_self_letter_to_own_did_dir() {
+        // Self-addressed letter — owner == from. compose_envelope writes
+        // it to outbox/<sanitized_self_did>/. (Captures use
+        // capture_to_queue, which writes to queues/<ns>/<slug>/.)
         let dir = TempDir::new().unwrap();
         let template = dir.path().join("template.md");
         fs::write(&template, "# Self\n").unwrap();
         let outbox = dir.path().join("outbox");
 
+        let me = Did::parse("did:web:rafa.equanimi.tech").unwrap();
         let req = ComposeRequest {
-            from: Did::parse("did:web:rafa.equanimi.tech").unwrap(),
-            to: None,
+            from: me.clone(),
+            recipient: Recipient::new(
+                me.clone(),
+                QueueHandle::parse("inbox:default").unwrap(),
+            ),
             depth: EnvelopeDepth::Gross,
             urgency: EnvelopeUrgency::Whenever,
             source: "test".into(),
@@ -201,7 +207,11 @@ mod tests {
 
         let now = Utc.with_ymd_and_hms(2026, 4, 30, 9, 0, 0).unwrap();
         let path = compose_envelope(req, &template, &outbox, now).unwrap();
-        assert!(path.parent().unwrap().ends_with("_self"));
+        assert!(path
+            .parent()
+            .unwrap()
+            .to_string_lossy()
+            .contains("did_web_rafa.equanimi.tech"));
     }
 
     #[test]
@@ -215,9 +225,13 @@ mod tests {
         .unwrap();
         let outbox = dir.path().join("outbox");
 
+        let me = Did::parse("did:web:rafa.equanimi.tech").unwrap();
         let req = ComposeRequest {
-            from: Did::parse("did:web:rafa.equanimi.tech").unwrap(),
-            to: None,
+            from: me.clone(),
+            recipient: Recipient::new(
+                me,
+                QueueHandle::parse("inbox:scratch").unwrap(),
+            ),
             depth: EnvelopeDepth::Gross,
             urgency: EnvelopeUrgency::Whenever,
             source: "test".into(),

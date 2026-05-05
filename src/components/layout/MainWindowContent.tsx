@@ -45,7 +45,7 @@ export function MainWindowContent({
   }, [refresh])
 
   return (
-    <div className={cn('flex h-full flex-col bg-background', className)}>
+    <div className={cn('flex h-full w-full flex-col bg-background', className)}>
       {children ?? (
         <>
           {state.kind === 'loading' && null}

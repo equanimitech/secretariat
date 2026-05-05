@@ -16,7 +16,7 @@ use chrono::Utc;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use rand::rngs::OsRng;
 use secretariat_core::application::stamp_document;
-use secretariat_core::domain::EnvelopeBuilder;
+use secretariat_core::domain::{EnvelopeBuilder, QueueHandle, Recipient};
 use secretariat_core::infrastructure::crypto::sealed::{
     open, pubkey_to_x25519, seal, signing_to_x25519, SealedBox,
 };
@@ -60,19 +60,41 @@ fn compose_and_stamp(
     plaintext: &[u8],
     outbox_root: &std::path::Path,
 ) -> PathBuf {
+    compose_and_stamp_with_handle(
+        rafa_key,
+        rafa_did,
+        marcelo_did,
+        marcelo_pubkey,
+        plaintext,
+        outbox_root,
+        "inbox:default",
+    )
+}
+
+fn compose_and_stamp_with_handle(
+    rafa_key: &SigningKey,
+    rafa_did: &Did,
+    marcelo_did: &Did,
+    marcelo_pubkey: &VerifyingKey,
+    plaintext: &[u8],
+    outbox_root: &std::path::Path,
+    handle: &str,
+) -> PathBuf {
     // Derive marcelo's X25519 pubkey from his ed25519 verifying key, then seal.
     let marcelo_x25519_pub = pubkey_to_x25519(marcelo_pubkey);
     let sealed = seal(plaintext, &marcelo_x25519_pub).unwrap();
     let body_wire = sealed.to_wire_string();
 
     // Build envelope w/ encryption marker.
-    let envelope: Envelope = EnvelopeBuilder::new(rafa_did.clone())
-        .to(marcelo_did.clone())
-        .depth(EnvelopeDepth::Subtle)
-        .urgency(EnvelopeUrgency::Whenever)
-        .source("v0-correspondence-test")
-        .encryption(EncryptionScheme::X25519XChaCha20Poly1305)
-        .build();
+    let envelope: Envelope = EnvelopeBuilder::new(
+        rafa_did.clone(),
+        Recipient::new(marcelo_did.clone(), QueueHandle::parse(handle).unwrap()),
+    )
+    .depth(EnvelopeDepth::Subtle)
+    .urgency(EnvelopeUrgency::Whenever)
+    .source("v0-correspondence-test")
+    .encryption(EncryptionScheme::X25519XChaCha20Poly1305)
+    .build();
 
     // Embed envelope (no stamp yet) into markdown.
     let unstamped = embed_stamp(&body_wire, Some(&envelope), None).unwrap();
@@ -156,7 +178,7 @@ async fn rafa_to_marcelo_full_correspondence_loop() {
     let parsed = parse_document(&raw_str).unwrap();
     let envelope = parsed.envelope.expect("envelope present after transit");
     assert_eq!(envelope.from, rafa_did);
-    assert_eq!(envelope.to.as_ref(), Some(&marcelo_did));
+    assert_eq!(envelope.recipient.owner, marcelo_did);
     assert!(envelope.is_encrypted());
 
     // Stamp present and matches the body's hash invariant.
@@ -265,4 +287,51 @@ async fn wrong_recipient_cannot_decrypt() {
     let sealed = SealedBox::parse_wire_string(parsed.body.trim()).unwrap();
     let r = open(&sealed, &eve_x25519_secret);
     assert!(r.is_err(), "eve must not be able to decrypt");
+}
+
+#[tokio::test]
+async fn dm_with_non_default_handle_round_trips() {
+    // Queues-as-primitive: an envelope's `(owner, handle)` tuple flows
+    // through the relay verbatim. Use a non-default handle (e.g.
+    // `inbox:work`) to prove the wire format carries it end-to-end —
+    // not just `inbox:default` synthesized on read.
+    let relay_url = spawn_relay().await;
+    let (rafa_key, rafa_did) = fresh_principal();
+    let (marcelo_key, marcelo_did) = fresh_principal();
+
+    let rafa_outbox_dir = TempDir::new().unwrap();
+
+    let rafa_client = RelayClient::new(relay_url.clone(), rafa_did.clone(), &rafa_key);
+    let marcelo_client = RelayClient::new(relay_url.clone(), marcelo_did.clone(), &marcelo_key);
+    rafa_client.register().await.unwrap();
+    marcelo_client.register().await.unwrap();
+
+    let stamped_path = compose_and_stamp_with_handle(
+        &rafa_key,
+        &rafa_did,
+        &marcelo_did,
+        &marcelo_key.verifying_key(),
+        b"# work-only ping\n",
+        rafa_outbox_dir.path(),
+        "inbox:work",
+    );
+    let stamped_bytes = std::fs::read(&stamped_path).unwrap();
+    rafa_client
+        .send(&marcelo_did, &stamped_bytes, "text/markdown")
+        .await
+        .unwrap();
+
+    let (token, _) = marcelo_client.authenticate().await.unwrap();
+    let inbound = marcelo_client.poll(&token, 0).await.unwrap();
+    assert_eq!(inbound.len(), 1);
+
+    let raw_str = std::str::from_utf8(&inbound[0].body).unwrap();
+    let parsed = parse_document(raw_str).unwrap();
+    let envelope = parsed.envelope.expect("envelope present");
+    assert_eq!(envelope.recipient.owner, marcelo_did);
+    assert_eq!(
+        envelope.recipient.handle.as_str(),
+        "inbox:work",
+        "non-default handle survives transit verbatim"
+    );
 }

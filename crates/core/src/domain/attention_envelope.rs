@@ -93,6 +93,7 @@ impl<'de> Deserialize<'de> for AttentionEnvelope {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::{QueueHandle, Recipient};
     use chrono::TimeZone;
 
     fn bounds() -> AttentionEnvelope {
@@ -107,10 +108,14 @@ mod tests {
     }
 
     fn env(depth: EnvelopeDepth, urgency: EnvelopeUrgency) -> Envelope {
-        Envelope::builder(Did::parse("did:web:peer.example").unwrap())
-            .depth(depth)
-            .urgency(urgency)
-            .build()
+        let from = Did::parse("did:web:peer.example").unwrap();
+        Envelope::builder(
+            from.clone(),
+            Recipient::new(from, QueueHandle::parse("inbox:default").unwrap()),
+        )
+        .depth(depth)
+        .urgency(urgency)
+        .build()
     }
 
     #[test]

@@ -32,6 +32,79 @@ pub fn list_outbox_queue(outbox_root: &Path) -> Result<Vec<ListedEnvelope>, Inbo
     Ok(all.into_iter().filter(|e| !e.stamped).collect())
 }
 
+/// Walk the local-queues tree (`<queues_root>/<namespace>/<slug>/*.md`)
+/// and return one [`ListedEnvelope`] per capture. Local-queue captures
+/// are never stamped by invariant, so there is no `stamped` filter to
+/// apply here — every entry is, by definition, a draft.
+pub fn list_local_queues(queues_root: &Path) -> Result<Vec<ListedEnvelope>, InboxOpError> {
+    let mut out = Vec::new();
+    if !queues_root.exists() {
+        return Ok(out);
+    }
+    walk_queues(queues_root, &mut out)?;
+    Ok(out)
+}
+
+fn walk_queues(dir: &Path, out: &mut Vec<ListedEnvelope>) -> Result<(), InboxOpError> {
+    for entry in std::fs::read_dir(dir).map_err(|e| InboxOpError::Io {
+        path: dir.to_path_buf(),
+        source: e,
+    })? {
+        let entry = entry.map_err(|e| InboxOpError::Io {
+            path: dir.to_path_buf(),
+            source: e,
+        })?;
+        let path = entry.path();
+        if path.is_dir() {
+            walk_queues(&path, out)?;
+        } else if path.extension().and_then(|x| x.to_str()) == Some("md") {
+            push_listed(out, &path)?;
+        }
+    }
+    Ok(())
+}
+
+fn push_listed(out: &mut Vec<ListedEnvelope>, path: &Path) -> Result<(), InboxOpError> {
+    use crate::infrastructure::markdown::parse_document;
+
+    let raw = std::fs::read_to_string(path).map_err(|e| InboxOpError::Io {
+        path: path.to_path_buf(),
+        source: e,
+    })?;
+    let parsed = parse_document(&raw)?;
+    let (from, to, queue, encrypted) = match &parsed.envelope {
+        Some(e) => (
+            Some(e.from.as_str().to_string()),
+            Some(e.recipient.owner.as_str().to_string()),
+            Some(e.recipient.handle.as_str().to_string()),
+            e.is_encrypted(),
+        ),
+        None => (None, None, None, false),
+    };
+    out.push(ListedEnvelope {
+        file_path: path.display().to_string(),
+        from,
+        to,
+        queue,
+        stamped: parsed.stamp.is_some(),
+        encrypted,
+    });
+    Ok(())
+}
+
+/// The principal's full review queue — outbox drafts AND local-queue
+/// captures, in a single list. The UI presents this as one stream
+/// (substrate v0.3); the kind discriminator is `to.is_some()` vs
+/// `queue.is_some()` on each entry.
+pub fn list_review_queue(
+    outbox_root: &Path,
+    queues_root: &Path,
+) -> Result<Vec<ListedEnvelope>, InboxOpError> {
+    let mut out = list_outbox_queue(outbox_root)?;
+    out.extend(list_local_queues(queues_root)?);
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -88,6 +161,49 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let queue = list_outbox_queue(&dir.path().join("outbox")).unwrap();
         assert!(queue.is_empty());
+    }
+
+    #[test]
+    fn review_queue_unions_outbox_and_local_queues() {
+        use crate::application::{capture_to_queue, CaptureRequest};
+        use crate::domain::QueueHandle;
+
+        let dir = TempDir::new().unwrap();
+        let outbox = dir.path().join("outbox");
+        let queues = dir.path().join("queues");
+
+        // One unstamped peer draft in the outbox.
+        write_envelope(&outbox.join("did_key_z6Mkb"), "draft.md", false);
+
+        // One local-queue capture.
+        let req = CaptureRequest {
+            from: crate::Did::from_ed25519_public_key(&[0xa1; 32]),
+            queue: QueueHandle::parse("inbox:triage").unwrap(),
+            body: "fleeting thought".into(),
+            source: "test".into(),
+        };
+        capture_to_queue(req, &queues, chrono::Utc::now()).unwrap();
+
+        let unioned = list_review_queue(&outbox, &queues).unwrap();
+        assert_eq!(unioned.len(), 2);
+
+        // Both entries now have to + queue populated. Discriminate by
+        // owner: peer letters have `to != self`, captures have
+        // `to == self`.
+        let me_str = crate::Did::from_ed25519_public_key(&[0xa1; 32])
+            .as_str()
+            .to_string();
+        let peers: Vec<_> = unioned
+            .iter()
+            .filter(|e| e.to.as_deref() != Some(&me_str))
+            .collect();
+        let captures: Vec<_> = unioned
+            .iter()
+            .filter(|e| e.to.as_deref() == Some(&me_str))
+            .collect();
+        assert_eq!(peers.len(), 1);
+        assert_eq!(captures.len(), 1);
+        assert_eq!(captures[0].queue.as_deref(), Some("inbox:triage"));
     }
 
     #[test]

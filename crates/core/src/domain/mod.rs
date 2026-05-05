@@ -22,5 +22,5 @@ pub use contact::{
 pub use envelope::{EncryptionScheme, Envelope, EnvelopeBuilder};
 pub use identity::{Did, DidMethod, DidParseError, DocHash, Signature, SignatureParseError};
 pub use queue_handle::{QueueHandle, QueueHandleError};
-pub use recipient::{EnvelopeKind, Recipient};
+pub use recipient::Recipient;
 pub use stamp::Stamp;

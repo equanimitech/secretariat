@@ -148,7 +148,9 @@ fn build_stamp_reason(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::{Did, EnvelopeBuilder, EnvelopeDepth, EnvelopeUrgency};
+    use crate::domain::{
+        Did, EnvelopeBuilder, EnvelopeDepth, EnvelopeUrgency, QueueHandle, Recipient,
+    };
     use crate::infrastructure::ed25519_signer::{AlwaysAllowGate, Ed25519Signer};
     use crate::infrastructure::keys::generate_keypair;
     use crate::infrastructure::markdown::embed_stamp as do_embed;
@@ -241,16 +243,61 @@ mod tests {
     }
 
     #[test]
+    fn stamps_local_capture_envelope() {
+        // Queues-as-primitive: stamps allowed on any envelope, including
+        // self-addressed local captures. Tamper-evident self-attestation
+        // is a valid use case (stamp your own journal entry, prove later
+        // it hasn't been edited). Pre-collapse this would have been
+        // forbidden by the `Recipient::LocalQueue` invariant.
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("capture.md");
+
+        let me = Did::parse("did:web:rafa.equanimi.tech").unwrap();
+        let envelope = EnvelopeBuilder::new(
+            me.clone(),
+            Recipient::new(me.clone(), QueueHandle::parse("inbox:triage").unwrap()),
+        )
+        .depth(EnvelopeDepth::Gross)
+        .urgency(EnvelopeUrgency::Whenever)
+        .source("capture-test")
+        .build();
+        assert!(envelope.recipient.is_local(&me));
+
+        let pre = do_embed("# Thought\n\nworth keeping\n", Some(&envelope), None).unwrap();
+        fs::write(&path, pre).unwrap();
+
+        let signer = make_signer();
+        let outcome = stamp_document(
+            &path,
+            &signer,
+            StampAct::Attest,
+            false,
+            Utc.with_ymd_and_hms(2026, 5, 5, 12, 0, 0).unwrap(),
+        )
+        .expect("stamp on local capture must succeed");
+
+        let parsed = parse_document(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert!(parsed.stamp.is_some());
+        assert_eq!(parsed.envelope.unwrap().recipient.handle.as_str(), "inbox:triage");
+        assert_eq!(&outcome.stamp.signer, signer.signer_did());
+    }
+
+    #[test]
     fn preserves_existing_envelope_block() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("doc.md");
 
-        let envelope = EnvelopeBuilder::new(Did::parse("did:web:rafa.equanimi.tech").unwrap())
-            .to(Did::parse("did:web:marcelo.ballestiero.com").unwrap())
-            .depth(EnvelopeDepth::Subtle)
-            .urgency(EnvelopeUrgency::Soon)
-            .source("test")
-            .build();
+        let envelope = EnvelopeBuilder::new(
+            Did::parse("did:web:rafa.equanimi.tech").unwrap(),
+            Recipient::new(
+                Did::parse("did:web:marcelo.ballestiero.com").unwrap(),
+                QueueHandle::parse("inbox:default").unwrap(),
+            ),
+        )
+        .depth(EnvelopeDepth::Subtle)
+        .urgency(EnvelopeUrgency::Soon)
+        .source("test")
+        .build();
         let pre = do_embed("# Body\n", Some(&envelope), None).unwrap();
         fs::write(&path, pre).unwrap();
 

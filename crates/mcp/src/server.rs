@@ -1,13 +1,16 @@
-//! Secretariat MCP server — stdio transport, 8 tools.
+//! Secretariat MCP server — stdio transport.
 //!
 //! Tools exposed:
 //!
 //! | Tool | Purpose |
 //! |---|---|
-//! | `compose` | Write an envelope to the outbox (principal stamps separately) |
+//! | `compose` | Write a peer-addressed envelope to the outbox (principal stamps separately) |
+//! | `capture` | Drop a body into a local queue (substrate v0.3 — never sent, never stamped without consent) |
 //! | `stamp` | Trigger biometric stamp on a draft (Touch ID gates regardless of caller) |
 //! | `list_outbox` | Pending drafts (stamped + unstamped) |
 //! | `list_inbox` | Verified inbound envelopes |
+//! | `defer` | Move an inbox envelope to `inbox/deferred/` ('remind me later') |
+//! | `archive` | Move an inbox envelope to `inbox/archived/` ('handled') |
 //! | `read` | Decrypt + return body of an envelope |
 //! | `verify` | Check a stamped artifact |
 //! | `list_contacts` | Known peers |
@@ -41,11 +44,12 @@ use rmcp::{
 };
 use schemars::JsonSchema;
 use secretariat_core::application::{
-    add_contact, claim_invite, compose_envelope, create_invite, find_by_slug, list_contacts,
-    list_inbox_files, list_outbox_files, read_envelope, stamp_document, verify_document,
-    view_invite, ComposeRequest, ListedEnvelope, StampError, VerifyOutcome,
+    add_contact, archive_envelope, capture_to_queue, claim_invite, compose_envelope,
+    create_invite, defer_envelope, find_by_slug, list_contacts, list_inbox_files,
+    list_outbox_files, read_envelope, stamp_document, verify_document, view_invite,
+    CaptureRequest, ComposeRequest, ListedEnvelope, StampError, VerifyOutcome,
 };
-use secretariat_core::domain::{DidMethod, StampAct};
+use secretariat_core::domain::{DidMethod, QueueHandle, Recipient, StampAct};
 use secretariat_core::infrastructure::biometric::build_signer;
 use secretariat_core::infrastructure::composite_did_resolver::CompositeDidResolver;
 use secretariat_core::infrastructure::did_web_resolver::DidWebResolver;
@@ -95,11 +99,38 @@ pub struct ComposeParams {
     /// Optional cadence hint for the recipient.
     #[serde(default)]
     pub cadence_hint: Option<String>,
+    /// Recipient queue handle on the peer's machine. Defaults to
+    /// `inbox:default` (the conventional handle for direct messages).
+    /// Specify a different handle to post to a non-default queue the
+    /// peer owns — e.g. a channel they publish.
+    #[serde(default)]
+    pub handle: Option<String>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct ComposeOutput {
     pub file_path: String,
+    pub note: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CaptureParams {
+    /// Target queue handle, of the form `<namespace>:<slug>` — e.g.
+    /// `inbox:triage`, `area:health`, `project:autonomous-enterprise`.
+    /// Namespaces are free-form lowercase letters.
+    pub queue: String,
+    /// Body of the capture (markdown-friendly plain text).
+    pub body: String,
+    /// Free-form origin marker, e.g. `idea-skill`, `quick-pane`. Defaults
+    /// to `mcp-capture` when omitted.
+    #[serde(default)]
+    pub source: Option<String>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct CaptureOutput {
+    pub file_path: String,
+    pub queue: String,
     pub note: String,
 }
 
@@ -115,7 +146,14 @@ pub struct EnvelopeListing {
 pub struct EnvelopeView {
     pub file_path: String,
     pub from: Option<String>,
+    /// DID of the queue *owner* (recipient). Always set on well-formed
+    /// envelopes. Compare to the principal's own DID to discriminate
+    /// local capture (`to == self`) from peer/channel post (`to != self`).
     pub to: Option<String>,
+    /// Queue handle on the owner's machine (`<namespace>:<slug>`).
+    /// Always set on well-formed envelopes alongside `to`. Direct
+    /// messages conventionally use `inbox:default`.
+    pub queue: Option<String>,
     pub stamped: bool,
     pub encrypted: bool,
 }
@@ -126,6 +164,7 @@ impl From<ListedEnvelope> for EnvelopeView {
             file_path: l.file_path,
             from: l.from,
             to: l.to,
+            queue: l.queue,
             stamped: l.stamped,
             encrypted: l.encrypted,
         }
@@ -136,6 +175,19 @@ impl From<ListedEnvelope> for EnvelopeView {
 pub struct ReadParams {
     /// Absolute path to the envelope `.md` file.
     pub file_path: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct InboxActionParams {
+    /// Absolute path to the inbox envelope `.md` file. Must live
+    /// directly under `~/.secretariat/inbox/` — not in a subdir.
+    pub file_path: String,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct InboxActionOutput {
+    pub moved_to: String,
+    pub note: String,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -313,9 +365,14 @@ impl SecretariatServer {
             Some(params.body)
         };
 
+        let handle_str = params.handle.as_deref().unwrap_or("inbox:default");
+        let handle = QueueHandle::parse(handle_str).map_err(|e| {
+            invalid_request(format!("invalid `handle` `{handle_str}`: {e}"))
+        })?;
+
         let req = ComposeRequest {
             from,
-            to: Some(to),
+            recipient: Recipient::new(to, handle),
             depth,
             urgency,
             source: params.source.unwrap_or_else(|| "mcp".to_string()),
@@ -333,6 +390,48 @@ impl SecretariatServer {
             note: "Draft written to outbox. Show the body to the principal, get explicit \
                    confirmation, then stamp via the `stamp` tool (biometric-gated). The daemon \
                    will deliver after stamping; on macOS the LaunchAgent polls every 15 minutes."
+                .to_string(),
+        }))
+    }
+
+    #[tool(
+        name = "capture",
+        description = "Drop a body of text into a local queue (substrate v0.3). \
+        Captures are envelopes addressed to `Recipient::LocalQueue(handle)` — they \
+        never leave the principal's machine and CANNOT be stamped (the domain \
+        invariant rejects it). Use for ideas, journal entries, future-self notes, \
+        anything to surface again at the next review session. \
+        \
+        The `queue` parameter is a `<namespace>:<slug>` handle; namespaces are \
+        free-form (e.g. `inbox:triage`, `area:health`, `project:autonomous-enterprise`). \
+        If you don't know which to pick, default to `inbox:triage`."
+    )]
+    async fn capture(
+        &self,
+        Parameters(params): Parameters<CaptureParams>,
+    ) -> Result<Json<CaptureOutput>, ErrorData> {
+        let from = load_principal_did(&self.paths)?;
+        let queue = QueueHandle::parse(&params.queue).map_err(|e| {
+            invalid_request(format!("invalid `queue` `{}`: {e}", params.queue))
+        })?;
+
+        let req = CaptureRequest {
+            from,
+            queue: queue.clone(),
+            body: params.body,
+            source: params.source.unwrap_or_else(|| "mcp-capture".to_string()),
+        };
+
+        let path = capture_to_queue(req, &self.paths.queues, Utc::now())
+            .map_err(|e| invalid_request(format!("capture failed: {e}")))?;
+
+        info!(file = %path.display(), queue = %queue.as_str(), "captured to local queue via MCP");
+
+        Ok(Json(CaptureOutput {
+            file_path: path.display().to_string(),
+            queue: queue.as_str().to_string(),
+            note: "Capture written to local queue. It stays on this device and \
+                   surfaces again at the next review session — never sent, never stamped."
                 .to_string(),
         }))
     }
@@ -433,6 +532,50 @@ impl SecretariatServer {
             .map_err(|e| invalid_request(format!("list_inbox failed: {e}")))?;
         Ok(Json(EnvelopeListing {
             envelopes: envelopes.into_iter().map(EnvelopeView::from).collect(),
+        }))
+    }
+
+    #[tool(
+        name = "defer",
+        description = "Defer an inbox envelope — move it out of the active inbox into \
+        `inbox/deferred/`. Use during a review session when the principal says 'remind me \
+        later' / 'come back to this' / 'not now'. Idempotent against the destination. \
+        Future bubble-up logic will re-surface deferred envelopes; v1 just stages them."
+    )]
+    async fn defer(
+        &self,
+        Parameters(params): Parameters<InboxActionParams>,
+    ) -> Result<Json<InboxActionOutput>, ErrorData> {
+        let path = PathBuf::from(&params.file_path);
+        let moved = defer_envelope(&path, &self.paths.inbox)
+            .map_err(|e| invalid_request(format!("defer failed: {e}")))?;
+        info!(file = %path.display(), to = %moved.display(), "deferred envelope via MCP");
+        Ok(Json(InboxActionOutput {
+            moved_to: moved.display().to_string(),
+            note: "Envelope deferred. It is no longer in the active inbox; the principal \
+                   can re-surface it later."
+                .to_string(),
+        }))
+    }
+
+    #[tool(
+        name = "archive",
+        description = "Archive an inbox envelope — move it out of the active inbox into \
+        `inbox/archived/`. Use during a review session when the principal says 'handled' / \
+        'ignore' / 'done with this'. Files stay on disk for history; just out of the queue."
+    )]
+    async fn archive(
+        &self,
+        Parameters(params): Parameters<InboxActionParams>,
+    ) -> Result<Json<InboxActionOutput>, ErrorData> {
+        let path = PathBuf::from(&params.file_path);
+        let moved = archive_envelope(&path, &self.paths.inbox)
+            .map_err(|e| invalid_request(format!("archive failed: {e}")))?;
+        info!(file = %path.display(), to = %moved.display(), "archived envelope via MCP");
+        Ok(Json(InboxActionOutput {
+            moved_to: moved.display().to_string(),
+            note: "Envelope archived. Out of the active queue; kept on disk for history."
+                .to_string(),
         }))
     }
 

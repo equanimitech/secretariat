@@ -1,5 +1,6 @@
 //! Application — orchestrates use cases (composition of domain + ports).
 
+pub mod capture_ops;
 pub mod compose_envelope;
 pub mod contact_ops;
 pub mod delivery_policy;
@@ -13,6 +14,7 @@ pub mod sync;
 pub mod stamp_document;
 pub mod verify_document;
 
+pub use capture_ops::{capture_to_queue, CaptureError, CaptureRequest};
 pub use compose_envelope::{compose_envelope, ComposeError, ComposeRequest};
 pub use contact_ops::{
     add_contact, find_by_did, find_by_slug, list_contacts, remove_contact, ContactOpError,
@@ -30,7 +32,7 @@ pub use process_correspondence_claims::{
     process_correspondence_claims, ClaimProcessError, ClaimProcessOutcome, CorrespondenceClaim,
     SkipReason,
 };
-pub use review_queue::list_outbox_queue;
+pub use review_queue::{list_local_queues, list_outbox_queue, list_review_queue};
 pub use send_envelope::{send_stamped_envelope, SendError, SendOutcome};
 pub use sync::{sync_now, RelaySyncReport, SyncError, SyncOutcome};
 pub use stamp_document::{stamp_document, StampError, StampOutcome};
