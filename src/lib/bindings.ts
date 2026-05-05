@@ -294,6 +294,14 @@ async createInvite(purpose: string | null) : Promise<Result<string, string>> {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+async stampEnvelope(filePath: string) : Promise<Result<StampReport, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("stamp_envelope", { filePath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -371,6 +379,19 @@ export type RecoveryError =
  */
 { type: "ParseError"; message: string }
 export type RelaySyncReport = { endpoint: string; inbound_count: number; auto_added_contacts: number; warnings: string[] }
+/**
+ * Stamp an outbox draft and (best-effort) deliver it immediately. Touch
+ * ID fires from the app's window context. Returns the relay-assigned
+ * id on successful delivery, or stamp metadata only if delivery fails
+ * (the daemon's next sync tick retries — same fallback as the CLI's
+ * stamp-immediate-send path).
+ */
+export type StampReport = { stamped_path: string; doc_hash: string; stamped_at: string; delivered: boolean; 
+/**
+ * Relay-assigned envelope ID. String to avoid BigInt/JS-number
+ * roundtripping (specta forbids `u64` directly).
+ */
+relay_assigned_id: string | null; delivery_warning: string | null }
 export type SyncReport = { per_relay: RelaySyncReport[]; sent_envelopes: number; outbox_warnings: string[] }
 
 /** tauri-specta globals **/

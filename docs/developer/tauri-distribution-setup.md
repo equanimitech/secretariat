@@ -47,38 +47,100 @@ base64 -i .tauri-keys/secretariat-updater | pbcopy
 If the key file has no password (current state), no
 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` is needed.
 
-## Apple Developer ID — TODO
+## Apple Developer ID — runbook
 
-Pre-reqs:
+Step-by-step, ordered. Each block is a discrete action you can pause between.
+Validated end-to-end against the equanimitech/zenborg release on 2026-05-04.
 
-- Apple Developer Program enrollment (in place, 2026-05-04)
-- Generate two certificates via developer.apple.com or Xcode:
-  - *Developer ID Application* (binary signing)
-  - Optional: *Developer ID Installer* (only if shipping .pkg)
-- Download `.cer` files, double-click to import to keychain
-- Verify with: `security find-identity -v -p codesigning`
+### 1. Enroll + create certs
 
-Then add as GitHub secrets (encoded):
+- Apple Developer Program enrollment ($99/yr) at developer.apple.com.
+- Xcode → Settings → Accounts → "Manage Certificates" → `+` → **Developer ID
+  Application**. (Add **Developer ID Installer** only if shipping `.pkg`.)
+- Note the Team ID at developer.apple.com → Membership (10-char string).
+
+### 2. Export `.p12` files
+
+In Keychain Access → My Certificates → right-click each cert → Export →
+`.p12`. Set a strong export password (you'll need it as a secret).
 
 ```bash
-# Export from keychain to .p12 (use a strong password)
-# Then base64 the .p12
-base64 -i developer-id-app.p12 | pbcopy
+ls ~/Downloads/mac_dev_id.p12         # Developer ID Application
+ls ~/Downloads/mac_installer_id.p12   # Developer ID Installer (optional)
 ```
 
-Repo secrets needed:
+### 3. Import to local keychain + capture signing identity
 
-| Secret | Source |
-|---|---|
-| `APPLE_CERTIFICATE` | base64 of `.p12` |
-| `APPLE_CERTIFICATE_PASSWORD` | password set during `.p12` export |
-| `APPLE_SIGNING_IDENTITY` | full cert name, e.g. `Developer ID Application: Rafa Ballestiero (XXXXXXXXXX)` |
-| `APPLE_ID` | Apple account email |
-| `APPLE_PASSWORD` | app-specific password generated at appleid.apple.com (NOT account password) |
-| `APPLE_TEAM_ID` | 10-char team ID (developer.apple.com top-right) |
+Double-click each `.p12` to import. Then:
 
-Tauri reads these env vars during `tauri build` and orchestrates
-`codesign` + `xcrun notarytool` automatically.
+```bash
+security find-identity -v -p codesigning | grep "Developer ID"
+# → 1) <SHA1> "Developer ID Application: <Your Name> (<TEAM_ID>)"
+```
+
+Copy the full quoted string — that's `APPLE_SIGNING_IDENTITY`.
+
+### 4. App-specific password for notarization
+
+account.apple.com → Sign-In Security → **App-Specific Passwords** → `+` →
+name it `tauri-notarize` → copy the 16-char password.
+
+This is **not** your Apple ID password. App-specific passwords are scoped
+and revocable. Treat as a secret — anyone with it can submit notarization
+runs under your developer account.
+
+### 5. Push the 6 GitHub secrets
+
+```bash
+REPO=equanimitech/secretariat   # adjust as needed
+
+gh secret set APPLE_ID --repo $REPO --body "<your-apple-id@example.com>"
+gh secret set APPLE_TEAM_ID --repo $REPO --body "<TEAM_ID>"
+gh secret set APPLE_SIGNING_IDENTITY --repo $REPO \
+  --body "Developer ID Application: <Your Name> (<TEAM_ID>)"
+
+# Stdin variants avoid leaking values into shell history.
+gh secret set APPLE_PASSWORD --repo $REPO            # paste app-specific pw, ctrl-D
+gh secret set APPLE_CERTIFICATE_PASSWORD --repo $REPO # paste .p12 export pw, ctrl-D
+
+# Cert: base64 the .p12 directly into the secret.
+base64 -i ~/Downloads/mac_dev_id.p12 | gh secret set APPLE_CERTIFICATE --repo $REPO
+```
+
+Verify:
+
+```bash
+gh secret list --repo $REPO
+# Expect 6 APPLE_* + 2 TAURI_SIGNING_* secrets.
+```
+
+### 6. Trigger the workflow
+
+```bash
+git tag v0.2.0 && git push origin v0.2.0
+gh run watch --repo $REPO
+```
+
+`tauri-action` handles import → sign → notarize → staple → updater sig
+end-to-end. ~3 min build + ~3-7 min notarization. Released artifacts attach
+to the GitHub release the workflow creates/updates.
+
+### What Tauri does with these env vars
+
+`tauri build` orchestrates the Apple toolchain automatically when these
+env vars are set:
+
+- `APPLE_CERTIFICATE` + `APPLE_CERTIFICATE_PASSWORD` → imports `.p12` into
+  an ephemeral keychain on the runner
+- `APPLE_SIGNING_IDENTITY` → passed to `codesign --sign`
+- `APPLE_ID` + `APPLE_PASSWORD` + `APPLE_TEAM_ID` → passed to
+  `xcrun notarytool submit --wait`, then `xcrun stapler staple`
+
+If any of the notarization trio is missing, the build still signs but
+**skips notarization** (CI logs `Warn skipping app notarization, no
+APPLE_ID & APPLE_PASSWORD & APPLE_TEAM_ID …`). The resulting `.dmg`
+triggers Gatekeeper warnings on first launch — fine for self-install,
+not for distribution.
 
 ## tauri.conf.json wiring
 
@@ -140,7 +202,7 @@ open src-tauri/target/release/bundle/macos/Secretariat.app
 
 Once secrets are in place, the release workflow will:
 
-1. Build for both `aarch64-apple-darwin` and `x86_64-apple-darwin`
+1. Build for both `aarch64-apple-darwin` and `x86_64-apple-darwin` (universal)
 2. Sign with Developer ID
 3. Notarize via `notarytool`
 4. Staple
@@ -148,7 +210,42 @@ Once secrets are in place, the release workflow will:
 6. Generate `latest.json`
 7. Upload all artifacts to the GitHub release
 
-See `.github/workflows/tauri-release.yml` (TBD).
+See `.github/workflows/tauri-release.yml`. Action: [`tauri-apps/tauri-action@v0`](https://github.com/tauri-apps/tauri-action)
+([env reference](https://github.com/tauri-apps/tauri-action#inputs)).
+
+### Local-build gotcha: Homebrew `xattr` shadows system `xattr`
+
+Tauri's bundler runs `xattr -cr` on the `.app`. Homebrew installs an older
+Python-based `xattr` that doesn't support `-r`, breaking `pnpm tauri build`
+locally with `failed to run xattr`. CI is unaffected (clean macOS runner).
+
+Local fix — force system `xattr` first in PATH for the build script. Edit
+`package.json`:
+
+```jsonc
+"build:tauri": "PATH=/usr/bin:$PATH tauri build"
+```
+
+Verify with `which xattr` → `/usr/bin/xattr`. The system tool supports
+`-cr`; the Homebrew/Python ones don't.
+
+If the project also loads multiple env files, `dotenv-cli` accepts a
+comma-list:
+
+```jsonc
+"build:tauri": "PATH=/usr/bin:$PATH dotenv -f .env.development.local,.env tauri build"
+```
+
+## Notarization expectations
+
+- Required for **every** distributed binary on macOS 10.15+, including
+  patch updates. Tauri's minisign signature ≠ Apple notarization (different
+  threats: server-compromise vs. malware). Both required for a clean
+  install + auto-update UX.
+- Cost: free. Time: ~3-7 min per submission (Apple's queue).
+- Total release wall-clock on CI: ~7-10 min (Rust build + notarize).
+- For solo / pre-release testing: skip the Apple secrets and accept
+  Gatekeeper warnings. `right-click → Open` on first launch bypasses.
 
 ## Decision log
 
