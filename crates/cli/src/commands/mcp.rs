@@ -222,11 +222,19 @@ fn wire_claude_code(binary: &std::path::Path) -> Result<()> {
     // Only wire user-scope; project scope already lives at `.mcp.json` in
     // any cloned repo. If `claude` CLI isn't on PATH, surface that as an
     // info-level "skipped" rather than a hard error.
-    let claude = match which("claude") {
+    //
+    // PATH fallback matters: when `sec mcp install` runs from a Tauri-
+    // launched GUI (the v0.2.5 install flow), the process inherits the
+    // macOS GUI default PATH (`/usr/bin:/bin:/usr/sbin:/sbin`) — not the
+    // shell PATH. `which claude` fails even though Claude Code is
+    // installed at `~/.local/bin/claude` (its standard install path).
+    // Without this fallback, Tauri-launched wiring silently skips
+    // Claude Code and only Claude Desktop gets the entry.
+    let claude = match which("claude").or_else(claude_in_known_locations) {
         Some(p) => p,
         None => {
             return Err(anyhow!(
-                "`claude` CLI not on PATH (Claude Code may not be installed)"
+                "`claude` CLI not found on PATH or in known locations (~/.local/bin, /opt/homebrew/bin, /usr/local/bin) — Claude Code may not be installed"
             ));
         }
     };
@@ -262,6 +270,22 @@ fn wire_claude_code(binary: &std::path::Path) -> Result<()> {
         return Err(anyhow!("`claude mcp add` exited with {status}"));
     }
     Ok(())
+}
+
+/// Fallback for when `which claude` fails because the parent process has
+/// no shell PATH (e.g. macOS GUI app spawning `sec mcp install` on launch).
+/// Checks the standard install locations Claude Code uses.
+fn claude_in_known_locations() -> Option<PathBuf> {
+    let candidates: Vec<PathBuf> = {
+        let mut v = Vec::new();
+        if let Some(home) = dirs::home_dir() {
+            v.push(home.join(".local/bin/claude"));
+        }
+        v.push(PathBuf::from("/opt/homebrew/bin/claude"));
+        v.push(PathBuf::from("/usr/local/bin/claude"));
+        v
+    };
+    candidates.into_iter().find(|p| p.exists())
 }
 
 fn which(name: &str) -> Option<PathBuf> {
