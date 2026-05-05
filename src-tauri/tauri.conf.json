@@ -52,12 +52,9 @@
     "longDescription": "Secretariat lets a principal stamp AI-drafted documents with biometric-attested signatures, embed the attestation in the file, and share via any transport. Designed around Autonomous Enterprise principles: humans govern, machines operate.",
     "copyright": "Copyright © 2026 Rafa Ballestiero. All rights reserved.",
     "macOS": {
-      "frameworks": [],
-      "minimumSystemVersion": "10.15",
-      "signingIdentity": "-",
-      "providerShortName": null,
-      "entitlements": null,
-      "exceptionDomain": ""
+      "signingIdentity": "Developer ID Application: Rafael Toletti Ballestiero (BGCMNT55ZN)",
+      "providerShortName": "BGCMNT55ZN",
+      "minimumSystemVersion": "11.0"
     }
   },
   "plugins": {
