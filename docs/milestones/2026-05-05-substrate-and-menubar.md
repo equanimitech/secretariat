@@ -119,34 +119,46 @@ Now we have a substrate; the app becomes peripheral.
 **Demo:** menubar icon visible. Right-click → menu of actions. None
 of them open a window — they trigger MCP/CLI flows or the quick-pane.
 
-### Slice 4 — Lifecycle: window-less by default + tray badge (½ day)
+### Slice 4 — Lifecycle: tray-popover for onboarding only + tray badge (½ day)
 
-The main window goes away entirely. The app boots into menubar-only
-mode every time. Onboarding happens in Claude (MCP-driven) for fresh
-installs.
+The principal's daily surface is the tray icon. The ONE exception:
+first-launch onboarding shows the existing `<Onboarding>` component in
+a tray-anchored popover (~400×500). It closes on completion and never
+reappears — a bounded experience, not a persistent window.
 
 **What changes:**
-- `lib.rs` setup hook — never auto-show the main window. Even on
-  first launch.
-- First-launch detection — if no identity exists, the tray icon shows
-  a distinct "needs setup" color (e.g. red dot). Right-click → "How
-  to onboard" menu item that copies a Claude-ready prompt to the
-  clipboard: *"Help me set up Secretariat. Start with the init
-  identity tool, then walk me through claiming an invite if I have one,
-  or creating one if I'm reaching out first."*
+- `lib.rs` setup hook — never auto-show the main window. On first
+  launch (no identity), open the onboarding popover anchored to the
+  tray icon. On every subsequent launch, just install the tray and
+  exit setup silently.
+- Reuse the existing `<Onboarding>` component (already built — name +
+  identity + optional invite). Wrap in a NSPanel-style popover via
+  the template's `tauri-nspanel` plugin (same scaffolding the
+  unused quick-pane uses).
+- On `onComplete` callback → popover dismisses, tray icon transitions
+  red → green (or amber if peer drafts already exist somehow).
 - Background sync loop emits `tray:state-changed` event on each tick;
-  Rust side updates tray icon's image (green / amber / red dot
-  templates). Static SVGs in `icons/`.
+  Rust updates tray icon image (red / amber / green dot SVGs).
 - Close-requested handler — quit on tray-only (Cmd+Q from tray menu).
-- The wizard component (`src/components/secretariat/Onboarding.tsx`)
-  becomes legacy code. Comment-out, don't delete (per the
-  preserve-template-chrome convention) — useful as the React-side
-  reference if the principal ever wants a window-based fallback.
+- Right-click tray menu: "Capture an idea…" / "Sync now" / "Quit
+  Secretariat". No "How to onboard" item — popover handles that
+  natively for fresh installs.
 
 **Demo:** install .dmg → drag to /Applications → open → tray icon
-appears (red dot, "needs setup") → right-click → click "How to
-onboard" → paste prompt into Claude → Claude walks identity creation
-→ tray dot transitions to green. Never a window.
+appears (red dot) + small popover slides down with two name fields:
+*"Your full name"* (e.g. "Rafael Toletti Ballestiero") + *"How
+would you like to be called?"* (e.g. "Rafa" — pre-filled from the
+first word of the full name as you type, editable) → click "Set me
+up" → identity generated → popover advances to "paste an invite URL
+or skip" → popover closes on completion → tray dot transitions
+red → green. Subsequent launches: just the tray icon, no popover.
+
+**Profile data model change** (folds into slice 1's substrate work
+since profile_store and Envelope share the domain crate): v1
+profile (`{ version: 1, display_name }`) extends to v2
+(`{ version: 2, full_name, display_name }`). v1 profiles loaded
+get `full_name = display_name` as default migration. See
+`memory/project_profile_two_names.md`.
 
 ### Slice 5 — Quick-pane wired to `sec capture` (1 day)
 
@@ -238,12 +250,14 @@ The principal's day. Marcelo as audience, Rafa-as-author on the book.
 
 **Onboarding** (a fresh install, e.g. for Christophe):
 - Christophe opens `Secretariat.app` from /Applications → tray icon
-  appears (red dot, "needs setup").
-- Right-click tray → "How to onboard" → prompt copies to clipboard.
-- Christophe pastes into Claude Desktop → Claude walks him through
-  init_identity, claim_invite_url, contact-add via natural
-  conversation.
+  appears (red dot) + small popover slides down anchored under it.
+- Popover shows "Welcome to Secretariat" + name field + Set me up
+  button (the existing `<Onboarding>` component, repurposed).
+- Christophe types "Christophe", clicks → identity generated locally
+  → popover advances to "paste an invite URL or skip" → Christophe
+  pastes the URL Rafa sent him → claim runs → popover closes.
 - Tray dot transitions red → green.
+- *No window. No copy-paste-into-Claude. Bounded experience that ends.*
 
 **Settings** (rare):
 - Rafa wants to update his name from "Rafa" to "Rafa B." → in Claude:
@@ -274,10 +288,14 @@ UI to maintain inside the app.
 - **`/idea` skill migrates BEFORE the quick-pane.** Proves the
   substrate from the most-trafficked capture path. Quick-pane in
   slice 5 then has a working backend.
-- **No main window. Ever.** Even on first launch. The wizard component
-  shipped earlier becomes legacy code preserved in source per the
-  comment-out-don't-delete convention; the principal-facing onboarding
-  path is Claude (MCP) for fresh installs.
+- **No main window. Onboarding popover is the carve-out.** Daily
+  use surface = tray icon + quick-pane. Onboarding is a one-shot
+  ritual with a defined endpoint (equanimitech principle 6 —
+  bounded experiences) so it gets a small tray-anchored popover
+  reusing the existing `<Onboarding>` component. Closes on
+  completion; never reappears unless reset. This is *not* a
+  persistent window — it's an ephemeral panel that exists for one
+  ritual.
 - **No walker UI inside the app.** Review happens in Claude. Slice 6
   ships the MCP tools Claude calls; the conversation is the walker.
 - **Tray dot is the only ambient signal.** Red = needs setup,
