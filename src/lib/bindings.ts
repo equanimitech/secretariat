@@ -302,6 +302,30 @@ async stampEnvelope(filePath: string) : Promise<Result<StampReport, string>> {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * Move an inbox envelope to `inbox/deferred/` — "remind me later".
+ * Returns the new path. Idempotent.
+ */
+async deferInboxEnvelope(filePath: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("defer_inbox_envelope", { filePath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Move an inbox envelope to `inbox/archived/` — "ignore / handled".
+ * Returns the new path. Idempotent.
+ */
+async archiveInboxEnvelope(filePath: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("archive_inbox_envelope", { filePath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 

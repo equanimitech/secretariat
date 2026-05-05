@@ -12,6 +12,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use secretariat_core::application::{
+    archive_envelope as core_archive_envelope, defer_envelope as core_defer_envelope,
     list_inbox_files, list_outbox_queue, read_envelope as core_read_envelope,
     sync_now as core_sync_now,
 };
@@ -344,6 +345,30 @@ pub async fn sync_now() -> Result<SyncReport, String> {
         sent_envelopes: outcome.sent_envelopes as u32,
         outbox_warnings: outcome.outbox_warnings,
     })
+}
+
+/// Move an inbox envelope to `inbox/deferred/` — "remind me later".
+/// Returns the new path. Idempotent.
+#[tauri::command]
+#[specta::specta]
+pub async fn defer_inbox_envelope(file_path: String) -> Result<String, String> {
+    let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
+    let p = std::path::PathBuf::from(file_path);
+    let dest = core_defer_envelope(&p, &paths.inbox)
+        .map_err(|e| format!("defer_envelope: {e}"))?;
+    Ok(dest.display().to_string())
+}
+
+/// Move an inbox envelope to `inbox/archived/` — "ignore / handled".
+/// Returns the new path. Idempotent.
+#[tauri::command]
+#[specta::specta]
+pub async fn archive_inbox_envelope(file_path: String) -> Result<String, String> {
+    let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
+    let p = std::path::PathBuf::from(file_path);
+    let dest = core_archive_envelope(&p, &paths.inbox)
+        .map_err(|e| format!("archive_envelope: {e}"))?;
+    Ok(dest.display().to_string())
 }
 
 /// Stamp an outbox draft and (best-effort) deliver it immediately. Touch

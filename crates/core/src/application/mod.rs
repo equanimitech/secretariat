@@ -3,6 +3,7 @@
 pub mod compose_envelope;
 pub mod contact_ops;
 pub mod delivery_policy;
+pub mod inbox_actions;
 pub mod inbox_ops;
 pub mod invite_ops;
 pub mod process_correspondence_claims;
@@ -17,6 +18,7 @@ pub use contact_ops::{
     add_contact, find_by_did, find_by_slug, list_contacts, remove_contact, ContactOpError,
 };
 pub use delivery_policy::{decide_poll, CadenceConfig, CadenceConfigError, PollDecision};
+pub use inbox_actions::{archive_envelope, defer_envelope, InboxActionError};
 pub use inbox_ops::{
     list_inbox_files, list_outbox_files, read_envelope, InboxOpError, ListedEnvelope, ReadResult,
 };
