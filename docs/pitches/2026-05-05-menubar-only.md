@@ -1,8 +1,12 @@
 # Menubar-only Secretariat — out of the way by default
 
-Pitch — 2026-05-05. Source: `/Users/rafa/Developer/equanimitech/secretariat/docs/ideas/menubar-only-no-main-window.md`.
+Pitch — 2026-05-05. Sources:
+- `docs/ideas/menubar-only-no-main-window.md`
+- `docs/ideas/quick-pane-for-message-ideas.md`
 
 **Hard dependency:** the v0.2.x onboarding wizard remains the first-launch path. The menubar-only behavior kicks in *after* onboarding completes.
+
+**Combined scope:** menubar tray (ambient state) + quick-pane (ambient capture). Both are summoned-only surfaces; both ride on existing template scaffolding (`tauri-nspanel` + `quick_pane.rs` are already wired but unused for Secretariat). Two halves of the same "stay out of the way" thesis.
 
 ## Boundaries
 
@@ -14,7 +18,7 @@ Baseline today: Tauri ships with an always-visible main window. The ReviewSurfac
 
 ### Appetite
 
-`medium` (overridden — set explicitly by user). A couple of focused days. A small/tiny would skip lifecycle hardening; a big would invite scope creep into menubar-app feature parity territory.
+`big` (revised — adding the quick-pane + ideas pool moves us from a chrome rework to a chrome rework + new domain primitive). A focused week. Smaller would skip the ideas data model or skip the menubar polish; a multi-week bet would invite scope creep into menubar-app feature parity territory.
 
 ## Elements
 
@@ -56,6 +60,26 @@ Four elements, breadboarded.
 - Quit (Cmd+Q from tray menu) → app fully exits, tray icon removed.
   Daemon LaunchAgent keeps running.
 
+### Place: quick-pane for capture
+
+- **Place:** floating NSPanel (the same scaffolding the template already
+  wires at `src-tauri/src/commands/quick_pane.rs`, currently unused for
+  Secretariat). Summoned by global shortcut from anywhere — Claude Code,
+  editor, Slack, doesn't matter where focus is.
+- **Affordance:** single text field. Optional contact-picker dropdown
+  for `to:`. Big "Capture" button (Enter to submit, Esc to dismiss).
+- **Connection:** submit → writes to `~/.secretariat/ideas/<timestamp>.md`
+  (one new value-object collection, separate from outbox: ideas are
+  pre-envelopes — no DID `to:` required, no body shape required, no
+  stamp). Pane closes. Tray dot updates if the ideas pool transitions
+  from empty.
+- The ideas pool surfaces in the outbox-review session alongside
+  unstamped envelopes — Claude (via MCP) reads them, proposes envelope
+  drafts based on each line, principal stamps the ones they want.
+- Default shortcut: `Cmd+Shift+S` (configurable). The template's
+  `Cmd+Shift+.` stays as override for principals who already have it
+  in muscle memory.
+
 ## Risks
 
 ### 🐇 Rabbit holes
@@ -64,6 +88,13 @@ Four elements, breadboarded.
   derived from `current_identity() != null && get_profile() != null`
   (already the existing routing test). Show main window only when both
   are missing. Easy.
+- **Ideas pool data model.** Pre-envelopes have no DID `to:`, no
+  encryption (they're local), no stamp. New domain value object —
+  `Idea { id, captured_at, body, suggested_to: Option<String> }` —
+  with an `~/.secretariat/ideas/` infrastructure adapter. New
+  application use cases: `capture_idea`, `list_ideas`, `delete_idea`,
+  `promote_idea_to_envelope` (the last one is what Claude calls when
+  the principal approves a draft from an idea).
 - **Tray badge updates on inbox arrival.** Today the daemon polls every
   15 min in-process *inside the Tauri app*; without a window, does the
   app process keep running? Answer: yes — Tauri tray apps stay
