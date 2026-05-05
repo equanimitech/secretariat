@@ -1,4 +1,9 @@
-# Project — Substrate + tray (v0.3, MCP-primary)
+# Project — v0.3 simplification (substrate + tray + MCP-primary)
+
+**This is a simplification project, not a feature push.** Every slice
+is evaluated by net delta — lines of code + surfaces added vs removed.
+Net direction must be neutral or subtractive. See
+`memory/project_v03_is_simplification.md` for the decision rule.
 
 Replaces `docs/milestones/2026-05-05-menubar-and-quick-pane.md` and the
 earlier "menubar with main window" framing.
@@ -17,9 +22,28 @@ agent bids) into envelopes addressed to local queues. The menubar pitch
 removes window chrome and adds a quick-pane for capture from anywhere.
 They merge cleanly because the menubar's "ideas pool" (original slice
 4) is exactly what the substrate's `Recipient::LocalQueue` provides — at
-the cost of one enum, one newtype, one field, and one projection union.
+the cost of one enum, one newtype, one field, and one projection union
+— while *deleting* a parallel data model that would have grown.
 
 This is one merged project, not two parallel ones.
+
+## Simplification accounting
+
+| Slice | Adds | Removes | Net |
+|---|---|---|---|
+| 1 — Substrate | `Recipient` enum, `EnvelopeKind`, `QueueHandle`, projection union (~150 LOC, 6 tests) | Future per-kind data models that won't need to exist (ideas pool, pains pool, agent-bid pool) | **subtractive in concept** |
+| 2 — `/idea` skill migrates | `idea_capture` MCP tool (~40 LOC) | `Write to docs/ideas/*.md` skill body (~10 LOC); future per-skill capture handlers | **subtractive** |
+| 3 — Tray icon | `TrayIconBuilder` setup (~80 LOC) | Original menubar pitch's popover plan (never built); two-buttons home in `<ReviewSurface>` (built, now removable) | **subtractive in plan, +~80 LOC code** |
+| 4 — Window-less lifecycle + popover carve-out + 2-name profile | Lifecycle conditional (~30 LOC), NSPanel anchoring (~20 LOC), profile v2 schema migration (~30 LOC) | Persistent main-window assumption (already commented out, can now delete); auto-show on launch | **subtractive** |
+| 5 — Quick-pane wired to capture | Replace template QuickPaneApp content (~100 LOC) | Template's placeholder QuickPaneApp body (~80 LOC); the previously-planned parallel ideas-pool storage (never built) | **near-zero net, repurposes existing scaffold** |
+| 6 — MCP review tools | `defer_envelope` / `archive_envelope` MCP tools (~30 LOC) — wrap already-shipped application use cases | Walker UI plan (never built); in-app stamp button + envelope reader modal shipped earlier today (delete here) | **subtractive — deletes existing UI** |
+
+**Project net:** small additive in raw LOC, **subtractive at every
+other layer** — surfaces, parallel data models, cognitive load,
+roadmap, planned-but-unbuilt UI. The codebase ends slightly larger
+(~+160 LOC) but conceptually much smaller — one substrate, one
+capture path, one review path. Subsequent versions stay simple by
+discipline.
 
 ## The merged model — H↔H + H↔A on the same primitive
 
