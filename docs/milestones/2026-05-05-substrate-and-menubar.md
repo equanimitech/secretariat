@@ -1,10 +1,16 @@
-# Project — Substrate + menubar (v0.3 merged plan)
+# Project — Substrate + tray (v0.3, MCP-primary)
 
-Replaces `docs/milestones/2026-05-05-menubar-and-quick-pane.md`.
+Replaces `docs/milestones/2026-05-05-menubar-and-quick-pane.md` and the
+earlier "menubar with main window" framing.
 
 Sources:
 - `docs/pitches/2026-05-05-event-sourced-envelope-substrate.md`
 - `docs/pitches/2026-05-05-menubar-only.md`
+- Direction lock-in: `memory/project_mcp_is_primary_interface.md` —
+  the Tauri app has NO main window, NO walker UI, NO settings panes,
+  NO in-app composer. Claude (MCP) is the primary interface for all
+  correspondence operations; the app is peripheral status + capture
+  only.
 
 The substrate pitch turns local captures (ideas, future pains, future
 agent bids) into envelopes addressed to local queues. The menubar pitch
@@ -92,40 +98,55 @@ later` → idea lands in `~/.secretariat/queues/inbox/triage/`, visible in
 the next review session. Old `docs/ideas/` files coexist as historical
 record.
 
-### Slice 3 — Tray icon + minimal popover (½ day)
+### Slice 3 — Tray icon (½ day)
 
-Now we have a substrate; the app starts becoming peripheral.
+Now we have a substrate; the app becomes peripheral.
 
 **What changes:**
 - `src-tauri/Cargo.toml` — add `tauri = { features = [...,
   "tray-icon", "image-png"] }`.
 - `src-tauri/src/lib.rs` — `setup` hook installs `TrayIconBuilder`.
-  Click toggles main window visibility (lifecycle hardening in slice 4).
-- New tray-popover window definition in `tauri.conf.json`,
-  capabilities updated (`tray-popover` window).
-- `src/components/secretariat/TrayPopover.tsx` — wraps the existing
-  `<ReviewSurface>` two-button home in a small popover layout.
+- Right-click menu items (no popover for v1):
+  - "Capture an idea…" → opens the quick-pane (slice 5)
+  - "Sync now" → calls `sync_now` directly
+  - "How to onboard" (only when no identity yet) → copies prompt to
+    clipboard
+  - "Quit Secretariat"
+- Left-click for v1: same as right-click (menu opens). Future option
+  to show a small dropdown with counts; not v1.
+- No popover window. No `<ReviewSurface>` UI lives in the app.
 
-**Demo:** menubar icon visible. Click → popover slides down with the
-familiar two buttons. Main window also still opens normally on launch.
+**Demo:** menubar icon visible. Right-click → menu of actions. None
+of them open a window — they trigger MCP/CLI flows or the quick-pane.
 
-### Slice 4 — Lifecycle: hide main window post-onboarding + tray badge (½ day)
+### Slice 4 — Lifecycle: window-less by default + tray badge (½ day)
 
-The window goes away. Tray dot shows queue state.
+The main window goes away entirely. The app boots into menubar-only
+mode every time. Onboarding happens in Claude (MCP-driven) for fresh
+installs.
 
 **What changes:**
-- `lib.rs` setup hook — check `current_identity` + `get_profile`; hide
-  main window if both present (post-onboarding state).
+- `lib.rs` setup hook — never auto-show the main window. Even on
+  first launch.
+- First-launch detection — if no identity exists, the tray icon shows
+  a distinct "needs setup" color (e.g. red dot). Right-click → "How
+  to onboard" menu item that copies a Claude-ready prompt to the
+  clipboard: *"Help me set up Secretariat. Start with the init
+  identity tool, then walk me through claiming an invite if I have one,
+  or creating one if I'm reaching out first."*
 - Background sync loop emits `tray:state-changed` event on each tick;
-  Rust side updates tray icon's image (green dot template / amber dot
-  template). Two static SVGs in `icons/`.
-- Close-requested handler — quit on tray-icon-only mode (Cmd+Q from
-  tray menu) instead of just hiding.
+  Rust side updates tray icon's image (green / amber / red dot
+  templates). Static SVGs in `icons/`.
+- Close-requested handler — quit on tray-only (Cmd+Q from tray menu).
+- The wizard component (`src/components/secretariat/Onboarding.tsx`)
+  becomes legacy code. Comment-out, don't delete (per the
+  preserve-template-chrome convention) — useful as the React-side
+  reference if the principal ever wants a window-based fallback.
 
-**Demo:** launch fresh → wizard appears (main window) → finish onboarding
-→ window vanishes → only tray icon. Tray dot is amber when there's
-anything in inbox or queue (peer drafts OR local-queue captures);
-green when both are empty.
+**Demo:** install .dmg → drag to /Applications → open → tray icon
+appears (red dot, "needs setup") → right-click → click "How to
+onboard" → paste prompt into Claude → Claude walks identity creation
+→ tray dot transitions to green. Never a window.
 
 ### Slice 5 — Quick-pane wired to `sec capture` (1 day)
 
@@ -151,97 +172,119 @@ type "tell dad chapter 3 needs more pressure", leave recipient blank →
 Enter → pane dismisses → idea is in the principal's `inbox:triage`
 queue, visible at next review.
 
-### Slice 6 — Walker handles both kinds (½ day)
+### Slice 6 — MCP review tools (½ day)
 
-The review session natively understands letters and ideas.
+Review happens in Claude, not in the app. The app's tray dot signals;
+the principal asks Claude "review my inbox" / "review my outbox" /
+"walk me through my queue"; Claude calls the right MCP tools and
+guides the principal through the conversation.
 
 **What changes:**
-- `<ReviewSession>` walker (still to-be-built per the pitch
-  `docs/pitches/2026-05-05-inbox-review-walker.md` for inbox; sibling
-  for outbox+queue) gets per-kind action bars.
-- For `Letter` items in the outbox queue: actions = Stamp+Send / Defer
-  / Archive / Next.
-- For `Idea` items in `inbox:triage`: actions = Promote to letter /
-  Archive / Next. "Promote to letter" opens the recipient picker;
-  promotion creates an `outbox/<did>/<timestamp>.md` envelope with
-  body copied, marked as `kind=Letter` requiring stamp; the original
-  idea is archived.
+- New MCP tools wrapping the inbox-actions primitives shipped earlier
+  today: `defer_envelope`, `archive_envelope`, `promote_idea_to_letter`.
+- The `compose` MCP tool gains an optional `from_idea_id` parameter so
+  Claude can promote an idea to a letter (read body, draft envelope to
+  selected recipient, archive the original idea).
+- No UI work in the Tauri app for this slice.
 
-**Demo:** open the app at chosen review time → "Drafts & ideas"
-walker shows whatever's pending (mixed peer drafts + ideas) → for
-each, the appropriate action bar → walk through, walker ends at
-queue empty → tray dot transitions amber → green.
+**Demo:** in Claude, "review my outbox queue" → Claude calls
+list_review_queue + read for each draft → for each: shows body, asks
+"stamp + send?" → on yes, calls stamp_envelope (Touch ID fires) → on
+"defer", calls defer_envelope → walker ends when queue is exhausted →
+principal sees tray dot transition green afterward.
 
-## The full UX — a day in the life
+## The full UX — a day in the life (MCP-primary)
 
-This is the principal's day with the merged design. Marcelo as the
-audience, Rafa-as-author working on the book.
+The principal's day. Marcelo as audience, Rafa-as-author on the book.
 
 **Morning** (anywhere — editor, browser, Slack):
-- A thought hits: "tell Marcelo the constraint section needs a
-  human example". `Cmd+Shift+S` → quick-pane → type → Enter. Idea
-  is in `inbox:triage`. No window opened, no Claude prompt, no
-  context switch. Total: 4 seconds.
+- Thought hits: "tell Marcelo the constraint section needs a human
+  example". `Cmd+Shift+S` → quick-pane → type → Enter. Idea lands in
+  `inbox:triage`. **No window. No Claude prompt. 4 seconds.**
 
-**Mid-day** (working in Claude Code on the chapter):
-- Claude is drafting prose. At one point Rafa says "draft an envelope
-  to Marcelo with this section's outline." Claude calls the
-  `compose` MCP tool → unstamped letter draft lands in
-  `outbox/<marcelo>/`. No interruption to Rafa's writing flow.
+**Mid-day** (writing in Claude Code on the chapter):
+- Claude is drafting prose. Rafa says "draft an envelope to Marcelo
+  with this section's outline." Claude calls the `compose` MCP tool
+  → unstamped letter lands in `outbox/<marcelo>/`. **No interruption.**
 
-**EOD review session** (chosen time, e.g. 6pm):
-- Tray dot is amber — has been since this morning's capture.
-- Click tray icon → popover slides down with two buttons. Counts
-  show "3 to review" total (1 idea, 2 letter drafts).
-- Click "Drafts & ideas" → walker opens.
-- Envelope 1 (idea, "tell Marcelo constraint section needs human
-  example") → Promote to letter → recipient picker shows Marcelo →
-  Promote → letter draft now in outbox queue with body copied.
-- Envelope 2 (letter to Marcelo, this morning's outline) → Stamp+Send
-  → Touch ID → relay queues. Walker advances.
-- Envelope 3 (the just-promoted letter from idea 1) → Stamp+Send →
-  Touch ID → sent.
-- Walker ends; tray dot transitions to green.
+**EOD review** (Rafa's chosen review time, e.g. 6pm):
+- Glances at menubar — tray dot is **amber** (has been since the
+  morning capture).
+- Opens Claude Code (already open from mid-day work) and types:
+  *"Review my outbox queue."*
+- Claude calls `list_review_queue` (sees 1 idea + 2 letter drafts).
+  Walks one at a time, in Claude's chat:
+
+  > Claude: "First up — an idea you captured this morning: '*tell
+  > Marcelo the constraint section needs a human example*'. Promote
+  > to a letter, archive, or skip?"
+  > Rafa: "promote, to Marcelo."
+  > Claude: [calls `compose` with `from_idea_id`] "Drafted. Body:
+  > [shows the proposed letter]. Stamp + send?"
+  > Rafa: "stamp."
+  > Claude: [calls `stamp_envelope`] → Touch ID fires → "Stamped + sent.
+  > Next."
+  > [...repeat for the other two drafts]
+  > Claude: "Queue clear."
+
+- Tray dot transitions amber → green.
 
 **Throughout, never:**
-- Window is the focus. App is in the periphery (tray icon, dot color).
-- Notifications fire. The principal *visits* the surface; it doesn't
-  visit them.
-- The principal types into a textarea inside the app for a multi-
-  paragraph composition. The AI assistant drafts; the principal
-  triages.
+- App window opens. The app is the tray icon and the quick-pane,
+  nothing else.
+- Claude is replaced by an in-app composer. Drafting + reviewing live
+  where Rafa already works (in Claude Code).
+- Notifications fire. Tray dot is the only ambient signal.
+
+**Onboarding** (a fresh install, e.g. for Christophe):
+- Christophe opens `Secretariat.app` from /Applications → tray icon
+  appears (red dot, "needs setup").
+- Right-click tray → "How to onboard" → prompt copies to clipboard.
+- Christophe pastes into Claude Desktop → Claude walks him through
+  init_identity, claim_invite_url, contact-add via natural
+  conversation.
+- Tray dot transitions red → green.
+
+**Settings** (rare):
+- Rafa wants to update his name from "Rafa" to "Rafa B." → in Claude:
+  "Change my Secretariat display name to 'Rafa B.'"
+- Claude calls `set_profile` — done.
+- Or via terminal: `sec profile set "Rafa B."`
 
 ## What changes in the v0.3 release scope
 
-| Was (separate plans) | Is (merged) |
+| Was (separate plans) | Is (merged + MCP-primary) |
 |---|---|
-| Menubar slice 1: tray + popover | Slice 3 |
-| Menubar slice 2: hide main window | Slice 4 |
-| Menubar slice 3: tray badge | Slice 4 (folded in) |
+| Menubar slice 1: tray + popover | **Slice 3** — tray only, no popover |
+| Menubar slice 2: hide main window | **Slice 4** — no main window at all |
+| Menubar slice 3: tray badge | Slice 4 (folded) |
 | Menubar slice 4: ideas pool data model | **Replaced** by substrate slice 1 |
-| Menubar slice 5: quick-pane | Slice 5 |
+| Menubar slice 5: quick-pane | Slice 5 (still ships) |
 | Substrate slice (whole pitch) | Slices 1+2 |
+| Walker UI in app | **Cut** — review happens in Claude (slice 6 = MCP review tools instead) |
 
-Net: 6 slices instead of 5+1=6. Same total work, sharper sequencing,
-no parallel data models for "ideas" vs "envelopes".
+Net: 6 slices, same total work, sharper sequencing, **no main window
+ever**, no parallel data models for "ideas" vs "envelopes", no walker
+UI to maintain inside the app.
 
 ## Decision log
 
-- **Substrate ships first.** Every UI choice (walker action bars,
-  quick-pane recipient picker) depends on the Recipient + EnvelopeKind
-  primitives. Building UI before substrate would require a rewrite.
+- **Substrate ships first.** Every other slice depends on Recipient +
+  EnvelopeKind. Building anything else first would require rewrites.
 - **`/idea` skill migrates BEFORE the quick-pane.** Proves the
-  substrate from the most-trafficked capture path while UI is still
-  template-shaped. Quick-pane in slice 5 then has a working backend
-  to call.
-- **Tray icon ships AFTER the substrate but BEFORE the walker
-  rebuild.** Order: substrate → /idea wired → tray + lifecycle →
-  quick-pane → walker per-kind. The walker change is small (one new
-  action bar variant) so it lands last — right after the rest of the
-  surface is shaped.
-- **`docs/ideas/*.md` files stay** as historical record. No
-  migration script. New ideas use the substrate; existing files are
-  archive.
+  substrate from the most-trafficked capture path. Quick-pane in
+  slice 5 then has a working backend.
+- **No main window. Ever.** Even on first launch. The wizard component
+  shipped earlier becomes legacy code preserved in source per the
+  comment-out-don't-delete convention; the principal-facing onboarding
+  path is Claude (MCP) for fresh installs.
+- **No walker UI inside the app.** Review happens in Claude. Slice 6
+  ships the MCP tools Claude calls; the conversation is the walker.
+- **Tray dot is the only ambient signal.** Red = needs setup,
+  amber = pending, green = clear. No notifications, no badges with
+  numbers, no popovers.
+- **`docs/ideas/*.md` files stay** as historical record. No migration
+  script.
 
 ## Out of merged scope (future pitches)
 
