@@ -1,6 +1,6 @@
 [package]
 name = "secretariat"
-version = "0.2.4"
+version = "0.2.5"
 description = "Cryptographically attested AI-mediated correspondence — Tauri shell."
 authors = ["Rafa Ballestiero"]
 edition = "2021"
