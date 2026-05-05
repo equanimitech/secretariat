@@ -34,18 +34,22 @@ on Rafa's machine. Two things to do soon:
 
 1. Back it up to a password manager (1Password / Bitwarden) under
    "Secretariat / Tauri updater private key."
-2. Add to GitHub repo secrets as `TAURI_SIGNING_PRIVATE_KEY` (base64-encoded
-   contents of the file) so CI can sign updates.
+2. Add to GitHub repo secrets as `TAURI_SIGNING_PRIVATE_KEY` — the
+   secret value is **the raw file contents**, not a base64-encoded
+   version. The file is already base64-armored (it starts with
+   `untrusted comment: rsign encrypted secret key` after one decode);
+   double-encoding fails CI with `Missing encoded key in secret key`.
 
 ```bash
-# Encode for GitHub secret
-base64 -i .tauri-keys/secretariat-updater | pbcopy
-# Paste into: Repo Settings → Secrets and variables → Actions → New
-# Name: TAURI_SIGNING_PRIVATE_KEY
+# Set secret directly from file contents.
+gh secret set TAURI_SIGNING_PRIVATE_KEY \
+  --repo equanimitech/secretariat \
+  < .tauri-keys/secretariat-updater
 ```
 
-If the key file has no password (current state), no
-`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` is needed.
+If the key file has no password (current state — generated with
+`tauri signer generate --ci`), no `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
+is needed.
 
 ## Apple Developer ID — runbook
 
