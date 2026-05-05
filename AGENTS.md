@@ -12,9 +12,24 @@ desktop app).
 ## What's here today
 
 - **CLI (`sec`)** — works end-to-end on macOS. `init` / `compose` / `stamp` /
-  `verify` / `list`. 61 unit tests passing. See `docs/developer/secretariat-architecture.md`.
-- **Tauri shell** — scaffolded but unused. The ceremony GUI is a future increment.
-- **MCP server** — not built yet. Claude orchestrates via `Bash` against `sec` for now.
+  `verify` / `list` / `daemon install` / `mcp install`. See
+  `docs/developer/secretariat-architecture.md`.
+- **MCP server (`sec-mcp`)** — built. Exposes `compose`, `stamp`, `read`,
+  `verify`, `list_outbox`, `list_inbox`, `list_contacts`, `add_contact`,
+  `invite_create`, `invite_claim`, `init`, `daemon_install`,
+  `daemon_status`. Source at `crates/mcp/`.
+- **Tauri shell** — running. Bundles `sec` + `sec-mcp` as sidecars and on
+  launch wires them silently (`sec mcp install`, `sec daemon install`).
+  Per `project_mcp_is_primary_interface`, the app is tray + quick-pane +
+  daemon + MCP wiring; principal-facing review/compose happens via Claude
+  (MCP) or CLI.
+
+  Sidecars are staged into `src-tauri/binaries/` by
+  `src-tauri/scripts/build-sidecars.sh`, which Tauri's `beforeBuildCommand`
+  runs automatically during `pnpm tauri:dev` / `pnpm tauri:build`. For a
+  bare `cargo check -p secretariat` on a clean clone you must run that
+  script once first (otherwise `tauri-build` fails with *"resource path
+  `binaries/sec-<triple>` doesn't exist"*).
 
 ## Hard rules
 

@@ -32,3 +32,7 @@ target/
 *.sln
 *.sw?
 .tauri-keys/
+
+# Tauri sidecars staged by src-tauri/scripts/build-sidecars.sh.
+# Built per-target; never committed.
+src-tauri/binaries/

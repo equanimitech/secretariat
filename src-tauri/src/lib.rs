@@ -141,6 +141,26 @@ pub fn run() {
             // NOTE: Application menu is built from JavaScript for i18n support
             // See src/lib/menu.ts for the menu implementation
 
+            // First-launch plumbing — Tauri app owns wiring the bundled
+            // `sec` + `sec-mcp` sidecars into the principal's environment so
+            // they never touch Terminal. Both calls are idempotent and gated
+            // on marker files: they re-run only when the bundled binary
+            // path changes (app moved or upgraded).
+            //
+            // - MCP wiring → `sec mcp install` (Claude Code + Claude Desktop)
+            //   per memory project_mcp_is_primary_interface
+            // - Daemon LaunchAgent → `sec daemon install` per the onboarding
+            //   audit (`docs/audits/2026-05-04-onboarding-ux.md` —
+            //   "Daemon not auto-started at install time")
+            tauri::async_runtime::spawn_blocking(|| {
+                if let Err(e) = wire_mcp_from_bundled_sec() {
+                    log::info!("MCP wiring skipped: {e}");
+                }
+                if let Err(e) = install_daemon_from_bundled_sec() {
+                    log::info!("daemon install skipped: {e}");
+                }
+            });
+
             // Background sync — keeps state warm without surfacing notifications.
             // Per the review-session model
             // (memory/feedback_review_session_model.md), the principal-initiated
@@ -274,4 +294,91 @@ pub fn run() {
 
             _ => {}
         });
+}
+
+/// Resolve the bundled `sec` and `sec-mcp` sidecars next to the running
+/// Tauri exe (e.g. `Secretariat.app/Contents/MacOS/`). Returns `Err` for
+/// dev builds where the sidecars aren't staged.
+fn bundled_sidecars() -> Result<(std::path::PathBuf, std::path::PathBuf), String> {
+    let exe = std::env::current_exe().map_err(|e| format!("current_exe: {e}"))?;
+    let dir = exe
+        .parent()
+        .ok_or_else(|| "current exe has no parent dir".to_string())?;
+    let sec = dir.join("sec");
+    let sec_mcp = dir.join("sec-mcp");
+    if !sec.exists() || !sec_mcp.exists() {
+        return Err(format!(
+            "bundled sec / sec-mcp not present next to app exe ({}); dev build?",
+            dir.display()
+        ));
+    }
+    Ok((sec, sec_mcp))
+}
+
+/// Skip if the marker file already records `current_path`. Otherwise run
+/// `body` and, on success, write `current_path` to the marker.
+fn run_once_per_path(
+    marker_name: &str,
+    current_path: &str,
+    body: impl FnOnce() -> Result<(), String>,
+) -> Result<(), String> {
+    let marker = dirs::home_dir()
+        .ok_or_else(|| "no home dir".to_string())?
+        .join(".secretariat")
+        .join(marker_name);
+    if let Ok(prev) = std::fs::read_to_string(&marker) {
+        if prev.trim() == current_path {
+            return Ok(());
+        }
+    }
+    body()?;
+    if let Some(parent) = marker.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    std::fs::write(&marker, current_path).map_err(|e| format!("writing marker: {e}"))?;
+    Ok(())
+}
+
+/// Wire the bundled `sec-mcp` into Claude Code / Claude Desktop. Idempotent;
+/// re-wires only when the bundled `sec-mcp` path changes.
+fn wire_mcp_from_bundled_sec() -> Result<(), String> {
+    let (sec, sec_mcp) = bundled_sidecars()?;
+    let path_str = sec_mcp.to_string_lossy().into_owned();
+    run_once_per_path(".tauri-mcp-binary-path", &path_str, || {
+        log::info!("wiring MCP via bundled sec: {}", sec.display());
+        let status = std::process::Command::new(&sec)
+            .arg("mcp")
+            .arg("install")
+            .arg("--binary")
+            .arg(&sec_mcp)
+            .status()
+            .map_err(|e| format!("spawning sec: {e}"))?;
+        if !status.success() {
+            return Err(format!("`sec mcp install` exited with {status}"));
+        }
+        log::info!("MCP wired");
+        Ok(())
+    })
+}
+
+/// Install the LaunchAgent that runs the bundled `sec daemon serve` at login
+/// and on reboot. Idempotent; re-installs only when the bundled `sec` path
+/// changes (the plist hardcodes the absolute path, so app upgrades trigger
+/// a re-install).
+fn install_daemon_from_bundled_sec() -> Result<(), String> {
+    let (sec, _sec_mcp) = bundled_sidecars()?;
+    let path_str = sec.to_string_lossy().into_owned();
+    run_once_per_path(".tauri-daemon-binary-path", &path_str, || {
+        log::info!("installing LaunchAgent via bundled sec: {}", sec.display());
+        let status = std::process::Command::new(&sec)
+            .arg("daemon")
+            .arg("install")
+            .status()
+            .map_err(|e| format!("spawning sec: {e}"))?;
+        if !status.success() {
+            return Err(format!("`sec daemon install` exited with {status}"));
+        }
+        log::info!("LaunchAgent installed");
+        Ok(())
+    })
 }

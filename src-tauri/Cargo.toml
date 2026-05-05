@@ -39,6 +39,7 @@ url = "2"
 chrono = "0.4"
 log = "0.4"
 regex = "1"
+dirs = "5"
 
 # Type-safe Tauri command bindings
 specta = { version = "=2.0.0-rc.22", features = ["derive", "serde_json"] }

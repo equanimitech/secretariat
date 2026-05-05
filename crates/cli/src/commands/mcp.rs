@@ -26,8 +26,10 @@ enum Cmd {
     /// Install `sec-mcp` into Claude Desktop and (when present) Claude Code.
     /// Idempotent — safe to re-run after upgrades.
     Install {
-        /// Override the path to the `sec-mcp` binary. Defaults to the one
-        /// resolved on `$PATH`, falling back to `~/.cargo/bin/sec-mcp`.
+        /// Override the path to the `sec-mcp` binary. By default, resolved
+        /// in this order: sibling of the running `sec` exe (Tauri sidecar
+        /// case), `which sec-mcp`, `~/.cargo/bin/sec-mcp`,
+        /// `~/.local/bin/sec-mcp`.
         #[arg(long)]
         binary: Option<PathBuf>,
 
@@ -105,6 +107,19 @@ fn resolve_binary(explicit: Option<PathBuf>) -> Result<PathBuf> {
         return Ok(p);
     }
 
+    // Sibling of the running `sec` binary (e.g. inside
+    // Secretariat.app/Contents/MacOS/ when invoked from the Tauri-bundled
+    // sidecar). Checked first so a bundled .app wins over a stray
+    // `~/.cargo/bin/sec-mcp` left over from dev installs.
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let sibling = dir.join("sec-mcp");
+            if sibling.exists() && sibling != exe {
+                return Ok(sibling);
+            }
+        }
+    }
+
     // Try `which sec-mcp`.
     if let Ok(output) = Command::new("which").arg("sec-mcp").output() {
         if output.status.success() {
@@ -128,7 +143,7 @@ fn resolve_binary(explicit: Option<PathBuf>) -> Result<PathBuf> {
     }
 
     Err(anyhow!(
-        "could not locate sec-mcp on PATH or in ~/.cargo/bin or ~/.local/bin. \
+        "could not locate sec-mcp next to `sec`, on PATH, or in ~/.cargo/bin / ~/.local/bin. \
          Pass --binary <path> explicitly, or run `cargo install --path crates/mcp` first."
     ))
 }
