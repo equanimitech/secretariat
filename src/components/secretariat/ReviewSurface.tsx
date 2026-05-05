@@ -1,46 +1,31 @@
-// Review surface — the principal's chosen-time ritual for acting on
-// queued correspondence. See `docs/milestones/2026-05-04-tauri-front-door.md`
-// slice 3 and `memory/feedback_review_session_model.md`.
+// Two-button home surface. The dashboard / inbox-columns / envelope-modal
+// look from the v0.2.0 cut was too email-shaped — see
+// `memory/project_two_buttons_home.md` for the design lock-in. The
+// cadenced review-session walker that the buttons launch lands in a
+// follow-up commit.
 //
-// No notifications, no push. Just two collections (inbox + review queue)
-// and an explicit "Sync now" affordance. Drafting happens in the
-// principal's AI assistant; this surface is for review + stamp.
+// Today's behavior: counts surface as ambient signal in the button
+// labels; clicking either button is a no-op placeholder until the
+// walker ships.
 
 import { useCallback, useEffect, useState } from 'react'
 import {
   commands,
-  type EnvelopeListing,
   type IdentityState,
   type Profile,
-  type SyncReport,
 } from '@/lib/bindings'
-
-type Selection =
-  | { kind: 'inbox'; envelope: EnvelopeListing }
-  | { kind: 'queue'; envelope: EnvelopeListing }
-  | null
-
-type EnvelopeBody = {
-  body: string
-  from: string | null
-  to: string | null
-  was_encrypted: boolean
-}
 
 export function ReviewSurface() {
   const [identity, setIdentity] = useState<IdentityState | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
-  const [inbox, setInbox] = useState<EnvelopeListing[]>([])
-  const [queue, setQueue] = useState<EnvelopeListing[]>([])
-  const [selection, setSelection] = useState<Selection>(null)
-  const [reading, setReading] = useState<EnvelopeBody | null>(null)
+  const [inboxCount, setInboxCount] = useState<number>(0)
+  const [queueCount, setQueueCount] = useState<number>(0)
   const [syncing, setSyncing] = useState(false)
-  const [lastSync, setLastSync] = useState<SyncReport | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
     setError(null)
-    const [ident, prof, i, q] = await Promise.all([
+    const [ident, prof, inbox, queue] = await Promise.all([
       commands.currentIdentity(),
       commands.getProfile(),
       commands.listInbox(),
@@ -48,10 +33,10 @@ export function ReviewSurface() {
     ])
     if (ident.status === 'ok') setIdentity(ident.data)
     if (prof.status === 'ok') setProfile(prof.data)
-    if (i.status === 'ok') setInbox(i.data)
-    else setError(i.error)
-    if (q.status === 'ok') setQueue(q.data)
-    else setError(q.error)
+    if (inbox.status === 'ok') setInboxCount(inbox.data.length)
+    else setError(inbox.error)
+    if (queue.status === 'ok') setQueueCount(queue.data.length)
+    else setError(queue.error)
   }, [])
 
   useEffect(() => {
@@ -63,280 +48,113 @@ export function ReviewSurface() {
     setError(null)
     try {
       const result = await commands.syncNow()
-      if (result.status === 'ok') {
-        setLastSync(result.data)
-        await refresh()
-      } else {
-        setError(result.error)
-      }
+      if (result.status === 'error') setError(result.error)
+      await refresh()
     } finally {
       setSyncing(false)
     }
   }, [refresh])
 
-  const handleSelect = useCallback(async (sel: Selection) => {
-    setSelection(sel)
-    if (!sel) {
-      setReading(null)
-      return
-    }
-    const r = await commands.readEnvelope(sel.envelope.file_path)
-    if (r.status === 'ok') {
-      setReading(r.data)
-    } else {
-      setError(r.error)
-      setReading(null)
-    }
-  }, [])
-
-  if (!identity) return null // routed by MainWindowContent; shouldn't reach here
+  if (!identity) return null
 
   const displayName = profile?.display_name ?? null
 
   return (
-    <div className="flex h-full flex-col gap-4 p-4">
-      <header className="flex items-center justify-between border-b pb-3">
-        <div className="flex items-center gap-3">
-          <PrincipalAvatar did={identity.did} name={displayName} />
-          <div className="text-sm">
-            <p className="font-medium">{displayName ?? 'You'}</p>
-            <code
-              className="block truncate text-xs text-muted-foreground"
-              title={identity.did}
-            >
-              {shortenDid(identity.did)}
-            </code>
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={handleSync}
-          disabled={syncing}
-          className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50"
-        >
-          {syncing ? 'Syncing…' : 'Sync now'}
-        </button>
+    <div className="flex h-full flex-col items-center justify-center gap-12 bg-background p-8">
+      <header className="flex flex-col items-center gap-3 text-center">
+        <PrincipalAvatar did={identity.did} name={displayName} size="lg" />
+        <p className="text-lg font-medium">{displayName ?? 'You'}</p>
       </header>
+
+      <div className="flex flex-col gap-4 sm:flex-row">
+        <ReviewButton
+          label="Review inbox"
+          count={inboxCount}
+          onClick={() => {
+            // walker lands next; placeholder for now.
+          }}
+        />
+        <ReviewButton
+          label="Review outbox"
+          count={queueCount}
+          onClick={() => {
+            // walker lands next; placeholder for now.
+          }}
+        />
+      </div>
+
+      <button
+        type="button"
+        onClick={handleSync}
+        disabled={syncing}
+        className="text-sm text-muted-foreground underline-offset-4 hover:underline disabled:opacity-50"
+      >
+        {syncing ? 'Syncing…' : 'Sync now'}
+      </button>
 
       {error && (
         <div className="rounded-md border border-destructive bg-destructive/10 p-3 text-sm text-destructive">
           {error}
         </div>
       )}
-
-      {lastSync && (
-        <p className="text-xs text-muted-foreground">
-          Last sync: {lastSync.sent_envelopes} sent;{' '}
-          {lastSync.per_relay.reduce((n, r) => n + r.inbound_count, 0)}{' '}
-          inbound;{' '}
-          {lastSync.per_relay.reduce((n, r) => n + r.auto_added_contacts, 0)}{' '}
-          new contact(s).
-        </p>
-      )}
-
-      <div className="grid flex-1 gap-4 overflow-hidden md:grid-cols-2">
-        <EnvelopeColumn
-          title="Inbox"
-          subtitle="Received envelopes"
-          items={inbox}
-          selectedPath={
-            selection?.kind === 'inbox' ? selection.envelope.file_path : null
-          }
-          onSelect={env => handleSelect({ kind: 'inbox', envelope: env })}
-          empty="Nothing yet. New arrivals show up here after Sync."
-        />
-        <EnvelopeColumn
-          title="Review queue"
-          subtitle="Drafts awaiting your stamp"
-          items={queue}
-          selectedPath={
-            selection?.kind === 'queue' ? selection.envelope.file_path : null
-          }
-          onSelect={env => handleSelect({ kind: 'queue', envelope: env })}
-          empty="No drafts. Your AI assistant composes them; they queue here for review."
-        />
-      </div>
-
-      {selection && reading && (
-        <EnvelopeReader
-          envelope={selection.envelope}
-          read={reading}
-          onClose={() => handleSelect(null)}
-          onStamped={async () => {
-            await handleSelect(null)
-            await refresh()
-          }}
-        />
-      )}
     </div>
   )
 }
 
-function EnvelopeColumn({
-  title,
-  subtitle,
-  items,
-  selectedPath,
-  onSelect,
-  empty,
+function ReviewButton({
+  label,
+  count,
+  onClick,
 }: {
-  title: string
-  subtitle: string
-  items: EnvelopeListing[]
-  selectedPath: string | null
-  onSelect: (env: EnvelopeListing) => void
-  empty: string
+  label: string
+  count: number
+  onClick: () => void
 }) {
+  const hasItems = count > 0
   return (
-    <section className="flex min-h-0 flex-col rounded-md border">
-      <header className="border-b px-3 py-2">
-        <h2 className="text-sm font-semibold">{title}</h2>
-        <p className="text-xs text-muted-foreground">{subtitle}</p>
-      </header>
-      <ol className="flex-1 overflow-auto">
-        {items.length === 0 ? (
-          <li className="p-4 text-sm text-muted-foreground">{empty}</li>
-        ) : (
-          items.map(env => (
-            <li
-              key={env.file_path}
-              className={
-                'cursor-pointer border-b px-3 py-2 text-sm hover:bg-muted ' +
-                (selectedPath === env.file_path ? 'bg-muted' : '')
-              }
-              onClick={() => onSelect(env)}
-            >
-              <div className="flex items-center gap-2">
-                {env.encrypted && <span title="Encrypted">🔒</span>}
-                {env.stamped && <span title="Stamped">✓</span>}
-                <code className="truncate text-xs">
-                  {env.from ?? env.to ?? 'unknown'}
-                </code>
-              </div>
-              <p className="truncate text-xs text-muted-foreground">
-                {filenameFromPath(env.file_path)}
-              </p>
-            </li>
-          ))
-        )}
-      </ol>
-    </section>
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex h-44 w-64 flex-col items-center justify-center gap-3 rounded-2xl border-2 bg-card p-6 transition hover:border-primary hover:shadow-md"
+    >
+      <span
+        className={
+          'h-3 w-3 rounded-full ' +
+          (hasItems
+            ? 'bg-amber-500 dark:bg-amber-400'
+            : 'bg-emerald-500 dark:bg-emerald-400')
+        }
+        aria-hidden
+      />
+      <span className="text-xl font-semibold">{label}</span>
+      <span className="text-sm text-muted-foreground">
+        {hasItems
+          ? count === 1
+            ? '1 to review'
+            : `${count} to review`
+          : 'all clear'}
+      </span>
+    </button>
   )
-}
-
-function EnvelopeReader({
-  envelope,
-  read,
-  onClose,
-  onStamped,
-}: {
-  envelope: EnvelopeListing
-  read: EnvelopeBody
-  onClose: () => void
-  onStamped: () => void
-}) {
-  const [stamping, setStamping] = useState(false)
-  const [stampError, setStampError] = useState<string | null>(null)
-  const [stampNote, setStampNote] = useState<string | null>(null)
-
-  const handleStamp = useCallback(async () => {
-    setStamping(true)
-    setStampError(null)
-    setStampNote(null)
-    try {
-      const result = await commands.stampEnvelope(envelope.file_path)
-      if (result.status === 'error') {
-        setStampError(result.error)
-        return
-      }
-      const r = result.data
-      if (r.delivered) {
-        setStampNote(`Stamped + delivered (relay id ${r.relay_assigned_id ?? '?'}).`)
-      } else if (r.delivery_warning) {
-        setStampNote(`Stamped. ${r.delivery_warning}`)
-      } else {
-        setStampNote('Stamped.')
-      }
-      // Brief delay so the principal sees the confirmation, then close.
-      setTimeout(() => onStamped(), 1200)
-    } finally {
-      setStamping(false)
-    }
-  }, [envelope.file_path, onStamped])
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-6">
-      <div className="flex max-h-full w-full max-w-3xl flex-col gap-3 rounded-lg border bg-background p-5 shadow-lg">
-        <header className="flex items-center justify-between">
-          <div className="text-xs text-muted-foreground">
-            {read.from && <span>from <code>{read.from}</code></span>}
-            {read.to && <span> · to <code>{read.to}</code></span>}
-            {read.was_encrypted && <span> · decrypted on this device</span>}
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-md border px-2 py-1 text-xs hover:bg-muted"
-          >
-            Close
-          </button>
-        </header>
-        <pre className="flex-1 overflow-auto whitespace-pre-wrap rounded-md bg-muted p-4 text-sm">
-          {read.body}
-        </pre>
-        {stampError && (
-          <div className="rounded-md border border-destructive bg-destructive/10 p-3 text-sm text-destructive">
-            {stampError}
-          </div>
-        )}
-        {stampNote && (
-          <div className="rounded-md border bg-muted p-3 text-sm">
-            {stampNote}
-          </div>
-        )}
-        <footer className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
-          <code className="truncate">{envelope.file_path}</code>
-          {!envelope.stamped && (
-            <button
-              type="button"
-              onClick={handleStamp}
-              disabled={stamping}
-              className="shrink-0 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
-              title="Touch ID will prompt"
-            >
-              {stamping ? 'Touch ID…' : 'Stamp + send'}
-            </button>
-          )}
-        </footer>
-      </div>
-    </div>
-  )
-}
-
-function filenameFromPath(p: string): string {
-  const i = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'))
-  return i >= 0 ? p.slice(i + 1) : p
-}
-
-function shortenDid(did: string): string {
-  if (did.length <= 24) return did
-  return `${did.slice(0, 12)}…${did.slice(-6)}`
 }
 
 function PrincipalAvatar({
   did,
   name,
+  size,
 }: {
   did: string
   name: string | null
+  size: 'sm' | 'lg'
 }) {
   const hue = hueFromDid(did)
   const initial = (name?.trim()[0] || '?').toUpperCase()
+  const sizeClass =
+    size === 'lg' ? 'h-16 w-16 text-2xl' : 'h-9 w-9 text-sm'
   return (
     <div
-      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-medium text-white"
+      className={`flex shrink-0 items-center justify-center rounded-full font-medium text-white ${sizeClass}`}
       style={{ backgroundColor: `hsl(${hue}, 55%, 45%)` }}
-      title={did}
     >
       {initial}
     </div>
