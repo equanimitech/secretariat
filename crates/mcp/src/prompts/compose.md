@@ -12,7 +12,7 @@ You are about to draft an envelope from the principal to a peer, formatted per t
 ### 1. Resolve peer
 
 - If `peer` is a DID, use it directly.
-- If `peer` is a slug, the compose tool will resolve it. If you want to pre-confirm, call `list_contacts` and find the match. If no match, tell the principal and offer to `add_contact`.
+- If `peer` is a slug, the compose tool will resolve it. If you want to pre-confirm, fetch the `secretariat://contacts` resource and find the match. If no match, tell the principal and offer to `add_contact`.
 
 ### 2. Fetch the principal's template
 

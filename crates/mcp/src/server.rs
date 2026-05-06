@@ -327,28 +327,6 @@ pub struct VerifyOutput {
     pub stamped_at: Option<String>,
 }
 
-#[derive(Debug, Serialize, JsonSchema)]
-pub struct ContactListing {
-    pub contacts: Vec<ContactView>,
-}
-
-#[derive(Debug, Serialize, JsonSchema)]
-pub struct ContactView {
-    pub did: String,
-    pub display_name: String,
-    pub relay_endpoint: Option<String>,
-}
-
-impl From<Contact> for ContactView {
-    fn from(c: Contact) -> Self {
-        Self {
-            did: c.did.as_str().to_string(),
-            display_name: c.display_name.as_str().to_string(),
-            relay_endpoint: c.relay_endpoint.as_ref().map(|r| r.as_str().to_string()),
-        }
-    }
-}
-
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct AddContactParams {
     pub did: String,
@@ -406,35 +384,6 @@ pub struct InviteClaimOutput {
     pub registered: bool,
     /// Whether the inviter was added to the local contact book.
     pub contact_added: bool,
-}
-
-#[derive(Debug, Deserialize, JsonSchema, Default)]
-pub struct InitParams {
-    /// Optional did:web override; e.g. `did:web:rafa.equanimi.tech`. Omit
-    /// to derive a `did:key` from the freshly-generated public key (zero
-    /// hosting needed).
-    #[serde(default)]
-    pub did: Option<String>,
-}
-
-#[derive(Debug, Serialize, JsonSchema)]
-pub struct InitOutput {
-    pub did: String,
-    pub root: String,
-    pub message: String,
-}
-
-#[derive(Debug, Serialize, JsonSchema)]
-pub struct DaemonInstallOutput {
-    pub plist_path: String,
-    pub message: String,
-}
-
-#[derive(Debug, Serialize, JsonSchema)]
-pub struct DaemonStatusOutput {
-    pub installed: bool,
-    pub loaded: bool,
-    pub raw_output: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -746,21 +695,10 @@ impl SecretariatServer {
         Ok(Json(verify_outcome_to_view(outcome)))
     }
 
-    #[tool(
-        name = "list_contacts",
-        annotations(read_only_hint = true, open_world_hint = false),
-        description = "List all known peers in the principal's contact book."
-    )]
-    async fn list_contacts(
-        &self,
-        Parameters(_): Parameters<EmptyParams>,
-    ) -> Result<Json<ContactListing>, ErrorData> {
-        let contacts = list_contacts(&self.paths.contacts)
-            .map_err(|e| invalid_request(format!("list_contacts failed: {e}")))?;
-        Ok(Json(ContactListing {
-            contacts: contacts.into_iter().map(ContactView::from).collect(),
-        }))
-    }
+    // Note: `list_contacts` was a tool in 0.2.7-0.2.9. Moved to a resource
+    // (`secretariat://contacts`) in 0.2.10 — contacts is a thing-to-read,
+    // not an action-to-perform. Resource semantics fit; tool semantics
+    // don't.
 
     #[tool(
         name = "add_contact",
@@ -851,122 +789,12 @@ impl SecretariatServer {
         }))
     }
 
-    #[tool(
-        name = "init",
-        annotations(
-            destructive_hint = false,
-            idempotent_hint = true,
-            open_world_hint = false
-        ),
-        description = "Generate the principal's ed25519 keypair + DID, seed \
-        ~/.secretariat/template.md and attention-envelope.md, and write the \
-        principal's `did` file. Idempotent-safe: refuses if a key already \
-        exists (won't overwrite). Pair with `invite_claim` to onboard against \
-        a relay in one round trip. Default DID method is `did:key` (zero \
-        hosting); pass `did` to opt into `did:web` if the principal owns a \
-        domain to host the DID document at."
-    )]
-    async fn init(
-        &self,
-        Parameters(params): Parameters<InitParams>,
-    ) -> Result<Json<InitOutput>, ErrorData> {
-        let mut cmd = std::process::Command::new("sec");
-        cmd.arg("init");
-        if let Some(did) = params.did.as_deref() {
-            cmd.arg("--did").arg(did);
-        }
-        let output = cmd
-            .output()
-            .map_err(|e| invalid_request(format!("invoking `sec init`: {e}")))?;
-        if !output.status.success() {
-            return Err(invalid_request(format!(
-                "sec init failed (exit {}): {}",
-                output.status,
-                String::from_utf8_lossy(&output.stderr)
-            )));
-        }
-
-        let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
-        let did = stderr
-            .lines()
-            .find(|l| l.contains("did") && l.contains("did:"))
-            .and_then(|l| l.split_whitespace().last())
-            .map(|s| s.to_string())
-            .unwrap_or_default();
-
-        info!(did = %did, "sec init via MCP");
-
-        Ok(Json(InitOutput {
-            did,
-            root: self.paths.root.display().to_string(),
-            message: stderr,
-        }))
-    }
-
-    #[tool(
-        name = "daemon_install",
-        annotations(
-            destructive_hint = false,
-            idempotent_hint = true,
-            open_world_hint = false
-        ),
-        description = "Install the daemon as a macOS LaunchAgent so it runs \
-        in the background, survives reboot, and auto-restarts on crash. \
-        Idempotent — re-running after upgrades replaces the plist with the \
-        current binary path. macOS only."
-    )]
-    async fn daemon_install(
-        &self,
-        Parameters(_): Parameters<EmptyParams>,
-    ) -> Result<Json<DaemonInstallOutput>, ErrorData> {
-        let output = std::process::Command::new("sec")
-            .args(["daemon", "install"])
-            .output()
-            .map_err(|e| invalid_request(format!("invoking `sec daemon install`: {e}")))?;
-        if !output.status.success() {
-            return Err(invalid_request(format!(
-                "sec daemon install failed (exit {}): {}",
-                output.status,
-                String::from_utf8_lossy(&output.stderr)
-            )));
-        }
-
-        let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
-        let plist_path = home_relative_plist();
-
-        info!("daemon LaunchAgent installed via MCP");
-
-        Ok(Json(DaemonInstallOutput {
-            plist_path,
-            message: stderr,
-        }))
-    }
-
-    #[tool(
-        name = "daemon_status",
-        annotations(read_only_hint = true, open_world_hint = false),
-        description = "Report whether the daemon LaunchAgent is installed + \
-        loaded + (when launchctl reports it) the PID/exit-status. Useful for \
-        verifying the background process is running after `daemon_install`."
-    )]
-    async fn daemon_status(
-        &self,
-        Parameters(_): Parameters<EmptyParams>,
-    ) -> Result<Json<DaemonStatusOutput>, ErrorData> {
-        let output = std::process::Command::new("sec")
-            .args(["daemon", "status"])
-            .output()
-            .map_err(|e| invalid_request(format!("invoking `sec daemon status`: {e}")))?;
-        let raw = String::from_utf8_lossy(&output.stdout).into_owned();
-        let installed = raw.contains("plist installed:      true");
-        let loaded = raw.contains("loaded (launchctl):   true");
-
-        Ok(Json(DaemonStatusOutput {
-            installed,
-            loaded,
-            raw_output: raw,
-        }))
-    }
+    // Note: `init`, `daemon_install`, `daemon_status` were tools in
+    // 0.2.7-0.2.9. Removed in 0.2.10 — Tauri owns identity onboarding
+    // (tray-anchored popover) and daemon lifecycle (silent-wire on app
+    // launch with version-aware marker). CLI has `sec init` /
+    // `sec daemon install` / `sec daemon status` for headless use.
+    // MCP doesn't add a third path.
 
     #[tool(
         name = "invite_claim",
@@ -1042,6 +870,7 @@ impl SecretariatServer {
 
 const RESOURCE_TEMPLATE_URI: &str = "secretariat://template";
 const RESOURCE_ATTENTION_ENVELOPE_URI: &str = "secretariat://attention-envelope";
+const RESOURCE_CONTACTS_URI: &str = "secretariat://contacts";
 
 fn build_resource(uri: &str, name: &str, description: &str) -> Resource {
     Annotated::new(
@@ -1090,6 +919,18 @@ impl ServerHandler for SecretariatServer {
             ));
         }
 
+        // Contacts always available (even if empty) — useful for the model
+        // to discover whether to call `add_contact` or proceed with
+        // `compose` to a known peer.
+        resources.push(build_resource(
+            RESOURCE_CONTACTS_URI,
+            "Contacts",
+            "The principal's contact book — peers known to the substrate, \
+             with display names, DIDs, and (for did:key contacts) relay \
+             endpoints. Fetch before composing to a peer to confirm the \
+             slug or DID.",
+        ));
+
         Ok(ListResourcesResult {
             resources,
             next_cursor: None,
@@ -1101,9 +942,14 @@ impl ServerHandler for SecretariatServer {
         request: ReadResourceRequestParam,
         _context: RequestContext<RoleServer>,
     ) -> Result<ReadResourceResult, ErrorData> {
-        let path = match request.uri.as_str() {
-            RESOURCE_TEMPLATE_URI => &self.paths.template,
-            RESOURCE_ATTENTION_ENVELOPE_URI => &self.paths.attention_envelope,
+        let text = match request.uri.as_str() {
+            RESOURCE_TEMPLATE_URI => std::fs::read_to_string(&self.paths.template)
+                .map_err(|e| internal_error(format!("read template: {e}")))?,
+            RESOURCE_ATTENTION_ENVELOPE_URI => {
+                std::fs::read_to_string(&self.paths.attention_envelope)
+                    .map_err(|e| internal_error(format!("read attention-envelope: {e}")))?
+            }
+            RESOURCE_CONTACTS_URI => render_contacts(&self.paths.contacts)?,
             other => {
                 return Err(ErrorData::new(
                     ErrorCode::INVALID_REQUEST,
@@ -1112,14 +958,6 @@ impl ServerHandler for SecretariatServer {
                 ));
             }
         };
-
-        let text = std::fs::read_to_string(path).map_err(|e| {
-            ErrorData::new(
-                ErrorCode::INTERNAL_ERROR,
-                format!("failed to read {}: {e}", path.display()),
-                None,
-            )
-        })?;
 
         Ok(ReadResourceResult {
             contents: vec![ResourceContents::text(text, request.uri)],
@@ -1177,6 +1015,34 @@ content.";
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+fn internal_error(msg: String) -> ErrorData {
+    ErrorData::new(ErrorCode::INTERNAL_ERROR, msg, None)
+}
+
+fn render_contacts(path: &std::path::Path) -> Result<String, ErrorData> {
+    let contacts =
+        list_contacts(path).map_err(|e| internal_error(format!("list_contacts: {e}")))?;
+    if contacts.is_empty() {
+        return Ok("# Contacts\n\nNo contacts yet. Use `invite_create` (you invite a peer) or \
+                  `invite_claim` (a peer invited you) to establish your first \
+                  correspondence relationship — both auto-add the peer.\n"
+            .to_string());
+    }
+    let mut out = String::from("# Contacts\n\n");
+    for c in contacts {
+        out.push_str(&format!(
+            "- **{}** — `{}`",
+            c.display_name.as_str(),
+            c.did.as_str()
+        ));
+        if let Some(relay) = &c.relay_endpoint {
+            out.push_str(&format!(" · relay: `{}`", relay.as_str()));
+        }
+        out.push('\n');
+    }
+    Ok(out)
+}
 
 fn invalid_request(msg: String) -> ErrorData {
     ErrorData::new(ErrorCode::INVALID_REQUEST, msg, None)
@@ -1248,16 +1114,6 @@ fn relay_origin_from_claim_url(claim_url: &str) -> Result<String, ErrorData> {
         .find("/v0/invite/")
         .ok_or_else(|| invalid_request("claim URL does not contain `/v0/invite/`".to_string()))?;
     Ok(claim_url[..idx].to_string())
-}
-
-fn home_relative_plist() -> String {
-    if let Some(home) = dirs::home_dir() {
-        home.join("Library/LaunchAgents/tech.equanimi.secretariat.daemon.plist")
-            .display()
-            .to_string()
-    } else {
-        "~/Library/LaunchAgents/tech.equanimi.secretariat.daemon.plist".to_string()
-    }
 }
 
 fn default_display_for_did(did: &Did) -> Result<DisplayName, ErrorData> {
