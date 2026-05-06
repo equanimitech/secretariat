@@ -11,6 +11,8 @@ import {
   PredefinedMenuItem,
 } from '@tauri-apps/api/menu'
 import { check } from '@tauri-apps/plugin-updater'
+import { relaunch } from '@tauri-apps/plugin-process'
+import { ask, message } from '@tauri-apps/plugin-dialog'
 import i18n from '@/i18n/config'
 import { useUIStore } from '@/store/ui-store'
 import { logger } from '@/lib/logger'
@@ -133,13 +135,59 @@ async function handleCheckForUpdates(): Promise<void> {
   logger.info('Check for Updates menu item clicked')
   try {
     const update = await check()
-    if (update) {
-      notifications.info(
-        'Update Available',
-        `Version ${update.version} is available`
-      )
-    } else {
+    if (!update) {
       notifications.success('Up to Date', 'You are running the latest version')
+      return
+    }
+
+    const shouldUpdate = await ask(
+      `Version ${update.version} is available. Install now?`,
+      {
+        title: 'Secretariat update available',
+        kind: 'info',
+        okLabel: 'Install',
+        cancelLabel: 'Later',
+      }
+    )
+
+    if (!shouldUpdate) {
+      return
+    }
+
+    try {
+      await update.downloadAndInstall(event => {
+        switch (event.event) {
+          case 'Started':
+            logger.info(`Downloading ${event.data.contentLength} bytes`)
+            break
+          case 'Progress':
+            logger.info(`Downloaded: ${event.data.chunkLength} bytes`)
+            break
+          case 'Finished':
+            logger.info('Download complete, installing...')
+            break
+        }
+      })
+
+      const shouldRestart = await ask(
+        'Update installed. Restart Secretariat now to use the new version?',
+        {
+          title: 'Restart to apply update',
+          kind: 'info',
+          okLabel: 'Restart',
+          cancelLabel: 'Later',
+        }
+      )
+
+      if (shouldRestart) {
+        await relaunch()
+      }
+    } catch (installError) {
+      logger.error(`Update installation failed: ${String(installError)}`)
+      await message(String(installError), {
+        title: 'Update failed',
+        kind: 'error',
+      })
     }
   } catch (error) {
     logger.error('Update check failed', { error })

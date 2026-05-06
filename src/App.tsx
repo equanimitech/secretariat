@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { check } from '@tauri-apps/plugin-updater'
 import { relaunch } from '@tauri-apps/plugin-process'
+import { ask, message } from '@tauri-apps/plugin-dialog'
 import { onOpenUrl } from '@tauri-apps/plugin-deep-link'
 import { initializeCommandSystem } from './lib/commands'
 import { buildAppMenu, setupMenuLanguageListener } from './lib/menu'
@@ -56,21 +57,30 @@ function App() {
       mode: import.meta.env.MODE,
     })
 
-    // Auto-updater logic - check for updates 5 seconds after app loads
+    // Auto-updater logic - check for updates 5 seconds after app loads.
+    // Uses Tauri's native ask()/message() dialogs (OS-level) instead of
+    // browser confirm()/alert(), because the main window is often hidden
+    // when these fire (per the macOS hide-on-close behavior in lib.rs)
+    // and browser-level dialogs in a hidden webview never surface to the
+    // user.
     const checkForUpdates = async () => {
       try {
         const update = await check()
         if (update) {
           logger.info(`Update available: ${update.version}`)
 
-          // Show confirmation dialog
-          const shouldUpdate = confirm(
-            `Update available: ${update.version}\n\nWould you like to install this update now?`
+          const shouldUpdate = await ask(
+            `Version ${update.version} is available. Install now?`,
+            {
+              title: 'Secretariat update available',
+              kind: 'info',
+              okLabel: 'Install',
+              cancelLabel: 'Later',
+            }
           )
 
           if (shouldUpdate) {
             try {
-              // Download and install with progress logging
               await update.downloadAndInstall(event => {
                 switch (event.event) {
                   case 'Started':
@@ -85,9 +95,14 @@ function App() {
                 }
               })
 
-              // Ask if user wants to restart now
-              const shouldRestart = confirm(
-                'Update completed successfully!\n\nWould you like to restart the app now to use the new version?'
+              const shouldRestart = await ask(
+                'Update installed. Restart Secretariat now to use the new version?',
+                {
+                  title: 'Restart to apply update',
+                  kind: 'info',
+                  okLabel: 'Restart',
+                  cancelLabel: 'Later',
+                }
               )
 
               if (shouldRestart) {
@@ -95,9 +110,10 @@ function App() {
               }
             } catch (updateError) {
               logger.error(`Update installation failed: ${String(updateError)}`)
-              alert(
-                `Update failed: There was a problem with the automatic download.\n\n${String(updateError)}`
-              )
+              await message(String(updateError), {
+                title: 'Update failed',
+                kind: 'error',
+              })
             }
           }
         }
