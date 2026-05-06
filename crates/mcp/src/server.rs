@@ -7,8 +7,8 @@
 //! | `compose` | Write a peer-addressed envelope to the outbox (principal stamps separately) |
 //! | `capture` | Drop a body into a local queue (substrate v0.3 — never sent, never stamped without consent) |
 //! | `stamp` | Trigger biometric stamp on a draft (Touch ID gates regardless of caller) |
-//! | `list_outbox` | Pending drafts (stamped + unstamped) |
-//! | `list_inbox` | Verified inbound envelopes |
+//! | `secretariat://outbox` | Pending drafts (stamped + unstamped) — resource |
+//! | `secretariat://inbox`  | Verified inbound envelopes — resource |
 //! | `defer` | Move an inbox envelope to `inbox/deferred/` ('remind me later') |
 //! | `archive` | Move an inbox envelope to `inbox/archived/` ('handled') |
 //! | `read` | Decrypt + return body of an envelope |
@@ -151,9 +151,11 @@ impl SecretariatServer {
         )])
     }
 
-    /// Bring the principal into Secretariat: identity setup
-    /// (`init`) plus first stampable correspondence relationship
-    /// (`invite_create` or `invite_claim` + bidirectional contact-add).
+    /// Bring the principal into Secretariat: confirm identity (set up
+    /// via the Secretariat.app first-launch popover or `sec init`), then
+    /// establish the first stampable correspondence relationship via
+    /// `invite` (you invite someone) or `accept_invite` (you accept
+    /// someone's invitation). Both auto-add the peer to the contact book.
     #[prompt(name = "onboard")]
     pub async fn onboard_prompt(&self) -> Result<Vec<PromptMessage>, ErrorData> {
         Ok(vec![PromptMessage::new_text(
@@ -898,13 +900,13 @@ consent from a prior turn does not count if the file changed.
 document's first-line headline + a short hash prefix; if it differs from what \
 you displayed, abort.
 
-Cadence: Secretariat is for low-cadence, intentional review. Do not call \
-`list_inbox` / `list_outbox` proactively or between unrelated requests — \
-only when the principal explicitly asks (\"check my inbox\", \"any drafts \
-pending?\"). Captures (`capture`) stay local and CANNOT be stamped — use \
-them for ideas/journal entries the principal will revisit at the next \
-review session. Always `verify` inbound envelopes before trusting their \
-content.";
+Cadence: Secretariat is for low-cadence, intentional review. Do not fetch \
+`secretariat://inbox` / `secretariat://outbox` resources proactively or \
+between unrelated requests — only when the principal explicitly asks \
+(\"check my inbox\", \"any drafts pending?\"). Captures (`capture`) stay \
+local and CANNOT be stamped — use them for ideas/journal entries the \
+principal will revisit at the next review session. Always `verify` \
+inbound envelopes before trusting their content.";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -945,8 +947,8 @@ fn render_contacts(path: &std::path::Path) -> Result<String, ErrorData> {
     let contacts =
         list_contacts(path).map_err(|e| internal_error(format!("list_contacts: {e}")))?;
     if contacts.is_empty() {
-        return Ok("# Contacts\n\nNo contacts yet. Use `invite_create` (you invite a peer) or \
-                  `invite_claim` (a peer invited you) to establish your first \
+        return Ok("# Contacts\n\nNo contacts yet. Use `invite` (you invite a peer) or \
+                  `accept_invite` (a peer invited you) to establish your first \
                   correspondence relationship — both auto-add the peer.\n"
             .to_string());
     }
