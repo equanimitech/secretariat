@@ -35,12 +35,18 @@ use std::path::PathBuf;
 use chrono::Utc;
 use rmcp::{
     handler::server::{
-        router::tool::ToolRouter,
+        router::{prompt::PromptRouter, tool::ToolRouter},
         wrapper::{Json, Parameters},
     },
-    model::{ErrorCode, ErrorData},
+    model::{
+        ErrorCode, ErrorData, GetPromptRequestParam, GetPromptResult, Implementation,
+        ListPromptsResult, PaginatedRequestParam, PromptMessage, PromptMessageRole,
+        ProtocolVersion, ServerCapabilities, ServerInfo,
+    },
+    prompt, prompt_handler, prompt_router,
+    service::RequestContext,
     tool, tool_handler, tool_router,
-    ServerHandler,
+    RoleServer, ServerHandler,
 };
 use schemars::JsonSchema;
 use secretariat_core::application::{
@@ -64,6 +70,7 @@ use tracing::info;
 pub struct SecretariatServer {
     pub paths: KeyPaths,
     tool_router: ToolRouter<Self>,
+    prompt_router: PromptRouter<Self>,
 }
 
 impl SecretariatServer {
@@ -71,8 +78,49 @@ impl SecretariatServer {
         Self {
             paths,
             tool_router: Self::tool_router(),
+            prompt_router: Self::prompt_router(),
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Prompts — substrate vocabulary (`/idea`, `/pain`, `/shaping`, `/share`,
+// `/roundtable`). Each prompt is a static markdown body shipped alongside
+// the binary. They surface as slash commands in MCP-aware clients (Claude
+// Code, Claude Desktop) and route, by convention, to the `capture` /
+// `compose` / file-write tools as appropriate. See pitch
+// `docs/pitches/2026-05-05-mcp-prompts-as-substrate-vocabulary.md`.
+// ---------------------------------------------------------------------------
+
+#[prompt_router]
+impl SecretariatServer {
+    /// Capture a raw idea — a product thought, a fleeting note, anything
+    /// worth keeping. Routes through the `capture` tool with
+    /// `queue: inbox:triage`.
+    #[prompt(name = "idea")]
+    pub async fn idea_prompt(&self) -> Result<Vec<PromptMessage>, ErrorData> {
+        Ok(vec![PromptMessage::new_text(
+            PromptMessageRole::User,
+            include_str!("prompts/idea.md"),
+        )])
+    }
+
+    /// Capture a bug, friction, or improvement. Routes through the
+    /// `capture` tool with `queue: inbox:pain`.
+    #[prompt(name = "pain")]
+    pub async fn pain_prompt(&self) -> Result<Vec<PromptMessage>, ErrorData> {
+        Ok(vec![PromptMessage::new_text(
+            PromptMessageRole::User,
+            include_str!("prompts/pain.md"),
+        )])
+    }
+
+    // Note: `/share`, `/shaping`, `/roundtable` are intentionally NOT
+    // shipped here. They are Rafa-personal product-management /
+    // sharing vocabulary, not Secretariat correspondence vocabulary.
+    // Secretariat-native prompts (`/review`, `/compose`, `/onboard`,
+    // `/stamp`) are tracked as a follow-up pitch — they wrap the
+    // server's correspondence tools rather than orthogonal workflows.
 }
 
 // ---------------------------------------------------------------------------
@@ -880,7 +928,54 @@ impl SecretariatServer {
 }
 
 #[tool_handler]
-impl ServerHandler for SecretariatServer {}
+#[prompt_handler]
+impl ServerHandler for SecretariatServer {
+    fn get_info(&self) -> ServerInfo {
+        ServerInfo {
+            protocol_version: ProtocolVersion::default(),
+            capabilities: ServerCapabilities::builder()
+                .enable_tools()
+                .enable_prompts()
+                .build(),
+            server_info: Implementation {
+                name: "secretariat".to_string(),
+                title: Some("Secretariat".to_string()),
+                version: env!("CARGO_PKG_VERSION").to_string(),
+                icons: None,
+                website_url: None,
+            },
+            instructions: Some(SERVER_INSTRUCTIONS.to_string()),
+        }
+    }
+}
+
+/// Top-level guidance the MCP client (Claude Code, Cursor, claude.ai, …) sees
+/// once at session start. The principal-facing rituals — review session,
+/// stamp ceremony, onboarding — belong in MCP prompts, not here. This block
+/// is just the framing the model needs to call any tool correctly.
+const SERVER_INSTRUCTIONS: &str = "\
+Secretariat is cryptographically attested AI-mediated correspondence. The \
+principal is the human; you are the scribe. The principal stamps; you never \
+do. Drafts live under `~/.secretariat/outbox/<recipient-did>/` and become \
+sent envelopes only after the principal authorizes the stamp via Touch ID.
+
+Stamp ceremony (mandatory before calling `stamp`):
+  1. Call `read` on the same `file_path`.
+  2. Render the FULL decrypted body verbatim — code block or quoted region, \
+never a summary.
+  3. Wait for explicit consent in the same turn (e.g. \"stamp it\"). Implicit \
+consent from a prior turn does not count if the file changed.
+  4. Only then call `stamp`. The Touch ID dialog reason carries the \
+document's first-line headline + a short hash prefix; if it differs from what \
+you displayed, abort.
+
+Cadence: Secretariat is for low-cadence, intentional review. Do not call \
+`list_inbox` / `list_outbox` proactively or between unrelated requests — \
+only when the principal explicitly asks (\"check my inbox\", \"any drafts \
+pending?\"). Captures (`capture`) stay local and CANNOT be stamped — use \
+them for ideas/journal entries the principal will revisit at the next \
+review session. Always `verify` inbound envelopes before trusting their \
+content.";
 
 // ---------------------------------------------------------------------------
 // Helpers
