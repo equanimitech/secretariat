@@ -39,9 +39,10 @@ use rmcp::{
         wrapper::{Json, Parameters},
     },
     model::{
-        ErrorCode, ErrorData, GetPromptRequestParam, GetPromptResult, Implementation,
-        ListPromptsResult, PaginatedRequestParam, PromptMessage, PromptMessageRole,
-        ProtocolVersion, ServerCapabilities, ServerInfo,
+        Annotated, ErrorCode, ErrorData, GetPromptRequestParam, GetPromptResult, Implementation,
+        ListPromptsResult, ListResourcesResult, PaginatedRequestParam, PromptMessage,
+        PromptMessageRole, ProtocolVersion, RawResource, ReadResourceRequestParam,
+        ReadResourceResult, Resource, ResourceContents, ServerCapabilities, ServerInfo,
     },
     prompt, prompt_handler, prompt_router,
     service::RequestContext,
@@ -84,12 +85,26 @@ impl SecretariatServer {
 }
 
 // ---------------------------------------------------------------------------
-// Prompts — substrate vocabulary (`/idea`, `/pain`, `/shaping`, `/share`,
-// `/roundtable`). Each prompt is a static markdown body shipped alongside
-// the binary. They surface as slash commands in MCP-aware clients (Claude
-// Code, Claude Desktop) and route, by convention, to the `capture` /
-// `compose` / file-write tools as appropriate. See pitch
-// `docs/pitches/2026-05-05-mcp-prompts-as-substrate-vocabulary.md`.
+// Prompts — Secretariat correspondence vocabulary. Each prompt is a static
+// markdown body shipped alongside the binary; they surface as slash commands
+// in MCP-aware clients (Claude Code, Claude Desktop). All prompts wrap
+// existing tools — they're rituals around the correspondence model, not
+// orthogonal workflows.
+//
+// Substrate verbs (capture-shaped):
+//   /idea, /pain                — wrap `capture` to a self-addressed queue.
+//
+// Native verbs (envelope-shaped):
+//   /review                     — paced walker over inbox / outbox.
+//   /compose                    — AG-template-aware envelope draft.
+//   /onboard                    — init + invite_create / invite_claim ceremony.
+//   /stamp                      — explicit show-body → confirm → stamp ceremony.
+//
+// Deliberately NOT shipped (out of correspondence bounded context):
+//   /share, /shaping, /roundtable — Rafa-personal PM/sharing vocabulary,
+//                                   stays in `~/.claude/skills/`.
+//
+// Pitch: `docs/pitches/2026-05-05-mcp-prompts-as-substrate-vocabulary.md`.
 // ---------------------------------------------------------------------------
 
 #[prompt_router]
@@ -115,12 +130,48 @@ impl SecretariatServer {
         )])
     }
 
-    // Note: `/share`, `/shaping`, `/roundtable` are intentionally NOT
-    // shipped here. They are Rafa-personal product-management /
-    // sharing vocabulary, not Secretariat correspondence vocabulary.
-    // Secretariat-native prompts (`/review`, `/compose`, `/onboard`,
-    // `/stamp`) are tracked as a follow-up pitch — they wrap the
-    // server's correspondence tools rather than orthogonal workflows.
+    /// Walk the principal through a paced review session — verify, read,
+    /// render, and act on inbox / outbox envelopes one at a time.
+    #[prompt(name = "review")]
+    pub async fn review_prompt(&self) -> Result<Vec<PromptMessage>, ErrorData> {
+        Ok(vec![PromptMessage::new_text(
+            PromptMessageRole::User,
+            include_str!("prompts/review.md"),
+        )])
+    }
+
+    /// Draft an envelope to a peer using the principal's
+    /// attentional-granularity template, with the inline-render-first
+    /// consent gate before the draft hits disk.
+    #[prompt(name = "compose")]
+    pub async fn compose_prompt(&self) -> Result<Vec<PromptMessage>, ErrorData> {
+        Ok(vec![PromptMessage::new_text(
+            PromptMessageRole::User,
+            include_str!("prompts/compose.md"),
+        )])
+    }
+
+    /// Bring the principal into Secretariat: identity setup
+    /// (`init`) plus first stampable correspondence relationship
+    /// (`invite_create` or `invite_claim` + bidirectional contact-add).
+    #[prompt(name = "onboard")]
+    pub async fn onboard_prompt(&self) -> Result<Vec<PromptMessage>, ErrorData> {
+        Ok(vec![PromptMessage::new_text(
+            PromptMessageRole::User,
+            include_str!("prompts/onboard.md"),
+        )])
+    }
+
+    /// Explicit stamp ceremony: read → render verbatim → wait for consent
+    /// → call `stamp`. Formalizes the multi-turn pre-check that the
+    /// `stamp` tool's description requires.
+    #[prompt(name = "stamp")]
+    pub async fn stamp_prompt(&self) -> Result<Vec<PromptMessage>, ErrorData> {
+        Ok(vec![PromptMessage::new_text(
+            PromptMessageRole::User,
+            include_str!("prompts/stamp.md"),
+        )])
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -394,6 +445,11 @@ pub struct DaemonStatusOutput {
 impl SecretariatServer {
     #[tool(
         name = "compose",
+        annotations(
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = false
+        ),
         description = "Compose a draft envelope to a recipient and write it to the outbox. \
         The principal stamps it separately (biometric-gated, never via this tool). \
         `to` accepts either a DID or a contact's display-name slug."
@@ -444,6 +500,11 @@ impl SecretariatServer {
 
     #[tool(
         name = "capture",
+        annotations(
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = false
+        ),
         description = "Drop a body of text into a local queue (substrate v0.3). \
         Captures are envelopes addressed to `Recipient::LocalQueue(handle)` — they \
         never leave the principal's machine and CANNOT be stamped (the domain \
@@ -486,6 +547,11 @@ impl SecretariatServer {
 
     #[tool(
         name = "stamp",
+        annotations(
+            destructive_hint = true,
+            idempotent_hint = false,
+            open_world_hint = false
+        ),
         description = "Stamp a draft envelope. Computes the canonical body hash, \
         triggers the platform biometric gate (Touch ID on macOS), embeds the \
         ed25519 signature into the file's frontmatter, and writes it back. The \
@@ -551,6 +617,7 @@ impl SecretariatServer {
 
     #[tool(
         name = "list_outbox",
+        annotations(read_only_hint = true, open_world_hint = false),
         description = "List drafts in the principal's outbox (stamped and unstamped)."
     )]
     async fn list_outbox(
@@ -566,6 +633,7 @@ impl SecretariatServer {
 
     #[tool(
         name = "list_inbox",
+        annotations(read_only_hint = true, open_world_hint = false),
         description = "List verified inbound envelopes from the principal's inbox. \
         IMPORTANT: only call this tool when the user has explicitly asked for their inbox \
         (e.g., 'check my inbox', 'any new messages from Marcelo?'). Do not call proactively \
@@ -585,6 +653,11 @@ impl SecretariatServer {
 
     #[tool(
         name = "defer",
+        annotations(
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        ),
         description = "Defer an inbox envelope — move it out of the active inbox into \
         `inbox/deferred/`. Use during a review session when the principal says 'remind me \
         later' / 'come back to this' / 'not now'. Idempotent against the destination. \
@@ -608,6 +681,11 @@ impl SecretariatServer {
 
     #[tool(
         name = "archive",
+        annotations(
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        ),
         description = "Archive an inbox envelope — move it out of the active inbox into \
         `inbox/archived/`. Use during a review session when the principal says 'handled' / \
         'ignore' / 'done with this'. Files stay on disk for history; just out of the queue."
@@ -629,6 +707,7 @@ impl SecretariatServer {
 
     #[tool(
         name = "read",
+        annotations(read_only_hint = true, open_world_hint = false),
         description = "Decrypt and return the body of an envelope file. Works for both \
         plaintext and X25519/XChaCha20-Poly1305 encrypted envelopes. Decryption uses the \
         principal's local signing key."
@@ -650,6 +729,7 @@ impl SecretariatServer {
 
     #[tool(
         name = "verify",
+        annotations(read_only_hint = true, open_world_hint = true),
         description = "Verify the cryptographic stamp on an envelope file against the \
         signer's resolved DID. Returns one of: Verified, Tampered, Unsigned, \
         SignerUnresolvable, SignatureInvalid."
@@ -668,6 +748,7 @@ impl SecretariatServer {
 
     #[tool(
         name = "list_contacts",
+        annotations(read_only_hint = true, open_world_hint = false),
         description = "List all known peers in the principal's contact book."
     )]
     async fn list_contacts(
@@ -683,6 +764,11 @@ impl SecretariatServer {
 
     #[tool(
         name = "add_contact",
+        annotations(
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = false
+        ),
         description = "Add a peer to the principal's contact book. \
         For `did:key` peers, `relay_endpoint` is required (no live discovery channel). \
         For `did:web` peers, omit `relay_endpoint` — daemon resolves from their DID document."
@@ -720,6 +806,11 @@ impl SecretariatServer {
 
     #[tool(
         name = "invite_create",
+        annotations(
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = true
+        ),
         description = "Create a one-shot invite token at the relay. The principal \
         must already be a registered tenant of `endpoint` (or the first registered \
         relay in relay-state.json). Returns a claim URL the principal can share \
@@ -762,6 +853,11 @@ impl SecretariatServer {
 
     #[tool(
         name = "init",
+        annotations(
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        ),
         description = "Generate the principal's ed25519 keypair + DID, seed \
         ~/.secretariat/template.md and attention-envelope.md, and write the \
         principal's `did` file. Idempotent-safe: refuses if a key already \
@@ -809,6 +905,11 @@ impl SecretariatServer {
 
     #[tool(
         name = "daemon_install",
+        annotations(
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        ),
         description = "Install the daemon as a macOS LaunchAgent so it runs \
         in the background, survives reboot, and auto-restarts on crash. \
         Idempotent — re-running after upgrades replaces the plist with the \
@@ -843,6 +944,7 @@ impl SecretariatServer {
 
     #[tool(
         name = "daemon_status",
+        annotations(read_only_hint = true, open_world_hint = false),
         description = "Report whether the daemon LaunchAgent is installed + \
         loaded + (when launchctl reports it) the PID/exit-status. Useful for \
         verifying the background process is running after `daemon_install`."
@@ -868,6 +970,11 @@ impl SecretariatServer {
 
     #[tool(
         name = "invite_claim",
+        annotations(
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = true
+        ),
         description = "Claim an invite issued by another principal. Auto-registers \
         the local DID with the relay if not already registered, and adds the \
         inviter to the local contact book. Returns inviter DID + claim metadata. \
@@ -927,15 +1034,105 @@ impl SecretariatServer {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Resource URIs — kept here so the prompt bodies and resource handlers
+// stay in sync. Anything that fetches `secretariat://template` (e.g.
+// `prompts/compose.md`) must match the uri string the handler advertises.
+// ---------------------------------------------------------------------------
+
+const RESOURCE_TEMPLATE_URI: &str = "secretariat://template";
+const RESOURCE_ATTENTION_ENVELOPE_URI: &str = "secretariat://attention-envelope";
+
+fn build_resource(uri: &str, name: &str, description: &str) -> Resource {
+    Annotated::new(
+        RawResource {
+            uri: uri.to_string(),
+            name: name.to_string(),
+            title: Some(name.to_string()),
+            description: Some(description.to_string()),
+            mime_type: Some("text/markdown".to_string()),
+            size: None,
+            icons: None,
+        },
+        None,
+    )
+}
+
 #[tool_handler]
 #[prompt_handler]
 impl ServerHandler for SecretariatServer {
+    async fn list_resources(
+        &self,
+        _request: Option<PaginatedRequestParam>,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ListResourcesResult, ErrorData> {
+        let mut resources = Vec::new();
+
+        if self.paths.template.exists() {
+            resources.push(build_resource(
+                RESOURCE_TEMPLATE_URI,
+                "Envelope template",
+                "The principal's customized attentional-granularity envelope \
+                 template at ~/.secretariat/template.md. Source of truth for \
+                 envelope shape (headline, context, substance, subtleties, \
+                 asks). Fetch this before drafting envelopes via /compose.",
+            ));
+        }
+
+        if self.paths.attention_envelope.exists() {
+            resources.push(build_resource(
+                RESOURCE_ATTENTION_ENVELOPE_URI,
+                "Attention envelope",
+                "The principal's declared bounds (depths, urgencies, cadence) \
+                 at ~/.secretariat/attention-envelope.md. Check before \
+                 outbound envelopes to avoid violating the principal's \
+                 stated cadence.",
+            ));
+        }
+
+        Ok(ListResourcesResult {
+            resources,
+            next_cursor: None,
+        })
+    }
+
+    async fn read_resource(
+        &self,
+        request: ReadResourceRequestParam,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ReadResourceResult, ErrorData> {
+        let path = match request.uri.as_str() {
+            RESOURCE_TEMPLATE_URI => &self.paths.template,
+            RESOURCE_ATTENTION_ENVELOPE_URI => &self.paths.attention_envelope,
+            other => {
+                return Err(ErrorData::new(
+                    ErrorCode::INVALID_REQUEST,
+                    format!("unknown resource uri: {other}"),
+                    None,
+                ));
+            }
+        };
+
+        let text = std::fs::read_to_string(path).map_err(|e| {
+            ErrorData::new(
+                ErrorCode::INTERNAL_ERROR,
+                format!("failed to read {}: {e}", path.display()),
+                None,
+            )
+        })?;
+
+        Ok(ReadResourceResult {
+            contents: vec![ResourceContents::text(text, request.uri)],
+        })
+    }
+
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
             protocol_version: ProtocolVersion::default(),
             capabilities: ServerCapabilities::builder()
                 .enable_tools()
                 .enable_prompts()
+                .enable_resources()
                 .build(),
             server_info: Implementation {
                 name: "secretariat".to_string(),
