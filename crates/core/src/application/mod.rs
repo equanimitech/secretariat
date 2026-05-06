@@ -3,6 +3,7 @@
 pub mod capture_ops;
 pub mod compose_envelope;
 pub mod contact_ops;
+pub mod contextify_capture;
 pub mod delivery_policy;
 pub mod inbox_actions;
 pub mod inbox_ops;
@@ -18,6 +19,10 @@ pub use capture_ops::{capture_to_queue, CaptureError, CaptureRequest};
 pub use compose_envelope::{compose_envelope, ComposeError, ComposeRequest};
 pub use contact_ops::{
     add_contact, find_by_did, find_by_slug, list_contacts, remove_contact, ContactOpError,
+};
+pub use contextify_capture::{
+    contextify_capture, try_contextify_after_capture, ContextifyError, ContextifyOutcome,
+    ContextifySkipReason, ROUTABLE_QUEUE,
 };
 pub use delivery_policy::{decide_poll, CadenceConfig, CadenceConfigError, PollDecision};
 pub use inbox_actions::{archive_envelope, defer_envelope, InboxActionError};

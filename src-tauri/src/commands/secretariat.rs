@@ -594,6 +594,245 @@ pub async fn set_profile(display_name: String) -> Result<Profile, String> {
     Ok(profile.into())
 }
 
+// ---------------------------------------------------------------------------
+// Cognition — config IO + model listing for the Cognition settings pane
+// ---------------------------------------------------------------------------
+//
+// `~/.secretariat/cognition.json` is the single opt-in surface for the
+// contextification feature. The pane reads via `load_cognition_config`,
+// writes via `save_cognition_config`, and populates the model dropdown
+// via `list_cognition_models` (which calls the configured provider's
+// `/models` endpoint, or returns the curated Anthropic list).
+
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
+pub struct CognitionConfigDto {
+    /// `"anthropic"` or `"openai-compat"`.
+    pub provider: String,
+    pub api_key: Option<String>,
+    pub api_base: Option<String>,
+    pub model: Option<String>,
+    pub route_threshold: Option<f32>,
+}
+
+impl From<secretariat_core::infrastructure::cognition::CognitionConfig> for CognitionConfigDto {
+    fn from(c: secretariat_core::infrastructure::cognition::CognitionConfig) -> Self {
+        use secretariat_core::infrastructure::cognition::Provider;
+        let provider = match c.provider {
+            Provider::Anthropic => "anthropic",
+            Provider::OpenAiCompat => "openai-compat",
+        };
+        Self {
+            provider: provider.to_string(),
+            api_key: c.api_key,
+            api_base: c.api_base,
+            model: c.model,
+            route_threshold: c.route_threshold,
+        }
+    }
+}
+
+impl CognitionConfigDto {
+    fn into_core(self) -> Result<secretariat_core::infrastructure::cognition::CognitionConfig, String> {
+        use secretariat_core::infrastructure::cognition::{CognitionConfig, Provider};
+        let provider = match self.provider.as_str() {
+            "anthropic" => Provider::Anthropic,
+            "openai-compat" | "openai" | "openai-compatible" => Provider::OpenAiCompat,
+            other => return Err(format!("unknown provider `{other}`")),
+        };
+        Ok(CognitionConfig {
+            provider,
+            api_key: self.api_key,
+            api_base: self.api_base,
+            model: self.model,
+            route_threshold: self.route_threshold,
+        })
+    }
+}
+
+/// Read the cognition config. Returns `None` when the file does not
+/// exist — pane shows "feature off."
+#[tauri::command]
+#[specta::specta]
+pub async fn load_cognition_config() -> Result<Option<CognitionConfigDto>, String> {
+    use secretariat_core::infrastructure::cognition::load_config;
+    let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
+    let cfg = load_config(&paths.cognition_config)
+        .map_err(|e| format!("load_cognition_config: {e}"))?;
+    Ok(cfg.map(CognitionConfigDto::from))
+}
+
+/// Persist the cognition config. Pane uses this when the principal
+/// changes provider / model / threshold / api key.
+#[tauri::command]
+#[specta::specta]
+pub async fn save_cognition_config(config: CognitionConfigDto) -> Result<(), String> {
+    use secretariat_core::infrastructure::cognition::save_config;
+    let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
+    let core_cfg = config.into_core()?;
+    save_config(&paths.cognition_config, &core_cfg)
+        .map_err(|e| format!("save_cognition_config: {e}"))?;
+    Ok(())
+}
+
+/// Fetch the available model identifiers for the currently configured
+/// provider. For Anthropic that's a curated hand-list; for OpenAI-
+/// compat it's a `GET /models` against the configured `api_base`. The
+/// pane uses this to populate the model dropdown.
+///
+/// Optional `override_config` lets the pane preview models for a
+/// configuration the principal hasn't saved yet (e.g. typing a new
+/// `api_base` and clicking Refresh before Save).
+#[tauri::command]
+#[specta::specta]
+pub async fn list_cognition_models(
+    override_config: Option<CognitionConfigDto>,
+) -> Result<Vec<String>, String> {
+    use secretariat_core::infrastructure::cognition::{
+        load_config, AnyCognitionAdapter,
+    };
+    let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
+    let cfg = match override_config {
+        Some(dto) => dto.into_core()?,
+        None => load_config(&paths.cognition_config)
+            .map_err(|e| format!("loading cognition config: {e}"))?
+            .ok_or_else(|| "no cognition config saved yet".to_string())?,
+    };
+    let adapter = AnyCognitionAdapter::from_config(cfg)
+        .ok_or_else(|| "config is missing required fields for chosen provider".to_string())?;
+    adapter
+        .list_models()
+        .await
+        .map_err(|e| format!("listing models: {e}"))
+}
+
+// ---------------------------------------------------------------------------
+// Contacts — display-name resolution for Sign-mode blobs
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
+pub struct ContactListing {
+    pub did: String,
+    pub display_name: String,
+}
+
+/// List the principal's known contacts. The Sign-mode home surface
+/// resolves recipient DIDs to display names through this; falls back to
+/// truncated DID when a peer isn't yet in the contact book.
+#[tauri::command]
+#[specta::specta]
+pub async fn list_contacts() -> Result<Vec<ContactListing>, String> {
+    use secretariat_core::application::list_contacts as core_list_contacts;
+    let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
+    let contacts =
+        core_list_contacts(&paths.contacts).map_err(|e| format!("list_contacts: {e}"))?;
+    Ok(contacts
+        .into_iter()
+        .map(|c| ContactListing {
+            did: c.did.as_str().to_string(),
+            display_name: c.display_name.to_string(),
+        })
+        .collect())
+}
+
+// ---------------------------------------------------------------------------
+// Assistant launcher — open Claude (or any CLI assistant) in Terminal.app
+// ---------------------------------------------------------------------------
+//
+// Click on a home-screen blob spawns the principal's chosen assistant. The
+// MCP server is already wired to whichever assistant the principal runs, so
+// the launcher just needs to open a terminal and start the binary. No
+// clipboard prompt, no prefilled instruction — the assistant picks up
+// context naturally via the MCP tools.
+//
+// Configurability is deferred: hardcoded to `claude` in `Terminal.app` for
+// the v0.3 cut. Settings entry lands in a follow-up.
+
+/// Where the home-screen blob launcher points the principal. CLI clients
+/// (Claude Code, Gemini CLI, aider) need a terminal to live in; Claude
+/// Desktop launches as a regular macOS app and picks up MCP from its own
+/// config. Unknown values fall back to Terminal.app.
+///
+/// macOS-only today. Windows + Linux variants are a separate slice once
+/// the GUI ships there (see AGENTS.md "Mac-only Day 1").
+#[derive(Debug, Clone, Copy)]
+enum AssistantTarget {
+    Terminal,
+    ITerm,
+    Ghostty,
+    ClaudeDesktop,
+}
+
+impl AssistantTarget {
+    fn from_pref(s: Option<&str>) -> Self {
+        match s.map(|x| x.trim().to_ascii_lowercase()).as_deref() {
+            Some("iterm") | Some("iterm2") => Self::ITerm,
+            Some("ghostty") => Self::Ghostty,
+            Some("claude") | Some("claude-desktop") => Self::ClaudeDesktop,
+            _ => Self::Terminal,
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn launch_macos(target: AssistantTarget, command: &str) -> Result<(), String> {
+    // ClaudeDesktop is a direct app open — no terminal, no command. The
+    // command pref is ignored for this target.
+    if matches!(target, AssistantTarget::ClaudeDesktop) {
+        let status = std::process::Command::new("open")
+            .args(["-a", "Claude"])
+            .status()
+            .map_err(|e| format!("spawning `open`: {e}"))?;
+        if !status.success() {
+            return Err("could not open Claude.app — is it installed?".to_string());
+        }
+        return Ok(());
+    }
+
+    let escaped = command.replace('"', "\\\"");
+    let script = match target {
+        AssistantTarget::Terminal => format!(
+            "tell application \"Terminal\"\n    activate\n    do script \"{escaped}\"\nend tell"
+        ),
+        AssistantTarget::ITerm => format!(
+            "tell application \"iTerm\"\n    activate\n    create window with default profile\n    tell current session of current window\n        write text \"{escaped}\"\n    end tell\nend tell"
+        ),
+        AssistantTarget::Ghostty => format!(
+            "do shell script \"open -na Ghostty --args -e '{}'\"",
+            escaped.replace('\'', "'\\''")
+        ),
+        AssistantTarget::ClaudeDesktop => unreachable!(),
+    };
+    let output = std::process::Command::new("osascript")
+        .arg("-e")
+        .arg(&script)
+        .output()
+        .map_err(|e| format!("spawning osascript: {e}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("osascript failed: {stderr}"));
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn launch_macos(_target: AssistantTarget, _command: &str) -> Result<(), String> {
+    Err("assistant launcher: only macOS is supported in this build".to_string())
+}
+
+/// Spawn the principal's assistant in their preferred environment. Reads
+/// `AppPreferences::assistant_terminal` + `assistant_command` from the
+/// caller; defaults to Terminal.app + `claude`.
+#[tauri::command]
+#[specta::specta]
+pub async fn launch_assistant(
+    terminal: Option<String>,
+    command: Option<String>,
+) -> Result<(), String> {
+    let target = AssistantTarget::from_pref(terminal.as_deref());
+    let cmd = command.as_deref().unwrap_or("claude");
+    launch_macos(target, cmd)
+}
+
 // Re-export for the bindings module so it can register these commands.
 #[allow(dead_code)]
 pub fn _types_used_in_bindings() -> (PathBuf,) {

@@ -1,6 +1,6 @@
 [package]
 name = "secretariat-core"
-version = "0.2.15"
+version = "0.2.16"
 edition = "2021"
 authors = ["Rafa Ballestiero"]
 license = "MIT"
@@ -23,6 +23,7 @@ base64.workspace = true
 hex.workspace = true
 reqwest.workspace = true
 thiserror.workspace = true
+tracing.workspace = true
 multibase.workspace = true
 dirs.workspace = true
 tempfile.workspace = true
@@ -32,3 +33,4 @@ toml.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+tokio = { workspace = true, features = ["macros", "rt"] }

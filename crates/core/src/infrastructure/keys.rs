@@ -60,6 +60,13 @@ pub struct KeyPaths {
     pub template: PathBuf,
     pub attention_envelope: PathBuf,
     pub profile: PathBuf,
+    /// BYOK config for the cognition adapter. Default-off: missing file
+    /// = no contextification.
+    pub cognition_config: PathBuf,
+    /// Append-only ledger of contextification decisions. Lives under
+    /// `queues/` so a `tail` over the queues tree picks it up alongside
+    /// captures.
+    pub contextification_log: PathBuf,
 }
 
 impl KeyPaths {
@@ -82,6 +89,8 @@ impl KeyPaths {
             template: root.join("template.md"),
             attention_envelope: root.join("attention-envelope.md"),
             profile: root.join("profile.json"),
+            cognition_config: root.join("cognition.json"),
+            contextification_log: root.join("queues").join(".contextification.log"),
             root,
         }
     }

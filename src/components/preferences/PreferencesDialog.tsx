@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { User, FolderOpen, Keyboard, Radio, Plug } from 'lucide-react'
+import { User, FolderOpen, Keyboard, Radio, Plug, Brain } from 'lucide-react'
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -30,6 +30,7 @@ import { PathsPane } from './panes/PathsPane'
 import { ShortcutPane } from './panes/ShortcutPane'
 import { RelayPane } from './panes/RelayPane'
 import { IntegrationsPane } from './panes/IntegrationsPane'
+import { CognitionPane } from './panes/CognitionPane'
 
 // Template panes (Appearance / General / Advanced) remain on disk under
 // `panes/` but are not surfaced — they're scaffold leftovers. The
@@ -42,6 +43,7 @@ type PreferencePane =
   | 'shortcut'
   | 'relay'
   | 'integrations'
+  | 'cognition'
 
 const navigationItems = [
   { id: 'profile' as const, label: 'Profile', icon: User },
@@ -49,6 +51,7 @@ const navigationItems = [
   { id: 'shortcut' as const, label: 'Shortcut', icon: Keyboard },
   { id: 'relay' as const, label: 'Relay', icon: Radio },
   { id: 'integrations' as const, label: 'Integrations', icon: Plug },
+  { id: 'cognition' as const, label: 'Cognition', icon: Brain },
 ] as const
 
 export function PreferencesDialog() {
@@ -121,6 +124,7 @@ export function PreferencesDialog() {
               {activePane === 'shortcut' && <ShortcutPane />}
               {activePane === 'relay' && <RelayPane />}
               {activePane === 'integrations' && <IntegrationsPane />}
+              {activePane === 'cognition' && <CognitionPane />}
             </div>
           </main>
         </SidebarProvider>

@@ -1,48 +1,89 @@
-// Two-button home surface. The dashboard / inbox-columns / envelope-modal
-// look from the v0.2.0 cut was too email-shaped — see
-// `memory/project_two_buttons_home.md` for the design lock-in. The
-// cadenced review-session walker that the buttons launch lands in a
-// follow-up commit.
+// Verb-first home surface: two modes, ambient blob status, no numbers.
 //
-// Today's behavior: counts surface as ambient signal in the button
-// labels; clicking either button is a no-op placeholder until the
-// walker ships.
+// Ceremony split:
+//   - **Review** = passive intake (peer inbox + local-capture queues).
+//     Triage-shaped; nothing here is signable.
+//   - **Sign** = active outbound. Outbox drafts grouped by recipient.
+//     Stamp-shaped; the cryptographic ceremony happens here.
+//
+// Each mode renders its buckets as soft circles whose radius encodes
+// log(count). Hover reveals the exact number; click spawns the
+// principal's chosen assistant in their preferred terminal so the MCP
+// tools take over from there. No clipboard prompt, no in-app composer —
+// per `memory/project_mcp_is_primary_interface.md`.
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import {
   commands,
+  type AppPreferences,
+  type ContactListing,
+  type EnvelopeListing,
   type IdentityState,
   type Profile,
 } from '@/lib/bindings'
 
+type Mode = 'review' | 'sign'
+
+interface Bucket {
+  /// Stable key for React + tooltip ids.
+  id: string
+  /// Human-visible name. Capitalized queue slug for Review, contact
+  /// display name (or DID prefix) for Sign.
+  label: string
+  /// Number of items in this bucket. Hover-only — never rendered as a
+  /// digit on the resting screen.
+  count: number
+}
+
 export function ReviewSurface() {
   const [identity, setIdentity] = useState<IdentityState | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
-  const [inboxCount, setInboxCount] = useState<number>(0)
-  const [queueCount, setQueueCount] = useState<number>(0)
+  const [inboxItems, setInboxItems] = useState<EnvelopeListing[]>([])
+  const [queueItems, setQueueItems] = useState<EnvelopeListing[]>([])
+  const [contacts, setContacts] = useState<ContactListing[]>([])
+  const [preferences, setPreferences] = useState<AppPreferences | null>(null)
+  const [mode, setMode] = useState<Mode>('review')
   const [syncing, setSyncing] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
     setError(null)
-    const [ident, prof, inbox, queue] = await Promise.all([
+    const [ident, prof, inbox, queue, cts, prefs] = await Promise.all([
       commands.currentIdentity(),
       commands.getProfile(),
       commands.listInbox(),
       commands.listReviewQueue(),
+      commands.listContacts(),
+      commands.loadPreferences(),
     ])
     if (ident.status === 'ok') setIdentity(ident.data)
     if (prof.status === 'ok') setProfile(prof.data)
-    if (inbox.status === 'ok') setInboxCount(inbox.data.length)
+    if (inbox.status === 'ok') setInboxItems(inbox.data)
     else setError(inbox.error)
-    if (queue.status === 'ok') setQueueCount(queue.data.length)
+    if (queue.status === 'ok') setQueueItems(queue.data)
     else setError(queue.error)
+    if (cts.status === 'ok') setContacts(cts.data)
+    if (prefs.status === 'ok') setPreferences(prefs.data)
   }, [])
 
   useEffect(() => {
     void refresh()
   }, [refresh])
+
+  // Keyboard: r → Review, s → Sign. Skip when focus is in an input
+  // field so settings + onboarding stay typeable.
+  useEffect(() => {
+    function onKey(ev: KeyboardEvent) {
+      const tag = (ev.target as HTMLElement | null)?.tagName ?? ''
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return
+      if (ev.metaKey || ev.ctrlKey || ev.altKey) return
+      if (ev.key === 'r') setMode('review')
+      else if (ev.key === 's') setMode('sign')
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   const handleSync = useCallback(async () => {
     setSyncing(true)
@@ -56,35 +97,88 @@ export function ReviewSurface() {
     }
   }, [refresh])
 
-  if (!identity) return null
+  const handleLaunch = useCallback(async () => {
+    const result = await commands.launchAssistant(
+      preferences?.assistant_terminal ?? null,
+      preferences?.assistant_command ?? null
+    )
+    if (result.status === 'error') {
+      toast.error(`Launch failed: ${result.error}`)
+    }
+  }, [preferences])
 
+  const reviewBuckets = useMemo<Bucket[]>(() => {
+    if (!identity) return []
+    const selfDid = identity.did
+    // Peer inbox — every received envelope counts as one bucket.
+    const inboxBucket: Bucket = {
+      id: 'peer-inbox',
+      label: 'Inbox',
+      count: inboxItems.length,
+    }
+    // Local captures — group by queue handle. Anything addressed to
+    // self with a populated queue handle.
+    const captureBuckets = new Map<string, Bucket>()
+    for (const item of queueItems) {
+      if (!item.to || !item.queue) continue
+      if (item.to !== selfDid) continue
+      const slug = sluggedQueue(item.queue)
+      const id = `q:${slug.key}`
+      const existing = captureBuckets.get(id)
+      if (existing) existing.count += 1
+      else captureBuckets.set(id, { id, label: slug.label, count: 1 })
+    }
+    return [inboxBucket, ...captureBuckets.values()]
+  }, [identity, inboxItems, queueItems])
+
+  const signBuckets = useMemo<Bucket[]>(() => {
+    if (!identity) return []
+    const selfDid = identity.did
+    const contactByDid = new Map(contacts.map((c) => [c.did, c.display_name]))
+    const peers = new Map<string, Bucket>()
+    for (const item of queueItems) {
+      if (!item.to || item.to === selfDid) continue
+      if (item.stamped) continue
+      const id = `peer:${item.to}`
+      const label = contactByDid.get(item.to) ?? truncateDid(item.to)
+      const existing = peers.get(id)
+      if (existing) existing.count += 1
+      else peers.set(id, { id, label, count: 1 })
+    }
+    return [...peers.values()]
+  }, [identity, queueItems, contacts])
+
+  if (!identity) return null
   const displayName = profile?.display_name ?? null
+  const buckets = mode === 'review' ? reviewBuckets : signBuckets
+  const emptyHint =
+    mode === 'review' ? 'Nothing to review.' : 'No drafts to sign.'
 
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-12 bg-background p-8">
+    <div className="flex h-full flex-col items-center justify-center gap-10 bg-background p-8">
       <header className="flex flex-col items-center gap-3 text-center">
-        <PrincipalAvatar did={identity.did} name={displayName} size="lg" />
+        <PrincipalAvatar did={identity.did} name={displayName} />
         <p className="text-lg font-medium">{displayName ?? 'You'}</p>
       </header>
 
-      <div className="flex flex-col gap-4 sm:flex-row">
-        <ReviewButton
-          label="Review inbox"
-          count={inboxCount}
-          onClick={() => copyPromptToClipboard('inbox', inboxCount)}
-        />
-        <ReviewButton
-          label="Review outbox"
-          count={queueCount}
-          onClick={() => copyPromptToClipboard('outbox', queueCount)}
-        />
+      <ModeToggle mode={mode} onChange={setMode} />
+
+      <div className="flex min-h-[8rem] flex-col items-center gap-6">
+        {buckets.length === 0 ? (
+          <p className="text-sm text-muted-foreground">{emptyHint}</p>
+        ) : (
+          <>
+            <BlobRow buckets={buckets} onClick={handleLaunch} />
+            <Legend buckets={buckets} />
+          </>
+        )}
       </div>
 
       <button
         type="button"
         onClick={handleSync}
         disabled={syncing}
-        className="text-sm text-muted-foreground underline-offset-4 hover:underline disabled:opacity-50"
+        className="text-xs text-muted-foreground underline-offset-4 hover:underline disabled:opacity-50"
       >
         {syncing ? 'Syncing…' : 'Sync now'}
       </button>
@@ -98,88 +192,175 @@ export function ReviewSurface() {
   )
 }
 
-/// Copy a Claude-ready prompt to the clipboard. The cadenced in-app
-/// walker is still future work (see `docs/ideas/two-buttons-cadenced-reviews.md`),
-/// so the bridge today is: principal clicks button, prompt lands in
-/// clipboard, paste into Claude Code/Desktop, Claude walks the queue
-/// via the MCP tools.
-async function copyPromptToClipboard(
-  kind: 'inbox' | 'outbox',
-  count: number
-) {
-  const prompt =
-    kind === 'inbox'
-      ? `Walk me through my Secretariat inbox. There ${
-          count === 1 ? 'is 1 envelope' : `are ${count} envelopes`
-        } waiting. Use the Secretariat MCP tools — list_inbox and read — to show me each one in turn. After each, ask if I want to reply.`
-      : `Walk me through my Secretariat outbox queue. There ${
-          count === 1 ? 'is 1 draft' : `are ${count} drafts`
-        } awaiting review. Use the Secretariat MCP tools — list_review_queue and read — to show me each draft. For each, show the body, ask if I want to stamp it. Do not stamp without my explicit go.`
-  try {
-    await navigator.clipboard.writeText(prompt)
-    toast.success(
-      kind === 'inbox'
-        ? 'Inbox-review prompt copied — paste into Claude'
-        : 'Outbox-review prompt copied — paste into Claude'
-    )
-  } catch (err) {
-    toast.error(`Could not copy to clipboard: ${String(err)}`)
-  }
+// ---------------------------------------------------------------------------
+// Mode toggle — Review / Sign pill, also bound to r/s keys.
+// ---------------------------------------------------------------------------
+
+function ModeToggle({
+  mode,
+  onChange,
+}: {
+  mode: Mode
+  onChange: (m: Mode) => void
+}) {
+  return (
+    <div
+      role="tablist"
+      aria-label="Home mode"
+      className="inline-flex rounded-full border bg-muted p-1 text-sm"
+    >
+      <ModePill
+        active={mode === 'review'}
+        label="Review"
+        hint="r"
+        onClick={() => onChange('review')}
+      />
+      <ModePill
+        active={mode === 'sign'}
+        label="Sign"
+        hint="s"
+        onClick={() => onChange('sign')}
+      />
+    </div>
+  )
 }
 
-function ReviewButton({
+function ModePill({
+  active,
   label,
-  count,
+  hint,
   onClick,
 }: {
+  active: boolean
   label: string
-  count: number
+  hint: string
   onClick: () => void
 }) {
-  const hasItems = count > 0
   return (
     <button
       type="button"
+      role="tab"
+      aria-selected={active}
       onClick={onClick}
-      className="flex h-44 w-64 flex-col items-center justify-center gap-3 rounded-2xl border-2 bg-card p-6 transition hover:border-primary hover:shadow-md"
+      className={
+        'rounded-full px-4 py-1.5 transition ' +
+        (active
+          ? 'bg-background text-foreground shadow-sm'
+          : 'text-muted-foreground hover:text-foreground')
+      }
     >
-      <span
-        className={
-          'h-3 w-3 rounded-full ' +
-          (hasItems
-            ? 'bg-amber-500 dark:bg-amber-400'
-            : 'bg-emerald-500 dark:bg-emerald-400')
-        }
-        aria-hidden
-      />
-      <span className="text-xl font-semibold">{label}</span>
-      <span className="text-sm text-muted-foreground">
-        {hasItems
-          ? count === 1
-            ? '1 to review'
-            : `${count} to review`
-          : 'all clear'}
-      </span>
+      {label}
+      <span className="ml-2 text-xs opacity-60">{hint}</span>
     </button>
   )
 }
 
+// ---------------------------------------------------------------------------
+// Blob row + legend.
+// ---------------------------------------------------------------------------
+
+/// Pixel diameter of a blob, scaled by `log1p(count)`. Empty buckets
+/// keep a small base disc so the legend remains readable. Clamped to a
+/// sane upper bound so a noisy queue doesn't dominate the screen.
+function blobDiameter(count: number): number {
+  const base = 22
+  const max = 96
+  const scaled = base + Math.log1p(count) * 26
+  return Math.min(max, Math.round(scaled))
+}
+
+function BlobRow({
+  buckets,
+  onClick,
+}: {
+  buckets: Bucket[]
+  onClick: () => void
+}) {
+  return (
+    <div className="flex flex-wrap items-end justify-center gap-6">
+      {buckets.map((b) => (
+        <Blob key={b.id} bucket={b} onClick={onClick} />
+      ))}
+    </div>
+  )
+}
+
+function Blob({ bucket, onClick }: { bucket: Bucket; onClick: () => void }) {
+  const d = blobDiameter(bucket.count)
+  const hasItems = bucket.count > 0
+  const colorClass = hasItems
+    ? 'bg-amber-400/80 hover:bg-amber-500/90 dark:bg-amber-300/70'
+    : 'bg-emerald-400/40 hover:bg-emerald-500/60 dark:bg-emerald-300/40'
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={`${bucket.label}: ${bucket.count}`}
+      aria-label={`${bucket.label}, ${bucket.count} item${bucket.count === 1 ? '' : 's'}`}
+      style={{ width: d, height: d }}
+      className={
+        'rounded-full transition-transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 ' +
+        colorClass
+      }
+    />
+  )
+}
+
+function Legend({ buckets }: { buckets: Bucket[] }) {
+  return (
+    <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+      {buckets.map((b) => (
+        <span key={b.id}>{b.label}</span>
+      ))}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Helpers — queue label + DID truncation.
+// ---------------------------------------------------------------------------
+
+interface SluggedQueue {
+  /// Stable key for de-dup (the slug part).
+  key: string
+  /// Capitalized human-visible label.
+  label: string
+}
+
+/// `inbox:triage` → `{ key: "triage", label: "Triage" }`. Drops the
+/// namespace because the Review surface already implies "local intake."
+/// Falls back gracefully on malformed handles.
+function sluggedQueue(handle: string): SluggedQueue {
+  const idx = handle.indexOf(':')
+  const slug = idx >= 0 ? handle.slice(idx + 1) : handle
+  const first = slug.charAt(0)
+  const label = first === '' ? handle : first.toUpperCase() + slug.slice(1)
+  return { key: slug, label }
+}
+
+function truncateDid(did: string): string {
+  // `did:key:z6Mkb…XYZ` — keep enough to disambiguate without taking
+  // the whole legend row.
+  if (did.length <= 18) return did
+  return `${did.slice(0, 12)}…${did.slice(-4)}`
+}
+
+// ---------------------------------------------------------------------------
+// Avatar (unchanged shape; consolidated for the new layout).
+// ---------------------------------------------------------------------------
+
 function PrincipalAvatar({
   did,
   name,
-  size,
 }: {
   did: string
   name: string | null
-  size: 'sm' | 'lg'
 }) {
   const hue = hueFromDid(did)
   const initial = (name?.trim()[0] || '?').toUpperCase()
-  const sizeClass =
-    size === 'lg' ? 'h-16 w-16 text-2xl' : 'h-9 w-9 text-sm'
   return (
     <div
-      className={`flex shrink-0 items-center justify-center rounded-full font-medium text-white ${sizeClass}`}
+      className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full text-2xl font-medium text-white"
       style={{ backgroundColor: `hsl(${hue}, 55%, 45%)` }}
     >
       {initial}

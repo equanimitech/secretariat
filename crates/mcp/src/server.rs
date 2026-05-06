@@ -53,8 +53,8 @@ use schemars::JsonSchema;
 use secretariat_core::application::{
     add_contact, archive_envelope, capture_to_queue, claim_invite, compose_envelope,
     create_invite, find_by_slug, list_contacts, list_inbox_files, list_outbox_files,
-    read_envelope, stamp_document, verify_document, view_invite, CaptureRequest,
-    ComposeRequest, ListedEnvelope, StampError, VerifyOutcome,
+    read_envelope, stamp_document, try_contextify_after_capture, verify_document, view_invite,
+    CaptureRequest, ComposeRequest, ListedEnvelope, StampError, VerifyOutcome,
 };
 use secretariat_core::domain::{QueueHandle, Recipient, StampAct};
 use secretariat_core::infrastructure::biometric::build_signer;
@@ -433,6 +433,41 @@ impl SecretariatServer {
             .map_err(|e| invalid_request(format!("capture failed: {e}")))?;
 
         info!(file = %path.display(), queue = %queue.as_str(), "captured to local queue via MCP");
+
+        // Fire-and-forget contextification pass on inbox:triage captures.
+        // No-op when no cognition adapter is configured (default state);
+        // safe even if the file moves before the principal sees this
+        // response because list_review_queue resolves paths on read,
+        // never holds them in long-lived state.
+        if queue.as_str() == secretariat_core::application::ROUTABLE_QUEUE {
+            let capture_path = path.clone();
+            let queues_root = self.paths.queues.clone();
+            let ledger_path = self.paths.contextification_log.clone();
+            let cognition_config = self.paths.cognition_config.clone();
+            tokio::spawn(async move {
+                match try_contextify_after_capture(
+                    &capture_path,
+                    &queues_root,
+                    &ledger_path,
+                    &cognition_config,
+                    Utc::now(),
+                )
+                .await
+                {
+                    Ok(Some(outcome)) if outcome.applied => {
+                        info!(
+                            from = %capture_path.display(),
+                            to = %outcome.final_path.display(),
+                            "contextification re-filed capture"
+                        );
+                    }
+                    Ok(_) => {} // adapter off, threshold, or same queue
+                    Err(e) => {
+                        tracing::warn!(error = %e, "contextification pass failed");
+                    }
+                }
+            });
+        }
 
         Ok(Json(CaptureOutput {
             file_path: path.display().to_string(),

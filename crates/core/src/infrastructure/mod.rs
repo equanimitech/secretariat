@@ -2,6 +2,7 @@
 //! implementation sequencing in the plan.
 
 pub mod biometric;
+pub mod cognition;
 pub mod composite_did_resolver;
 pub mod contact_store;
 pub mod crypto;

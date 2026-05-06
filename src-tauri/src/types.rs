@@ -33,6 +33,16 @@ pub struct AppPreferences {
     /// User's preferred language (e.g., "en", "es", "de")
     /// If None, uses system locale detection
     pub language: Option<String>,
+    /// Terminal app the principal wants the home-screen blob launcher to
+    /// use. None = `Terminal.app` default. Recognized: `terminal`,
+    /// `iterm`, `ghostty`. Anything else falls back to Terminal.app.
+    #[serde(default)]
+    pub assistant_terminal: Option<String>,
+    /// Command the launcher runs inside the chosen terminal. None =
+    /// `claude` (Claude Code CLI). Lets the principal swap in another
+    /// MCP-aware client (`gemini`, `aider`, a script, etc.).
+    #[serde(default)]
+    pub assistant_command: Option<String>,
 }
 
 impl Default for AppPreferences {
@@ -41,6 +51,8 @@ impl Default for AppPreferences {
             theme: "system".to_string(),
             quick_pane_shortcut: None, // None means use default
             language: None,            // None means use system locale
+            assistant_terminal: None,  // None means Terminal.app
+            assistant_command: None,   // None means `claude`
         }
     }
 }

@@ -332,6 +332,74 @@ async archiveInboxEnvelope(filePath: string) : Promise<Result<string, string>> {
 }
 },
 /**
+ * List the principal's known contacts. The Sign-mode home surface
+ * resolves recipient DIDs to display names through this; falls back to
+ * truncated DID when a peer isn't yet in the contact book.
+ */
+async listContacts() : Promise<Result<ContactListing[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_contacts") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Spawn the principal's assistant in their preferred environment. Reads
+ * `AppPreferences::assistant_terminal` + `assistant_command` from the
+ * caller; defaults to Terminal.app + `claude`.
+ */
+async launchAssistant(terminal: string | null, command: string | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("launch_assistant", { terminal, command }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Read the cognition config. Returns `None` when the file does not
+ * exist — pane shows "feature off."
+ */
+async loadCognitionConfig() : Promise<Result<CognitionConfigDto | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("load_cognition_config") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Persist the cognition config. Pane uses this when the principal
+ * changes provider / model / threshold / api key.
+ */
+async saveCognitionConfig(config: CognitionConfigDto) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("save_cognition_config", { config }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Fetch the available model identifiers for the currently configured
+ * provider. For Anthropic that's a curated hand-list; for OpenAI-
+ * compat it's a `GET /models` against the configured `api_base`. The
+ * pane uses this to populate the model dropdown.
+ * 
+ * Optional `override_config` lets the pane preview models for a
+ * configuration the principal hasn't saved yet (e.g. typing a new
+ * `api_base` and clicking Refresh before Save).
+ */
+async listCognitionModels(overrideConfig: CognitionConfigDto | null) : Promise<Result<string[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_cognition_models", { overrideConfig }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Reveal a path in Finder (macOS) / file manager (other platforms).
  * 
  * Used by the Paths pane's "Reveal in Finder" button so the principal
@@ -419,7 +487,25 @@ quick_pane_shortcut: string | null;
  * User's preferred language (e.g., "en", "es", "de")
  * If None, uses system locale detection
  */
-language: string | null }
+language: string | null; 
+/**
+ * Terminal app the principal wants the home-screen blob launcher to
+ * use. None = `Terminal.app` default. Recognized: `terminal`,
+ * `iterm`, `ghostty`. Anything else falls back to Terminal.app.
+ */
+assistant_terminal?: string | null; 
+/**
+ * Command the launcher runs inside the chosen terminal. None =
+ * `claude` (Claude Code CLI). Lets the principal swap in another
+ * MCP-aware client (`gemini`, `aider`, a script, etc.).
+ */
+assistant_command?: string | null }
+export type CognitionConfigDto = { 
+/**
+ * `"anthropic"` or `"openai-compat"`.
+ */
+provider: string; api_key: string | null; api_base: string | null; model: string | null; route_threshold: number | null }
+export type ContactListing = { did: string; display_name: string }
 export type EnvelopeListing = { file_path: string; from: string | null; 
 /**
  * DID of the queue *owner* (recipient). Always set on well-formed
