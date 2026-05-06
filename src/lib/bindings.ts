@@ -330,6 +330,68 @@ async archiveInboxEnvelope(filePath: string) : Promise<Result<string, string>> {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * Reveal a path in Finder (macOS) / file manager (other platforms).
+ * 
+ * Used by the Paths pane's "Reveal in Finder" button so the principal
+ * can poke around in `~/.secretariat/` without us having to render a
+ * file tree inside the app.
+ */
+async revealInFinder(path: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("reveal_in_finder", { path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * List all relays from `~/.secretariat/relay-state.json`. Returns an
+ * empty vec if the file doesn't exist (pre-onboarding).
+ */
+async listRelays() : Promise<Result<RelayInfo[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_relays") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Add (or upsert) a relay endpoint. Does NOT register the principal's
+ * DID with the relay — that happens automatically the first time
+ * `invite` or `accept_invite` runs against this endpoint, or
+ * (in CLI flows) via `sec relay register`.
+ */
+async addRelay(endpoint: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("add_relay", { endpoint }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async mcpIntegrationsStatus() : Promise<Result<IntegrationsStatus, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("mcp_integrations_status") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Re-run `sec mcp install` to re-wire Claude Code + Claude Desktop with
+ * the current bundled binary. The principal hits this from the
+ * Integrations pane when they see a path mismatch.
+ */
+async rewireMcpIntegrations() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("rewire_mcp_integrations") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -394,6 +456,34 @@ did: string;
  * "Welcome — your identity is …" vs "Welcome back — you're …".
  */
 created: boolean }
+export type IntegrationStatus = { 
+/**
+ * Whether the integration is currently wired (server entry exists
+ * in the client's config and points at the bundled `sec-mcp`).
+ */
+wired: boolean; 
+/**
+ * The path the integration's config currently points at, if any.
+ * Useful for diagnostics — mismatch between this and the bundled
+ * path means the silent-wire is stale.
+ */
+binary_path: string | null; 
+/**
+ * Where the integration stores its config (for surfacing in the UI).
+ */
+config_location: string | null; 
+/**
+ * Whether the client itself was detected at all (e.g. Claude Code
+ * CLI installed, Claude Desktop app present).
+ */
+client_detected: boolean }
+export type IntegrationsStatus = { claude_code: IntegrationStatus; claude_desktop: IntegrationStatus; 
+/**
+ * The path to the bundled `sec-mcp` we'd wire into clients.
+ * When integrations show a different `binary_path`, the principal
+ * can re-wire from the UI to bring them into sync.
+ */
+bundled_binary: string | null }
 export type InviteClaimReport = { inviter_did: string; claimant_did: string; claimed_at: string; 
 /**
  * True when the relay registered this principal as part of the claim
@@ -426,6 +516,7 @@ export type RecoveryError =
  * JSON serialization/deserialization error
  */
 { type: "ParseError"; message: string }
+export type RelayInfo = { endpoint: string; registered: boolean }
 export type RelaySyncReport = { endpoint: string; inbound_count: number; auto_added_contacts: number; warnings: string[] }
 /**
  * Stamp an outbox draft and (best-effort) deliver it immediately. Touch

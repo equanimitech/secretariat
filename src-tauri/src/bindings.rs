@@ -1,7 +1,9 @@
 use tauri_specta::{collect_commands, Builder};
 
 pub fn generate_bindings() -> Builder<tauri::Wry> {
-    use crate::commands::{notifications, preferences, quick_pane, recovery, secretariat};
+    use crate::commands::{
+        notifications, preferences, quick_pane, recovery, secretariat, settings,
+    };
 
     Builder::<tauri::Wry>::new().commands(collect_commands![
         preferences::greet,
@@ -30,6 +32,11 @@ pub fn generate_bindings() -> Builder<tauri::Wry> {
         secretariat::stamp_envelope,
         secretariat::defer_inbox_envelope,
         secretariat::archive_inbox_envelope,
+        settings::reveal_in_finder,
+        settings::list_relays,
+        settings::add_relay,
+        settings::mcp_integrations_status,
+        settings::rewire_mcp_integrations,
     ])
 }
 

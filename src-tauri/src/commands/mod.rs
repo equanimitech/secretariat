@@ -8,3 +8,4 @@ pub mod preferences;
 pub mod quick_pane;
 pub mod recovery;
 pub mod secretariat;
+pub mod settings;

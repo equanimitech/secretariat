@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { User } from 'lucide-react'
+import { User, FolderOpen, Keyboard, Radio, Plug } from 'lucide-react'
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -26,19 +26,29 @@ import {
 } from '@/components/ui/sidebar'
 import { useUIStore } from '@/store/ui-store'
 import { ProfilePane } from './panes/ProfilePane'
+import { PathsPane } from './panes/PathsPane'
+import { ShortcutPane } from './panes/ShortcutPane'
+import { RelayPane } from './panes/RelayPane'
+import { IntegrationsPane } from './panes/IntegrationsPane'
 
-// Template panes (Appearance / General / Advanced) are intentionally
-// not imported. They remain on disk under `panes/` so we can repurpose
-// later — see `memory/project_settings_pane_shape.md`.
+// Template panes (Appearance / General / Advanced) remain on disk under
+// `panes/` but are not surfaced — they're scaffold leftovers. The
+// Secretariat-shaped panes shipping in v0.3 are: Profile, Paths,
+// Shortcut, Relay, Integrations.
 
-type PreferencePane = 'profile'
+type PreferencePane =
+  | 'profile'
+  | 'paths'
+  | 'shortcut'
+  | 'relay'
+  | 'integrations'
 
 const navigationItems = [
-  {
-    id: 'profile' as const,
-    label: 'Profile',
-    icon: User,
-  },
+  { id: 'profile' as const, label: 'Profile', icon: User },
+  { id: 'paths' as const, label: 'Paths', icon: FolderOpen },
+  { id: 'shortcut' as const, label: 'Shortcut', icon: Keyboard },
+  { id: 'relay' as const, label: 'Relay', icon: Radio },
+  { id: 'integrations' as const, label: 'Integrations', icon: Plug },
 ] as const
 
 export function PreferencesDialog() {
@@ -107,6 +117,10 @@ export function PreferencesDialog() {
 
             <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4 pt-0 max-h-[calc(600px-4rem)]">
               {activePane === 'profile' && <ProfilePane />}
+              {activePane === 'paths' && <PathsPane />}
+              {activePane === 'shortcut' && <ShortcutPane />}
+              {activePane === 'relay' && <RelayPane />}
+              {activePane === 'integrations' && <IntegrationsPane />}
             </div>
           </main>
         </SidebarProvider>

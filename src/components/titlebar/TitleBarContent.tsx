@@ -1,19 +1,20 @@
-// Imports kept under underscore-aliases for v0.2.x — chrome restored by
-// removing the underscore prefix and uncommenting the JSX in each
-// function body. See `memory/project_settings_pane_shape.md`.
-import { useTranslation as _useTranslation } from 'react-i18next'
-import { Button as _Button } from '@/components/ui/button'
+// Sidebar toggles stay hidden for v0.3 (no sidebars rendered). The
+// Settings button is surfaced again in v0.3 since the Settings panes
+// (Profile, Paths, Shortcut, Relay, Integrations) are the principal's
+// path into Secretariat configuration.
+import { useTranslation } from 'react-i18next'
+import { Button } from '@/components/ui/button'
 import { useUIStore as _useUIStore } from '@/store/ui-store'
 import {
-  executeCommand as _executeCommand,
-  useCommandContext as _useCommandContext,
+  executeCommand,
+  useCommandContext,
 } from '@/lib/commands'
 import {
   PanelLeft as _PanelLeft,
   PanelLeftClose as _PanelLeftClose,
   PanelRight as _PanelRight,
   PanelRightClose as _PanelRightClose,
-  Settings as _Settings,
+  Settings,
 } from 'lucide-react'
 
 /**
@@ -50,57 +51,34 @@ export function TitleBarLeftActions() {
 }
 
 /**
- * Right-side toolbar actions (settings, sidebar toggle).
- * Hidden for v0.2.x — function returns null.
+ * Right-side toolbar actions. Surfaces the Settings button — primary
+ * entrypoint for the principal into Profile / Paths / Shortcut / Relay
+ * / Integrations panes. Sidebar toggles stay hidden for v0.3.
  */
 export function TitleBarRightActions() {
-  // Settings + right-sidebar-toggle buttons hidden for v0.2.x
-  // (memory/project_settings_pane_shape.md). Preserved for repurposing.
-  //
-  // const { t } = useTranslation()
-  // const rightSidebarVisible = useUIStore(state => state.rightSidebarVisible)
-  // const toggleRightSidebar = useUIStore(state => state.toggleRightSidebar)
-  // const commandContext = useCommandContext()
-  //
-  // const handleOpenPreferences = async () => {
-  //   const result = await executeCommand('open-preferences', commandContext)
-  //   if (!result.success && result.error) {
-  //     commandContext.showToast(result.error, 'error')
-  //   }
-  // }
-  //
-  // return (
-  //   <div className="flex items-center gap-1">
-  //     <Button
-  //       onClick={handleOpenPreferences}
-  //       variant="ghost"
-  //       size="icon"
-  //       className="h-6 w-6 text-foreground/70 hover:text-foreground"
-  //       title={t('titlebar.settings')}
-  //     >
-  //       <Settings className="h-3 w-3" />
-  //     </Button>
-  //
-  //     <Button
-  //       onClick={toggleRightSidebar}
-  //       variant="ghost"
-  //       size="icon"
-  //       className="h-6 w-6 text-foreground/70 hover:text-foreground"
-  //       title={t(
-  //         rightSidebarVisible
-  //           ? 'titlebar.hideRightSidebar'
-  //           : 'titlebar.showRightSidebar'
-  //       )}
-  //     >
-  //       {rightSidebarVisible ? (
-  //         <PanelRightClose className="h-3 w-3" />
-  //       ) : (
-  //         <PanelRight className="h-3 w-3" />
-  //       )}
-  //     </Button>
-  //   </div>
-  // )
-  return null
+  const { t } = useTranslation()
+  const commandContext = useCommandContext()
+
+  const handleOpenPreferences = async () => {
+    const result = await executeCommand('open-preferences', commandContext)
+    if (!result.success && result.error) {
+      commandContext.showToast(result.error, 'error')
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-1">
+      <Button
+        onClick={handleOpenPreferences}
+        variant="ghost"
+        size="icon"
+        className="h-6 w-6 text-foreground/70 hover:text-foreground"
+        title={t('titlebar.settings')}
+      >
+        <Settings className="h-3 w-3" />
+      </Button>
+    </div>
+  )
 }
 
 interface TitleBarTitleProps {

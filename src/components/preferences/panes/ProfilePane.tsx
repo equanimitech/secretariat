@@ -12,26 +12,21 @@ import { Label } from '@/components/ui/label'
 export function ProfilePane() {
   const [name, setName] = useState('')
   const [did, setDid] = useState<string | null>(null)
-  const [root, setRoot] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [savedNote, setSavedNote] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     void (async () => {
-      const [profile, identity, secroot] = await Promise.all([
+      const [profile, identity] = await Promise.all([
         commands.getProfile(),
         commands.currentIdentity(),
-        commands.secretariatRoot(),
       ])
       if (profile.status === 'ok' && profile.data) {
         setName(profile.data.display_name)
       }
       if (identity.status === 'ok' && identity.data) {
         setDid(identity.data.did)
-      }
-      if (secroot.status === 'ok') {
-        setRoot(secroot.data)
       }
     })()
   }, [])
@@ -126,17 +121,6 @@ export function ProfilePane() {
         )}
       </section>
 
-      <section className="space-y-2 border-t pt-4">
-        <Label className="text-sm font-medium">Storage</Label>
-        <p className="text-xs text-muted-foreground">
-          Where your keys, contacts, and envelopes live on disk.
-        </p>
-        {root && (
-          <code className="block break-all rounded bg-muted px-2 py-1 text-xs">
-            {root}
-          </code>
-        )}
-      </section>
     </div>
   )
 }
