@@ -1,7 +1,7 @@
-// Template chrome (sidebars, command palette, preferences dialog popup)
-// is commented out for v0.2.x — see `memory/project_settings_pane_shape.md`
-// + `memory/project_two_buttons_home.md`. Preserved verbatim so we can
-// uncomment when repurposing as menubar dropdown content / quick-pane host.
+// Sidebars + command palette stay commented out for v0.3 (no sidebars
+// rendered; quick-pane handles capture). PreferencesDialog is restored
+// in v0.2.14 — without it mounted, the gear button + Cmd+, toggle the
+// preferencesOpen state but no UI ever surfaces.
 //
 // import {
 //   ResizablePanelGroup,
@@ -11,10 +11,10 @@
 // import { LeftSideBar } from './LeftSideBar'
 // import { RightSideBar } from './RightSideBar'
 // import { CommandPalette } from '@/components/command-palette/CommandPalette'
-// import { PreferencesDialog } from '@/components/preferences/PreferencesDialog'
 // import { useUIStore } from '@/store/ui-store'
 // import { cn } from '@/lib/utils'
 
+import { PreferencesDialog } from '@/components/preferences/PreferencesDialog'
 import { TitleBar } from '@/components/titlebar/TitleBar'
 import { MainWindowContent } from './MainWindowContent'
 import { Toaster } from 'sonner'
@@ -84,11 +84,9 @@ export function MainWindow() {
         */}
       </div>
 
-      {/* Global UI Components — hidden until triggered (template chrome).
-          Restored by uncommenting the imports above and the lines below.
-        <CommandPalette />
-        <PreferencesDialog />
-      */}
+      <PreferencesDialog />
+      {/* CommandPalette stays commented out for v0.3 — no command-palette
+          surface today. Restore by adding the import above and a line here. */}
       <Toaster
         position="bottom-right"
         theme={
