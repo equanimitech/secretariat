@@ -4,7 +4,7 @@ You are about to walk the principal through stamping a draft envelope. This prom
 
 ## Argument
 
-- `file` (required): the absolute path to a draft envelope under `~/.secretariat/outbox/<recipient-did>/`. If omitted, call `list_outbox`, render the unstamped drafts, and ask the principal to pick one by index or path.
+- `file` (required): the absolute path to a draft envelope under `~/.secretariat/outbox/<recipient-did>/`. If omitted, fetch the `secretariat://outbox` resource, render the unstamped drafts, and ask the principal to pick one by path.
 
 ## Recipe (non-skippable — phishing / habituation defense)
 

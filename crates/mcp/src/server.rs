@@ -52,11 +52,11 @@ use rmcp::{
 use schemars::JsonSchema;
 use secretariat_core::application::{
     add_contact, archive_envelope, capture_to_queue, claim_invite, compose_envelope,
-    create_invite, defer_envelope, find_by_slug, list_contacts, list_inbox_files,
-    list_outbox_files, read_envelope, stamp_document, verify_document, view_invite,
-    CaptureRequest, ComposeRequest, ListedEnvelope, StampError, VerifyOutcome,
+    create_invite, find_by_slug, list_contacts, list_inbox_files, list_outbox_files,
+    read_envelope, stamp_document, verify_document, view_invite, CaptureRequest,
+    ComposeRequest, ListedEnvelope, StampError, VerifyOutcome,
 };
-use secretariat_core::domain::{DidMethod, QueueHandle, Recipient, StampAct};
+use secretariat_core::domain::{QueueHandle, Recipient, StampAct};
 use secretariat_core::infrastructure::biometric::build_signer;
 use secretariat_core::infrastructure::composite_did_resolver::CompositeDidResolver;
 use secretariat_core::infrastructure::did_web_resolver::DidWebResolver;
@@ -233,43 +233,6 @@ pub struct CaptureOutput {
     pub note: String,
 }
 
-#[derive(Debug, Deserialize, JsonSchema, Default)]
-pub struct EmptyParams {}
-
-#[derive(Debug, Serialize, JsonSchema)]
-pub struct EnvelopeListing {
-    pub envelopes: Vec<EnvelopeView>,
-}
-
-#[derive(Debug, Serialize, JsonSchema)]
-pub struct EnvelopeView {
-    pub file_path: String,
-    pub from: Option<String>,
-    /// DID of the queue *owner* (recipient). Always set on well-formed
-    /// envelopes. Compare to the principal's own DID to discriminate
-    /// local capture (`to == self`) from peer/channel post (`to != self`).
-    pub to: Option<String>,
-    /// Queue handle on the owner's machine (`<namespace>:<slug>`).
-    /// Always set on well-formed envelopes alongside `to`. Direct
-    /// messages conventionally use `inbox:default`.
-    pub queue: Option<String>,
-    pub stamped: bool,
-    pub encrypted: bool,
-}
-
-impl From<ListedEnvelope> for EnvelopeView {
-    fn from(l: ListedEnvelope) -> Self {
-        Self {
-            file_path: l.file_path,
-            from: l.from,
-            to: l.to,
-            queue: l.queue,
-            stamped: l.stamped,
-            encrypted: l.encrypted,
-        }
-    }
-}
-
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ReadParams {
     /// Absolute path to the envelope `.md` file.
@@ -328,23 +291,7 @@ pub struct VerifyOutput {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
-pub struct AddContactParams {
-    pub did: String,
-    pub display_name: String,
-    /// Required for `did:key` peers (no live discovery channel).
-    /// Omit for `did:web` peers — daemon resolves from their DID document.
-    #[serde(default)]
-    pub relay_endpoint: Option<String>,
-}
-
-#[derive(Debug, Serialize, JsonSchema)]
-pub struct AddContactOutput {
-    pub did: String,
-    pub display_name: String,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct InviteCreateParams {
+pub struct InviteParams {
     /// Free-form purpose hint shown to the recipient (e.g. "first-contact").
     #[serde(default)]
     pub purpose: Option<String>,
@@ -358,14 +305,14 @@ pub struct InviteCreateParams {
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
-pub struct InviteCreateOutput {
+pub struct InviteOutput {
     pub token: String,
     pub claim_url: String,
     pub expires_at: String,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
-pub struct InviteClaimParams {
+pub struct AcceptInviteParams {
     /// Claim URL the inviter shared
     /// (e.g. `https://secretariat.equanimi.tech/v0/invite/<token>`).
     pub claim_url: String,
@@ -376,7 +323,7 @@ pub struct InviteClaimParams {
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
-pub struct InviteClaimOutput {
+pub struct AcceptInviteOutput {
     pub inviter_did: String,
     pub claimant_did: String,
     pub claimed_at: String,
@@ -564,69 +511,17 @@ impl SecretariatServer {
         }))
     }
 
-    #[tool(
-        name = "list_outbox",
-        annotations(read_only_hint = true, open_world_hint = false),
-        description = "List drafts in the principal's outbox (stamped and unstamped)."
-    )]
-    async fn list_outbox(
-        &self,
-        Parameters(_): Parameters<EmptyParams>,
-    ) -> Result<Json<EnvelopeListing>, ErrorData> {
-        let envelopes = list_outbox_files(&self.paths.outbox)
-            .map_err(|e| invalid_request(format!("list_outbox failed: {e}")))?;
-        Ok(Json(EnvelopeListing {
-            envelopes: envelopes.into_iter().map(EnvelopeView::from).collect(),
-        }))
-    }
+    // Note: `list_inbox` and `list_outbox` were tools in 0.2.7-0.2.10.
+    // Moved to resources (`secretariat://inbox`, `secretariat://outbox`)
+    // in 0.2.11 — listing IS reading, so resource semantics fit; the
+    // model fetches them via `resources/read` rather than `tools/call`.
 
-    #[tool(
-        name = "list_inbox",
-        annotations(read_only_hint = true, open_world_hint = false),
-        description = "List verified inbound envelopes from the principal's inbox. \
-        IMPORTANT: only call this tool when the user has explicitly asked for their inbox \
-        (e.g., 'check my inbox', 'any new messages from Marcelo?'). Do not call proactively \
-        at the start of conversations or between unrelated requests — Secretariat is designed \
-        for low-cadence, intentional review, not constant inbox-checking."
-    )]
-    async fn list_inbox(
-        &self,
-        Parameters(_): Parameters<EmptyParams>,
-    ) -> Result<Json<EnvelopeListing>, ErrorData> {
-        let envelopes = list_inbox_files(&self.paths.inbox)
-            .map_err(|e| invalid_request(format!("list_inbox failed: {e}")))?;
-        Ok(Json(EnvelopeListing {
-            envelopes: envelopes.into_iter().map(EnvelopeView::from).collect(),
-        }))
-    }
-
-    #[tool(
-        name = "defer",
-        annotations(
-            destructive_hint = false,
-            idempotent_hint = true,
-            open_world_hint = false
-        ),
-        description = "Defer an inbox envelope — move it out of the active inbox into \
-        `inbox/deferred/`. Use during a review session when the principal says 'remind me \
-        later' / 'come back to this' / 'not now'. Idempotent against the destination. \
-        Future bubble-up logic will re-surface deferred envelopes; v1 just stages them."
-    )]
-    async fn defer(
-        &self,
-        Parameters(params): Parameters<InboxActionParams>,
-    ) -> Result<Json<InboxActionOutput>, ErrorData> {
-        let path = PathBuf::from(&params.file_path);
-        let moved = defer_envelope(&path, &self.paths.inbox)
-            .map_err(|e| invalid_request(format!("defer failed: {e}")))?;
-        info!(file = %path.display(), to = %moved.display(), "deferred envelope via MCP");
-        Ok(Json(InboxActionOutput {
-            moved_to: moved.display().to_string(),
-            note: "Envelope deferred. It is no longer in the active inbox; the principal \
-                   can re-surface it later."
-                .to_string(),
-        }))
-    }
+    // Note: `defer` was a tool in 0.2.7-0.2.10. Dropped in 0.2.11 because
+    // the bubble-up logic that would make "deferred" semantically distinct
+    // from "archived" doesn't exist yet — without it, defer is archive with
+    // a different folder name. When bubble-up ships, defer comes back (or
+    // archive becomes a parameterized `move_to_queue`, depending on what
+    // the right shape is then).
 
     #[tool(
         name = "archive",
@@ -635,9 +530,10 @@ impl SecretariatServer {
             idempotent_hint = true,
             open_world_hint = false
         ),
-        description = "Archive an inbox envelope — move it out of the active inbox into \
-        `inbox/archived/`. Use during a review session when the principal says 'handled' / \
-        'ignore' / 'done with this'. Files stay on disk for history; just out of the queue."
+        description = "Archive an inbox envelope — move it out of the active \
+        inbox into `inbox/archived/`. Use during a review session when the \
+        principal says 'handled' / 'ignore' / 'done with this'. Files stay on \
+        disk for history; just out of the active queue. Idempotent."
     )]
     async fn archive(
         &self,
@@ -700,50 +596,16 @@ impl SecretariatServer {
     // not an action-to-perform. Resource semantics fit; tool semantics
     // don't.
 
-    #[tool(
-        name = "add_contact",
-        annotations(
-            destructive_hint = false,
-            idempotent_hint = false,
-            open_world_hint = false
-        ),
-        description = "Add a peer to the principal's contact book. \
-        For `did:key` peers, `relay_endpoint` is required (no live discovery channel). \
-        For `did:web` peers, omit `relay_endpoint` — daemon resolves from their DID document."
-    )]
-    async fn add_contact(
-        &self,
-        Parameters(params): Parameters<AddContactParams>,
-    ) -> Result<Json<AddContactOutput>, ErrorData> {
-        let did = Did::parse(&params.did)
-            .map_err(|e| invalid_request(format!("invalid did: {e}")))?;
-        let name = DisplayName::parse(&params.display_name)
-            .map_err(|e| invalid_request(format!("invalid display_name: {e}")))?;
-        let relay = match params.relay_endpoint.as_deref() {
-            Some(s) => Some(
-                RelayEndpoint::parse(s)
-                    .map_err(|e| invalid_request(format!("invalid relay_endpoint: {e}")))?,
-            ),
-            None => None,
-        };
-        if did.method() == DidMethod::Key && relay.is_none() {
-            return Err(invalid_request(
-                "did:key contacts require a relay_endpoint (no live discovery channel)"
-                    .to_string(),
-            ));
-        }
-        let display_str = name.as_str().to_string();
-        let contact = Contact::new(did.clone(), name, relay);
-        add_contact(&self.paths.contacts, contact)
-            .map_err(|e| invalid_request(format!("add_contact failed: {e}")))?;
-        Ok(Json(AddContactOutput {
-            did: did.as_str().to_string(),
-            display_name: display_str,
-        }))
-    }
+    // Note: `add_contact` was a tool in 0.2.7-0.2.10. Dropped in 0.2.11
+    // because the normal contact-add path is invite-driven (`invite` /
+    // `accept_invite` both auto-add the peer to the local contact book —
+    // this is the bidirectional-contact-add per
+    // memory/project_invite_is_correspondence). The remaining case —
+    // someone hands the principal a DID out of band with no claim URL —
+    // is rare enough that CLI handles it.
 
     #[tool(
-        name = "invite_create",
+        name = "invite",
         annotations(
             destructive_hint = false,
             idempotent_hint = false,
@@ -752,13 +614,13 @@ impl SecretariatServer {
         description = "Create a one-shot invite token at the relay. The principal \
         must already be a registered tenant of `endpoint` (or the first registered \
         relay in relay-state.json). Returns a claim URL the principal can share \
-        with a peer. Default TTL is 168 hours (7 days). Pair with `invite_claim` \
+        with a peer. Default TTL is 168 hours (7 days). Pair with `accept_invite` \
         on the recipient side."
     )]
-    async fn invite_create(
+    async fn invite(
         &self,
-        Parameters(params): Parameters<InviteCreateParams>,
-    ) -> Result<Json<InviteCreateOutput>, ErrorData> {
+        Parameters(params): Parameters<InviteParams>,
+    ) -> Result<Json<InviteOutput>, ErrorData> {
         let did = load_principal_did(&self.paths)?;
         let key = load_signing_key(&self.paths.signing_key).map_err(|e| {
             invalid_request(format!(
@@ -782,7 +644,7 @@ impl SecretariatServer {
 
         info!(token = %invite.token, "invite created via MCP");
 
-        Ok(Json(InviteCreateOutput {
+        Ok(Json(InviteOutput {
             token: invite.token,
             claim_url: invite.claim_url,
             expires_at: invite.expires_at.to_rfc3339(),
@@ -797,21 +659,22 @@ impl SecretariatServer {
     // MCP doesn't add a third path.
 
     #[tool(
-        name = "invite_claim",
+        name = "accept_invite",
         annotations(
             destructive_hint = false,
             idempotent_hint = false,
             open_world_hint = true
         ),
-        description = "Claim an invite issued by another principal. Auto-registers \
+        description = "Accept an invite issued by another principal. Auto-registers \
         the local DID with the relay if not already registered, and adds the \
-        inviter to the local contact book. Returns inviter DID + claim metadata. \
-        Pair with `invite_create` on the inviter side."
+        inviter to the local contact book (the bidirectional contact-add IS the \
+        relationship). Returns inviter DID + acceptance metadata. Pair with \
+        `invite` on the inviter side."
     )]
-    async fn invite_claim(
+    async fn accept_invite(
         &self,
-        Parameters(params): Parameters<InviteClaimParams>,
-    ) -> Result<Json<InviteClaimOutput>, ErrorData> {
+        Parameters(params): Parameters<AcceptInviteParams>,
+    ) -> Result<Json<AcceptInviteOutput>, ErrorData> {
         let did = load_principal_did(&self.paths)?;
         let key = load_signing_key(&self.paths.signing_key).map_err(|e| {
             invalid_request(format!(
@@ -852,7 +715,7 @@ impl SecretariatServer {
 
         info!(inviter = %claimed.inviter_did, "invite claimed via MCP");
 
-        Ok(Json(InviteClaimOutput {
+        Ok(Json(AcceptInviteOutput {
             inviter_did: claimed.inviter_did.as_str().to_string(),
             claimant_did: claimed.claimant_did.as_str().to_string(),
             claimed_at: claimed.claimed_at.to_rfc3339(),
@@ -871,6 +734,8 @@ impl SecretariatServer {
 const RESOURCE_TEMPLATE_URI: &str = "secretariat://template";
 const RESOURCE_ATTENTION_ENVELOPE_URI: &str = "secretariat://attention-envelope";
 const RESOURCE_CONTACTS_URI: &str = "secretariat://contacts";
+const RESOURCE_INBOX_URI: &str = "secretariat://inbox";
+const RESOURCE_OUTBOX_URI: &str = "secretariat://outbox";
 
 fn build_resource(uri: &str, name: &str, description: &str) -> Resource {
     Annotated::new(
@@ -920,8 +785,8 @@ impl ServerHandler for SecretariatServer {
         }
 
         // Contacts always available (even if empty) — useful for the model
-        // to discover whether to call `add_contact` or proceed with
-        // `compose` to a known peer.
+        // to discover whether the principal already has the peer they
+        // want to compose to in their book.
         resources.push(build_resource(
             RESOURCE_CONTACTS_URI,
             "Contacts",
@@ -929,6 +794,25 @@ impl ServerHandler for SecretariatServer {
              with display names, DIDs, and (for did:key contacts) relay \
              endpoints. Fetch before composing to a peer to confirm the \
              slug or DID.",
+        ));
+
+        // Inbox / outbox are listings — fetched only when explicitly
+        // reviewing. The /review prompt instructs the model to fetch
+        // these on principal request, never proactively.
+        resources.push(build_resource(
+            RESOURCE_INBOX_URI,
+            "Inbox",
+            "Verified inbound envelopes the principal has received but not \
+             yet acted on. Fetch ONLY when the principal explicitly asks to \
+             review their inbox — Secretariat is for low-cadence intentional \
+             review, not constant inbox-checking.",
+        ));
+        resources.push(build_resource(
+            RESOURCE_OUTBOX_URI,
+            "Outbox",
+            "Drafts in the principal's outbox (stamped + sent and unstamped \
+             pending review). Fetch when the principal asks 'what drafts do \
+             I have?' or wants to review pending stamps.",
         ));
 
         Ok(ListResourcesResult {
@@ -950,6 +834,16 @@ impl ServerHandler for SecretariatServer {
                     .map_err(|e| internal_error(format!("read attention-envelope: {e}")))?
             }
             RESOURCE_CONTACTS_URI => render_contacts(&self.paths.contacts)?,
+            RESOURCE_INBOX_URI => render_envelope_listing(
+                "Inbox",
+                list_inbox_files(&self.paths.inbox)
+                    .map_err(|e| internal_error(format!("list_inbox: {e}")))?,
+            ),
+            RESOURCE_OUTBOX_URI => render_envelope_listing(
+                "Outbox",
+                list_outbox_files(&self.paths.outbox)
+                    .map_err(|e| internal_error(format!("list_outbox: {e}")))?,
+            ),
             other => {
                 return Err(ErrorData::new(
                     ErrorCode::INVALID_REQUEST,
@@ -1018,6 +912,33 @@ content.";
 
 fn internal_error(msg: String) -> ErrorData {
     ErrorData::new(ErrorCode::INTERNAL_ERROR, msg, None)
+}
+
+fn render_envelope_listing(title: &str, envelopes: Vec<ListedEnvelope>) -> String {
+    if envelopes.is_empty() {
+        return format!("# {title}\n\n_Empty._\n");
+    }
+    let mut out = format!("# {title}\n\n");
+    for e in envelopes {
+        out.push_str(&format!("- `{}`", e.file_path));
+        if let Some(from) = &e.from {
+            out.push_str(&format!(" · from `{}`", from.as_str()));
+        }
+        if let Some(to) = &e.to {
+            out.push_str(&format!(" · to `{}`", to.as_str()));
+        }
+        if let Some(handle) = &e.queue {
+            out.push_str(&format!(" · queue `{}`", handle.as_str()));
+        }
+        if e.stamped {
+            out.push_str(" · stamped ✓");
+        }
+        if e.encrypted {
+            out.push_str(" · encrypted");
+        }
+        out.push('\n');
+    }
+    out
 }
 
 fn render_contacts(path: &std::path::Path) -> Result<String, ErrorData> {

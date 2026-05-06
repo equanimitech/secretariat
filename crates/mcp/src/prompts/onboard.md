@@ -35,7 +35,7 @@ Ask the principal:
 
 #### Inviter path
 
-1. Call `invite_create` with optional `purpose` (e.g. `"first-contact"`) and default TTL.
+1. Call `invite` with optional `purpose` (e.g. `"first-contact"`) and default TTL.
 2. If the call errors with a relay-tenant complaint, surface that error verbatim — the principal needs a registered relay tenancy, which is currently a v0.x rough edge that the Tauri Settings pane handles.
 3. On success, render the `claim_url` to the principal. Tell them:
 
@@ -47,7 +47,7 @@ Ask the principal:
 
 1. Ask the principal for the claim URL the peer sent.
 2. Ask for a display name to give the inviter in the local contact book (e.g. *"Marcelo"*) — defaults to the host portion of their DID if omitted.
-3. Call `invite_claim` with the URL and name.
+3. Call `accept_invite` with the URL and name.
 4. The tool auto-registers the principal's DID with the relay if needed AND adds the inviter to the contact book (this is the bidirectional contact-add).
 5. On success, render: *"You are now connected to <inviter_did>. They are in your contacts as <name>."*
 
@@ -62,4 +62,4 @@ Do NOT proactively walk them through composing their first envelope — that's a
 - **Do not call `init` from MCP.** It's not a tool here. Identity creation goes through the Tauri popover or the CLI, never through Claude.
 - **The claim URL is sensitive.** Treat it like a one-shot bearer token. Don't quote it in chat history beyond the principal's confirmation; don't log it.
 - **Do not promise notifications, push, or read receipts.** Per the no-read-receipts invariant: the inviter sees claimed peers via inbox arrivals at review time, not via push.
-- **One peer at a time.** If the principal wants to invite multiple peers, run `invite_create` once per peer; don't try to bulk-create.
+- **One peer at a time.** If the principal wants to invite multiple peers, run `invite` once per peer; don't try to bulk-create.

@@ -12,7 +12,7 @@ You are about to draft an envelope from the principal to a peer, formatted per t
 ### 1. Resolve peer
 
 - If `peer` is a DID, use it directly.
-- If `peer` is a slug, the compose tool will resolve it. If you want to pre-confirm, fetch the `secretariat://contacts` resource and find the match. If no match, tell the principal and offer to `add_contact`.
+- If `peer` is a slug, the compose tool will resolve it. If you want to pre-confirm, fetch the `secretariat://contacts` resource and find the match. If no match, tell the principal — they need to invite the peer first via `/onboard`.
 
 ### 2. Fetch the principal's template
 
@@ -34,7 +34,7 @@ Read the MCP resource `secretariat://attention-envelope` — the principal's dec
 
 Apply the template. Default depth: `subtle` (most envelopes). Default urgency: `whenever`. Override only if the topic genuinely warrants `gross` depth or `now`/`soon` urgency, and surface the choice to the principal.
 
-Tone: match the principal's voice. If you have prior envelopes to this peer (check with `list_outbox`), look at sent ones for register cues — formality, salutation, sign-off.
+Tone: match the principal's voice. If you want register cues for prior envelopes to this peer, fetch the `secretariat://outbox` resource and look at sent drafts — formality, salutation, sign-off.
 
 ### 5. Show the draft INLINE first
 
