@@ -340,10 +340,18 @@ fn run_once_per_path(
 }
 
 /// Wire the bundled `sec-mcp` into Claude Code / Claude Desktop. Idempotent;
-/// re-wires only when the bundled `sec-mcp` path changes.
+/// re-wires when either the bundled `sec-mcp` path OR the app's version
+/// changes (the latter is needed for in-place upgrades — the path stays
+/// `/Applications/Secretariat.app/...` across versions, but the binary
+/// behind that path is new and may have different MCP capabilities or
+/// tool surfaces, so we must re-wire to refresh the registration).
 fn wire_mcp_from_bundled_sec() -> Result<(), String> {
     let (sec, sec_mcp) = bundled_sidecars()?;
-    let path_str = sec_mcp.to_string_lossy().into_owned();
+    let path_str = format!(
+        "{}|{}",
+        sec_mcp.to_string_lossy(),
+        env!("CARGO_PKG_VERSION")
+    );
     run_once_per_path(".tauri-mcp-binary-path", &path_str, || {
         log::info!("wiring MCP via bundled sec: {}", sec.display());
         let status = std::process::Command::new(&sec)
@@ -362,12 +370,13 @@ fn wire_mcp_from_bundled_sec() -> Result<(), String> {
 }
 
 /// Install the LaunchAgent that runs the bundled `sec daemon serve` at login
-/// and on reboot. Idempotent; re-installs only when the bundled `sec` path
-/// changes (the plist hardcodes the absolute path, so app upgrades trigger
-/// a re-install).
+/// and on reboot. Idempotent; re-installs when either the bundled `sec`
+/// path OR the app's version changes. Same upgrade-in-place reasoning as
+/// `wire_mcp_from_bundled_sec` — path stays constant but the binary
+/// behind it changes, and we need launchd to pick up the new code.
 fn install_daemon_from_bundled_sec() -> Result<(), String> {
     let (sec, _sec_mcp) = bundled_sidecars()?;
-    let path_str = sec.to_string_lossy().into_owned();
+    let path_str = format!("{}|{}", sec.to_string_lossy(), env!("CARGO_PKG_VERSION"));
     run_once_per_path(".tauri-daemon-binary-path", &path_str, || {
         log::info!("installing LaunchAgent via bundled sec: {}", sec.display());
         let status = std::process::Command::new(&sec)
