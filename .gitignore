@@ -36,3 +36,6 @@ target/
 # Tauri sidecars staged by src-tauri/scripts/build-sidecars.sh.
 # Built per-target; never committed.
 src-tauri/binaries/
+
+# Worktrees created by EnterWorktree / `git worktree add` for isolated feature work.
+.claude/worktrees/

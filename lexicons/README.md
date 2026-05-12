@@ -20,6 +20,9 @@ format**, not a public protocol.
 | `tech.equanimi.secretariat.stamp.json` | `tech.equanimi.secretariat.stamp` | The signed human act block (`$attestation`) |
 | `tech.equanimi.secretariat.envelope.json` | `tech.equanimi.secretariat.envelope` | The bid for attention block (`$envelope`) |
 | `tech.equanimi.secretariat.attentionEnvelope.json` | `tech.equanimi.secretariat.attentionEnvelope` | The principal's published bounds |
+| `tech.equanimi.secretariat.rosterUpdate.json` | `tech.equanimi.secretariat.rosterUpdate` | Signed membership mutation (add / remove / role_change) on a channel's `_meta` queue (v0.3) |
+| `tech.equanimi.secretariat.channelDef.json` | `tech.equanimi.secretariat.channelDef` | Channel definition advertised inside an `orgDoc` (handle, visibility, creator, relay hint) (v0.3) |
+| `tech.equanimi.secretariat.orgDoc.json` | `tech.equanimi.secretariat.orgDoc` | Org-level manifest referenced from the org's W3C DID document via a `SecretariatOrg` service entry — lists relays, advertised channels, roster reference (v0.3) |
 
 ## Why this exists alongside Rust types
 

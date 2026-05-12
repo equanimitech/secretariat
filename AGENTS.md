@@ -47,12 +47,35 @@ These are non-negotiable. They override the template's defaults where they confl
    under `lexicons/` — that directory is the source of truth for the on-wire
    shape, even though it does not yet drive runtime validation.
 
-4. **Stamp ceremony is principal-attested, not Claude-attested.** Claude
-   *may* initiate `stamp` (via the MCP tool or `sec stamp`) but MUST first
-   show the principal the full decrypted body verbatim — code block or
-   quoted region, never a summary — and obtain explicit confirmation in
-   the same turn. Implicit consent from a prior turn does not count if the
-   file changed.
+4. **Three-layer trust model: signature mandatory, stamp selective,
+   counter-stamp multi-party.** Updated 2026-05-12 for the v0.3 substrate
+   shift (see `docs/ideas/2026-05-12-secretariat-as-autonomous-enterprise-substrate.md`).
+
+   - **Signature** — every envelope carries a detached DID-keyed signature
+     from its author (human principal or agent DID). Mandatory. Drives
+     `sec verify` provenance: *"did this come from the claimed author?"*
+   - **Stamp** — principal Touch-ID attestation. **Selective, not
+     mandatory.** Applied to envelopes the principal elects to elevate
+     (decisions, commitments, process-verbaux, external comms, contracts).
+     Most envelopes — agent-drafted ambient traffic in particular —
+     flow signed-only. The stamped subset *is* the org's authoritative
+     decision ledger.
+   - **Counter-stamp** — multi-principal stamp on the same envelope
+     (m.3 process-verbaux model). Reserved for v0.4+; the design space is
+     defined but no record type ships in v0.3.
+
+   The earlier model ("every sent envelope is stamped") is superseded —
+   it didn't survive contact with AI-volume traffic, and resolving the
+   tension by reducing per-stamp ceremony friction (batch-stamp Merkle
+   roots) was the wrong move; the right move was to make stamping the
+   *curation act* it always wanted to be.
+
+   **Stamp ceremony is principal-attested, not Claude-attested.** *When
+   stamping happens*, Claude *may* initiate `stamp` (via the MCP tool
+   or `sec stamp`) but MUST first show the principal the full decrypted
+   body verbatim — code block or quoted region, never a summary — and
+   obtain explicit confirmation in the same turn. Implicit consent from a
+   prior turn does not count if the file changed.
 
    The biometric gate (Touch ID) blocks until the principal physically
    authorizes; the dialog's reason string carries the document's first-line
@@ -67,33 +90,54 @@ These are non-negotiable. They override the template's defaults where they confl
    risk is mitigated by the show-body-first contract + headline-in-dialog,
    not by who-types-the-command.
 
-5. **Compose envelopes following `~/.secretariat/template.md`.** This is the
-   user-customizable AG (attentional-granularity) template, owned by the
-   principal. It is to envelope composition what `CLAUDE.md` is to general
-   Claude behavior.
+   **Receiver-side discipline:** `sec verify --json` returns layered
+   results — `{signature: ok|invalid, stamp: none|ok|invalid,
+   counter_stamps: [...]}`. Recipient policy decides what they require.
+   An unstamped-but-signed envelope is *informational* (the author wrote
+   this); a stamped envelope is *authoritative* (the principal vouches
+   for it). UI MUST surface this distinction; agents acting on received
+   envelopes MUST treat signed-only ≠ stamped.
 
-6. **Respect `~/.secretariat/attention-envelope.md`.** The principal's
-   declared bounds (depths, urgencies, cadence). Queue to `outbox` instead of
-   surfacing inline if the bid would violate cadence. The protocol detects
-   bound violations; Claude pre-empts them.
+5. **Compose envelopes following the principal's template.** Global default
+   at `~/.secretariat/template.md`; channel-scoped override (when present)
+   at `<channel-dir>/template.md`. Both are user-customizable AG
+   (attentional-granularity) templates, owned by the principal — they are
+   to envelope composition what `CLAUDE.md` is to general Claude behavior.
+   Channel-level override wins for envelopes addressed to that channel.
 
-7. **Place drafts in `~/.secretariat/outbox/<recipient-did>/`.** Never write
-   draft envelopes into the working directory. The outbox is the queue the
-   principal stamps from.
+6. **Respect attention envelopes and per-channel consumption contracts.**
+   `~/.secretariat/attention-envelope.md` declares the principal's global
+   bounds (depths, urgencies, cadence). Per-channel
+   `<channel-dir>/contract.md` files declare per-channel overrides (cadence,
+   depth, notify, filter). Per-channel overrides win for traffic in that
+   channel. Queue to a local outbox rather than surfacing inline if the
+   bid would violate cadence. The protocol detects bound violations;
+   Claude pre-empts them.
 
-8. **Use `sec verify --json`** when consuming incoming attested envelopes
-   from another principal. Never trust an envelope without verifying.
+7. **Place drafts in the queue's local `outbox/` directory.** For channel
+   posts: `<channel-dir>/outbox/`. For direct messages (queue owned by a
+   peer): `<peer-alias-dir>/<handle-path>/outbox/` — the sender's local
+   mirror of the recipient's queue. For local captures (queue owned by
+   self): `<self-dir>/<handle-path>/outbox/`. Never write draft envelopes
+   into the working directory or a flat top-level outbox keyed by
+   recipient DID. The per-channel outbox is what the daemon watches and
+   what the principal reviews/stamps from.
 
-9. **The `/share` signature line is required at the end of every envelope:**
+8. **Verify before trusting incoming envelopes.** `sec verify --json` returns
+   layered results — `{signature, stamp, counter_stamps}` — per the
+   three-layer trust model in rule #4. Never trust an envelope's claims
+   without verifying. An unverified envelope is not actionable; an
+   envelope whose signature fails is malformed and must be quarantined,
+   not surfaced.
 
-   ```
-   ---
-
-   _Drafted by AI, reviewed by a human._
-   ```
-
-   This is in addition to the cryptographic stamp. Recipients without `sec`
-   installed can still see that the document passed through a human edit pass.
+9. **The principal owns the closing line.** Earlier versions of this rule
+   required appending `_Drafted by AI, reviewed by a human._` to every
+   envelope. The signature line is now configurable — the principal
+   decides what (if anything) closes the body. Claude does NOT auto-append.
+   If the principal has a configured closing line, use it verbatim; if
+   not, end without one. The cryptographic stamp (when applied — see
+   rule #4) is what records human disposition; the body closing line is
+   editorial, not protocol.
 
 10. **Tauri v2 only.** Modern Rust formatting (`format!("{variable}")`).
 
@@ -140,10 +184,17 @@ from the sovereignty/privacy/equanimity stack and shape every adapter we add.
    parallel to sovereignty over keys — the principal must always be able
    to swap the brain.
 
-6. **Contracts are bilateral and local.** No registry, no directory, no
-   marketplace. Each pair holds its own contract document, signed by both.
-   Discovery is via DID documents (`did:web` `.well-known/` or `did:key`
-   prior-exchange cache).
+6. **Correspondence is bilateral or multi-party; always local.**
+   Generalized 2026-05-12 from "bilateral and local" to accommodate
+   channels. Bilateral correspondence (DM, peer pair) and multi-party
+   correspondence (channel membership) share the same primitive — each
+   relationship holds its own contract document, signed by the relevant
+   principals, carried in the relationship's meta queue (`<channel>:_meta`
+   for channels; per-pair contract for DMs). No registry, no directory,
+   no marketplace. Discovery is via DID documents (`did:web` `.well-known/`
+   exposing channels via the `SecretariatOrg` service entry per
+   `tech.equanimi.secretariat.orgDoc`; `did:key` prior-exchange cache for
+   peers without a domain).
 
 7. **No SaaS distribution.** A hosted Secretariat collapses the primitive
    — the moment a server holds keys or routes envelopes, sovereignty is
@@ -151,6 +202,33 @@ from the sovereignty/privacy/equanimity stack and shape every adapter we add.
    self-hosted `did:web` (user's domain) plus on-device transport OAuth
    tokens. App Store ok. Subscription-to-our-service not ok. Closer to
    1Password's old license model than to Notion.
+
+8. **Filesystem is authoritative; the channel directory is the activation
+   surface.** Every envelope, contract, skill, agent, and meta record
+   exists as a markdown file at a deterministic path under
+   `~/.secretariat/`. There is no database-as-source-of-truth — optional
+   read-caches (e.g. SQLite for cross-channel queries) are regenerable
+   from filesystem walks and never authoritative. Each channel directory
+   is *literally* a Claude Code project, using the standard `.claude/`
+   convention; `cd <channel-dir> && claude` activates the full context
+   for free, with `.claude/{agents,skills,commands}/` tree-walk
+   inheritance from org → dept → channel-leaf. Same directory powers
+   interactive sessions and headless agents launched by the daemon via
+   the Claude Agent SDK. Switching to a DB-as-authority would close the
+   AI feedback loop — the architectural moat.
+
+9. **Owner-as-sequencer per channel; cross-channel order not provided.**
+   Each channel `(owner_did, handle)` has exactly one canonical
+   sequencer — the owner's relay/daemon. Subscribers read the owner's
+   sequence; per-channel strong consistency emerges from federation, not
+   central authority. Cross-channel global ordering is explicitly NOT
+   provided — channels are independent logs; cross-channel causality, if
+   needed, is expressed via envelope-hash references. Consensus
+   protocols, central registries, and Byzantine-fault-tolerant ordering
+   are out of scope; they would close the substrate. Two consumption
+   modes on the same primitive: humans poll (15-min floor — anti-
+   compulsion), agents push-subscribe (sub-second, no attention to
+   compromise).
 
 These constraints are not obstacles to multi-medium reach — they're what
 make it possible without becoming yet-another-vendor.
@@ -247,23 +325,38 @@ domain-anchored variant.
 
 ## Out of scope (for now)
 
-Per the pitch's no-go list:
+Pruned 2026-05-12 against the v0.3 direction shift (see
+`docs/ideas/2026-05-12-secretariat-as-autonomous-enterprise-substrate.md`).
 
-- Tauri GUI (the scaffold exists; ceremony surface is a future pitch)
-- MCP server
-- Bilateral correspondence transport (server, peer queue, push)
+**Shipped or in-flight (no longer out of scope):**
+
+- Tauri GUI — scaffold + tray + sidecar wiring shipped in v0.2.x; review/onboarding surfaces moving to MCP per the MCP-primary direction.
+- MCP server — shipped (`crates/mcp/`).
+- Bilateral correspondence transport — relay + invite ship in v0.3; multi-subscriber poll + owner-as-sequencer push come with channels.
+
+**Still out of scope (v0.3 boundary):**
+
 - AT-proto network federation, Iroh, IPFS
-- Lexicon publication (schemas are mutable until self-use validates)
-- Cross-platform — Mac-only Day 1; Windows when the GUI lands
-- Defer / vouch / dispute / redirect acts (only `attest` for now)
-- PDF / docx embedding (markdown only)
+- Lexicon publication (schemas remain mutable until self-use validates)
+- Cross-platform — Mac-only; Windows when Christophe needs it
+- Defer / vouch / dispute / redirect stamp acts (only `attest` for now; reserved values present in the lexicon)
+- Counter-stamp record + multi-party stamping ceremony (m.3 process-verbaux — design space defined, v0.4+)
+- PDF / docx embedding (markdown only; PDF-share of a stamped envelope is a separate future feature)
 - Cryptographic stamp chain (each stamp signing the previous hash)
+- Multi-device same-principal sync (key migration UX — v0.4 wedge)
+- Channel ownership transfer (`rosterUpdate.op = transfer_ownership` — defer until concrete driver)
+- SQLite read-cache for cross-channel queries (defer to v0.4+ when query latency demands it)
+- Shared-git skill iteration adapter (optional upstream pattern; not authoritative store)
+- Attention routing daemon + UI (composes from existing `depth`/`urgency`/`attentionEnvelope` — v0.4 wedge)
+- Webhook adapter for external sources (DID-keyed external services or agent-proxied — v0.4 wedge)
 
 ## Reference paths
 
-- Pitch: `equanimitech/docs/pitches/2026-04-30-secretariat-stamping-client-mvp.md`
+- v0.3 design report: `docs/ideas/2026-05-12-secretariat-as-autonomous-enterprise-substrate.md`
+- Pitch (Day 1): `equanimitech/docs/pitches/2026-04-30-secretariat-stamping-client-mvp.md`
 - Plan: `~/.claude/plans/wait-you-have-a-zazzy-aurora.md`
 - Source idea: `equanimitech/docs/ideas/secretariat-pitch.md`
 - Leverage diagnostic: `equanimitech/docs/ideas/secretariat-leverage-diagnostic.md`
 - Primer for Marcelo: `equanimitech/docs/share/2026-04-30-primer-for-marcelo.md`
 - Day 1 milestone: `docs/milestones/2026-04-30-first-signed-message.md`
+- Onboarding audit (Marcelo): `docs/audits/2026-05-04-onboarding-ux.md`
