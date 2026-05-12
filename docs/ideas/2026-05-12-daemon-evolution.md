@@ -353,3 +353,85 @@ slow. Regenerable, never authoritative.
   SDK owns the conversation).
 - Read receipts / delivery state surfaced to senders.
 - Real-time push for human consumption (15-min floor stays).
+
+---
+
+## 7. Lexicon Slice 1.5 — channel addressing landed
+
+Lands the wire-level shape for v0.3 channel addressing on top of the
+existing envelope lexicon. Pure JSON-schema docs; no runtime validation
+(per `AGENTS.md` rule #3 the schemas are mirrored, not enforced).
+Unblocks Open Question #6 above — InboxWriter can now read
+`(owner_did, handle)` off the envelope at Slice 3 time and dispatch to
+the channel-dir.
+
+- **Shape chosen.** Additive clarification, **not** a new field or a
+  refactored `Recipient` union. The existing `envelope.to` (queue owner
+  DID) + `envelope.handle` (colon-pathed queue address) already factor
+  the canonical `(owner_did, handle)` pair the v0.3 URI grammar
+  requires. The Slice 1.5 edit tightens the description fields to (a)
+  state the canonical wire address is `(to, handle)` and the composite
+  URI `<to>#<handle>` is **display-only**, (b) cross-reference
+  `channelDef.handle` for the full handle alphabet, (c) clarify
+  bilateral DMs are channel-of-two (`to == peer_did`, handle
+  `inbox:default`) rather than a separate case, (d) set the back-compat
+  contract explicitly — readers tolerate omission of `handle` and
+  synthesize `inbox:default`; v0.3+ writers MUST emit both fields.
+- **Why not (b) a `Recipient` union on the wire.** The domain layer
+  already factors `Recipient { owner, handle }` and serializes
+  flat-fields. Promoting it to a tagged union on the wire would force
+  every reader to branch on a discriminator the substrate has
+  consciously avoided (per the substrate-simplifications memo:
+  `Recipient::Peer | LocalQueue` collapsed because *the recipient
+  pair already encodes the kind*). Routing dispatches on `to == self?`
+  and handle namespace prefix, both of which are read directly.
+- **Cross-reference tightened in `rosterUpdate.channel`.** That field
+  carries the *composite* URI string (not factored) because the record
+  travels as a body and needs to be self-describing for replay
+  verifiers operating without envelope context. Doc now notes the
+  split-on-first-`#` parsing rule and that DID grammar forbids `#`
+  inside the DID, so the split is unambiguous.
+- **Follow-up code edits the next slice will need.**
+  1. `crates/core/src/domain/envelope.rs` — once `Recipient` is
+     present on Envelope (already in tree per `recipient.rs`), confirm
+     serde renames match `to` / `handle` field names exactly. Spot-
+     check legacy deserialization tolerates missing `handle`.
+  2. `crates/core/src/domain/queue_handle.rs` — add a parse-time
+     check that channel-namespace handles match
+     `channel(:<segment>)+` and disallow empty segments. Today
+     `QueueHandle` likely accepts any `<ns>:<slug>`; the v0.3 tree
+     rule needs explicit validation. Newtype tightening, not new code.
+  3. `crates/core/src/infrastructure/channel_def_store.rs` —
+     `ChannelDef.handle` should validate against the same parser as
+     `QueueHandle` (single source of truth for the grammar).
+  4. InboxWriter (Slice 3 work) — channel-dir path computation
+     `<channel-root>/<sanitized-handle-path>/envelopes/YYYY/MM/DD/…`
+     where the colon-path segments map to nested directories. Sanitize
+     for filesystem-safe forms (colons are legal on macOS but ugly;
+     consider `/` as the on-disk separator since colon-path already
+     mirrors a tree).
+- **Out of scope for this slice (deferred).**
+  - Cross-channel envelope-hash references (causality across logs).
+    No `inReplyTo` / `references` field yet; will land when an agent
+    workflow concretely needs cross-channel chaining.
+  - Counter-stamp / multi-party stamp records on channel envelopes
+    (m.3 process-verbaux) — design space defined elsewhere; v0.4+.
+  - Runtime validation of the lexicon. Schemas remain documentation-
+    only until self-use stabilizes them.
+- **Surprises worth flagging.**
+  - The envelope already had `(to, handle)` factoring shipped — the
+    Slice 1.5 work was mostly *documentation tightening*, not schema
+    extension. The blocker called out in Open Question #6 was a
+    documentation gap, not a shape gap. Slice 3 is unblocked sooner
+    than the daemon-evolution doc implied.
+  - `rosterUpdate.channel` is the one place the composite URI travels
+    on-wire (inside a body, not an addressing field). That's a
+    deliberate exception to "composite URI is display-only" — flagged
+    in the field doc so we don't accidentally normalize it back to
+    factored fields and break replay verifiers.
+  - `attentionEnvelope` was not touched. It declares the principal's
+    *global* bounds and is queue-agnostic; per-channel consumption
+    contracts (the per-channel override surface) are not yet a
+    published lexicon record. They live as local files
+    (`<channel-dir>/contract.md`) per the "never published" memo. If
+    they ever need to travel signed, they'll get their own record.
