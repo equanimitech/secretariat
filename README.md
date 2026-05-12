@@ -1,118 +1,86 @@
-# Tauri React Template
+# Secretariat
 
-A "batteries-included" template for building production-ready desktop applications with **Tauri v2**, **React**, and **TypeScript**. Designed with opinionated patterns that help both human developers and AI coding agents build well-architected apps from the start.
+**Ambient context for AI, stamped by humans.**
 
-## Why This Template?
+Most tools treat AI as a consumer of static context — RAG, system prompts, one-shot retrieval. Secretariat inverts that: AI lives *in* the context stream, reads and drafts continuously, and the human only enters to stamp the moments that count. It's the operating layer for an autonomous enterprise — where agents draft at volume, humans vouch for what matters, and no vendor sits in the middle.
 
-Most Tauri starters give you a blank canvas. This template gives you a **working application** with patterns already established:
+## The primitive
 
-- **Type-safe Rust-TypeScript bridge** via tauri-specta.
-- **Performance patterns enforced by tooling** - all the usual linting plus ast-grep for common anti-patterns
-- **Multi-window architecture** already working (quick pane with global shortcut as a demo)
-- **Cross-platform ready** with platform-specific title bars, window controls, and native menu integration
-- **i18n built-in** with RTL support
+Two records, three trust layers:
 
-## Stack
+1. **Signed envelope** — every message carries a detached signature from its author (human or AI agent), keyed to a DID. Mandatory. Drives provenance: *did this come from the claimed author?*
+2. **Stamp** — Touch ID attestation from the human principal. **Selective, not mandatory.** Applied to envelopes the principal elects to elevate: decisions, commitments, external messages, contracts. The stamped subset is the org's authoritative record. Everything else is ambient context.
+3. **Counter-stamp** — multi-principal stamp on the same envelope (process-verbaux model). Reserved for later.
 
-| Layer    | Technologies                                    |
-| -------- | ----------------------------------------------- |
-| Frontend | React 19, TypeScript, Vite 7                    |
-| UI       | shadcn/ui v4, Tailwind CSS v4, Lucide React     |
-| State    | Zustand v5, TanStack Query v5                   |
-| Backend  | Tauri v2, Rust                                  |
-| Testing  | Vitest v4, Testing Library                      |
-| Quality  | ESLint, Prettier, ast-grep, knip, jscpd, clippy |
+That's it. Everything else — channels, contracts, agents — is composition over those primitives.
 
-## What's Already Built
+## What ships today (v0.2, macOS)
 
-The template includes a working application with these features implemented:
+- **`sec` CLI** — `init` / `compose` / `stamp` / `verify` / `list` / `daemon install` / `mcp install`. End-to-end working.
+- **`sec-mcp` server** — Claude (or any MCP client) drafts, verifies, manages contacts. Stamping still requires Touch ID — Claude proposes, the human signs.
+- **Tray app** — quick-pane capture, daemon wiring, review surface. No notifications, no compose UI — deliberate. Anti-compulsion by design.
+- **Bilateral correspondence** — one-to-one envelopes over any transport (Gmail today, more later). End-to-end encrypted to the recipient's DID-derived key.
 
-### Core Features
+## Where it's going
 
-- **Command Palette** (`Cmd+K`) - Searchable command launcher with keyboard navigation
-- **Quick Pane** - Global shortcut (`Cmd+Shift+.`) opens a floating window from any app, even fullscreen. Uses native NSPanel on macOS for proper fullscreen overlay behavior.
-- **Keyboard Shortcuts** - Platform-aware shortcuts with automatic menu integration
-- **Native Menus** - File, Edit, View menus built from JavaScript with full i18n support
-- **Preferences System** - Settings dialog with Rust-side persistence, React hooks, and type-safe access throughout
-- **Collapsible Sidebars** - Empty left and right sidebars with state persistence via resizable panels
-- **Theme System** - Light/dark mode with system preference detection, synced across windows
-- **Notifications** - Toast notifications for in-app feedback, plus native system notifications
-- **Auto-updates** - Tauri updater plugin configured with GitHub Releases integration and update checking on launch
-- **Logging** - Structured logging utilities for both Rust and TypeScript with consistent formatting
-- **Crash Recovery** - Emergency data persistence for recovering unsaved work after unexpected exits
+- **v0.3 — channels.** Multi-subscriber threads with their own contracts and history. AI agents draft into channels with their own keys. Selective stamping marks decisions; the rest flows signed-only.
+- **v0.4+** — attention routing, multi-device key migration, optional self-hosted relays, channel ownership transfer.
 
-### Architecture Patterns
+## Architectural invariants
 
-- **Three-layer state management** - Clear decision tree: `useState` (component) → `Zustand` (global UI) → `TanStack Query` (persistent data "not owned by the app)
-- **Event-driven Rust-React bridge** - Menus, shortcuts, and command palette all route through the same command system
-- **React Compiler** - Automatic memoization means no manual `useMemo`/`useCallback` needed
+These are properties of the system, not rules of behavior. Violating one means we shipped the wrong thing.
 
-### Cross-Platform
+- **No central server.** Federation is direct DID resolution. No broker, registry, marketplace.
+- **No telemetry.** The daemon never phones home.
+- **Keys never leave the device.** No vendor keystore. Backups are user-encrypted only.
+- **Transports are adapters, not authorities.** Gmail, Slack, IMAP — dumb pipes carrying signed ciphertext. The substrate doesn't trust them.
+- **Cognition is pluggable.** Claude Code, Anthropic API, local models (Ollama / llama.cpp / MLX), Bedrock. The principal owns the brain.
+- **Filesystem authoritative.** Every envelope, contract, instruction is a markdown file on disk. No database-as-truth. `tar` it, fork it, walk away with it.
+- **Owner-as-sequencer per channel.** Strong consistency emerges from each channel's owner, not from consensus. Cross-channel global order is explicitly not provided.
+- **No SaaS distribution.** Hosted Secretariat collapses the primitive. Local daemon plus optional self-hosted `did:web` only.
 
-| Platform | Title Bar            | Window Controls | Bundle Format |
-| -------- | -------------------- | --------------- | ------------- |
-| macOS    | Custom with vibrancy | Traffic lights  | `.dmg`        |
-| Windows  | Custom               | Right side      | `.msi`        |
-| Linux    | Native + toolbar     | Native          | `.AppImage`   |
-
-Platform detection utilities, platform-specific UI strings ("Reveal in Finder" vs "Show in Explorer"), and separate Tauri configs per platform are all set up.
-
-### Developer Experience
-
-- **Type-safe Tauri commands** - tauri-specta generates TypeScript bindings from Rust, with full autocomplete and compile-time checking
-- **Static analysis** - ESLint, Prettier, ast-grep (architecture enforcement), knip (unused code), jscpd (duplication)
-- **Single quality gate** - `npm run check:all` runs TypeScript, ESLint, Prettier, ast-grep, clippy, and all tests
-- **Testing patterns** - Vitest setup with Tauri command mocking
-
-## Tauri Plugins Included
-
-| Plugin            | Purpose                          |
-| ----------------- | -------------------------------- |
-| single-instance   | Prevent multiple app instances   |
-| window-state      | Remember window position/size    |
-| fs                | File system access               |
-| dialog            | Native open/save dialogs         |
-| notification      | System notifications             |
-| clipboard-manager | Clipboard access                 |
-| global-shortcut   | System-wide keyboard shortcuts   |
-| updater           | In-app auto-updates              |
-| opener            | Open URLs/files with default app |
-| tauri-nspanel     | macOS floating panel behavior    |
-
-## AI-Ready Development
-
-This template is designed to work well with AI coding agents like Claude Code:
-
-- **Comprehensive documentation** in `docs/developer/` covering all patterns. Human readable but really designed to explain the "why" of certain patterns to AI agents. Not slop.
-- **Claude Code integration** - Custom commands (`/check`, `/cleanup`) and a couple of specialized agents
-- **Sensible file organization** - React code in `src/` with clear separation (components, hooks, stores, services), Rust in `src-tauri/src/` with modular command organization. Predictable structure for both humans and AI.
-
-## Getting Started
-
-See **[Using This Template](docs/USING_THIS_TEMPLATE.md)** for setup instructions and workflow guidance.
-
-### Quick Start
+## Quick start
 
 ```bash
-# Prerequisites: Node.js 18+, Rust (latest stable)
-# See https://tauri.app/start/prerequisites/ for platform-specific deps
+# Prerequisites: Rust (latest stable), pnpm, Node 18+
+# See docs/developer/ for platform-specific notes
 
-git clone <your-repo>
-cd your-app
-npm install
-npm run dev
+git clone <repo> secretariat
+cd secretariat
+pnpm install
+pnpm tauri:build
+
+# Initialize identity
+sec init                    # generates did:key
+# or
+sec init --did did:web:you.example.com
+
+# Wire up MCP for Claude Code
+sec mcp install
+
+# Compose + stamp + send
+sec compose <recipient-did>
+sec stamp <draft-path>      # Touch ID prompt
 ```
 
-## Documentation
+Full setup: see [`docs/developer/`](docs/developer/).
 
-- **[Developer Docs](docs/developer/)** - Architecture, patterns, and detailed guides
-- **[User Guide](docs/userguide/)** - End-user documentation template
-- **[Using This Template](docs/USING_THIS_TEMPLATE.md)** - Setup and workflow guide
+## Status
+
+**Alpha. Pre-1.0.** Breaking changes per minor version. Two real users (one is the author). Schemas under [`lexicons/`](lexicons/) mirror the on-wire shape but are not yet runtime-validated.
+
+Built in the open because the only honest way to ship a sovereignty product is to make every piece inspectable. If the design resonates, the most useful thing you can do is try it and tell us what broke.
+
+## Docs
+
+- [`AGENTS.md`](AGENTS.md) — orientation for Claude Code and coding agents
+- [`docs/developer/`](docs/developer/) — architecture, wire format, threat model
+- [`docs/specs/`](docs/specs/) — record types and protocol
+- [`docs/decisions/`](docs/decisions/) — architectural decisions
+- [`docs/pitches/`](docs/pitches/) — Shape Up pitches for in-flight work
+- [`lexicons/`](lexicons/) — AT-proto-shaped record schemas
+- [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) · [`docs/SECURITY.md`](docs/SECURITY.md)
 
 ## License
 
-[MIT](LICENSE.md)
-
----
-
-Built with [Tauri](https://tauri.app) | [shadcn/ui](https://ui.shadcn.com) | [React](https://react.dev)
+MIT. See [`LICENSE.md`](LICENSE.md).

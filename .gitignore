@@ -39,3 +39,10 @@ src-tauri/binaries/
 
 # Worktrees created by EnterWorktree / `git worktree add` for isolated feature work.
 .claude/worktrees/
+
+# Personal journals, daily notes, private corpora — NEVER commit.
+data/
+journals/
+daily-notes/
+*.private.md
+*.journal.md
