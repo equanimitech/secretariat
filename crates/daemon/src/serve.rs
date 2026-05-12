@@ -48,7 +48,7 @@ use tracing::{info, warn};
 /// a file on disk owned by the process. Multiple daemons in the same
 /// process is not a configuration we support (and `spawn_server`'s
 /// stale-socket logic would refuse it anyway).
-fn tick_lock() -> &'static Mutex<()> {
+pub(crate) fn tick_lock() -> &'static Mutex<()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     LOCK.get_or_init(|| Mutex::new(()))
 }
@@ -70,6 +70,36 @@ pub async fn serve(paths: &KeyPaths, did: &Did, key: &SigningKey) -> Result<()> 
     // We retain the JoinHandle so the shutdown path can abort the
     // listener and unlink the socket file before the process exits.
     let ipc_handle = crate::ipc::spawn_server(paths.clone(), did.clone(), key.clone());
+
+    // FS-notify on the outbox: stamp → send latency drops from cadence
+    // (15 min default) to ~200ms debounce. The drain shares
+    // `tick_lock` with `run_tick` so it can't race the poll loop's
+    // outbox drain. The poll loop stays as the safety net for missed
+    // events (e.g. watcher restart during a write).
+    let watcher_key = key.clone();
+    let watcher_paths = paths.clone();
+    let outbox_handle = crate::outbox_watcher::spawn_watcher(
+        paths.outbox.clone(),
+        crate::outbox_watcher::DEFAULT_DEBOUNCE,
+        move || {
+            let paths = watcher_paths.clone();
+            let key = watcher_key.clone();
+            async move {
+                let _guard = tick_lock().lock().await;
+                match secretariat_core::application::drain_outbox(&paths, &key).await {
+                    Ok((sent, warnings)) => {
+                        if sent > 0 {
+                            info!(count = sent, "fs-notify drained outbox");
+                        }
+                        for w in &warnings {
+                            warn!(warning = %w, "outbox drain warning");
+                        }
+                    }
+                    Err(e) => warn!(error = %e, "fs-notify outbox drain failed"),
+                }
+            }
+        },
+    );
 
     // SIGTERM is what `launchctl unload` sends; Ctrl-C in a foreground
     // `sec daemon serve` produces SIGINT. Handle both so the next start
@@ -115,6 +145,7 @@ pub async fn serve(paths: &KeyPaths, did: &Did, key: &SigningKey) -> Result<()> 
     // the `UnixListener`; removing the socket path ensures the next
     // boot sees a clean slate even if the listener already exited.
     ipc_handle.abort();
+    outbox_handle.abort();
     let _ = std::fs::remove_file(crate::ipc::socket_path(paths));
     Ok(())
 }

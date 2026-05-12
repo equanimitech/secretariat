@@ -46,6 +46,6 @@ pub use process_correspondence_claims::{
 };
 pub use review_queue::{list_local_queues, list_outbox_queue, list_review_queue};
 pub use send_envelope::{send_stamped_envelope, SendError, SendOutcome};
-pub use sync::{sync_now, RelaySyncReport, SyncError, SyncOutcome};
+pub use sync::{drain_outbox, sync_now, RelaySyncReport, SyncError, SyncOutcome};
 pub use stamp_document::{stamp_document, StampError, StampOutcome};
 pub use verify_document::{verify_document, VerifyError, VerifyOutcome};

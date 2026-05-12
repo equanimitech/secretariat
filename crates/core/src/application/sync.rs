@@ -275,7 +275,18 @@ enum ClaimDrainError {
 // 3. Drain outbox
 // ---------------------------------------------------------------------------
 
-async fn drain_outbox(
+/// Walk `~/.secretariat/outbox/<recipient-did>/*.md`, deliver every
+/// stamped draft via its peer's relay, move successes into `sent/`.
+/// Unstamped drafts are skipped silently.
+///
+/// Exposed for the daemon's FS-notify-driven outbox watcher (Slice 2) so
+/// stamp→send latency drops from the poll cadence (15 min) to the
+/// debounce window (~200ms) without forcing a full `sync_now` (which
+/// would also hit registered relays for inbound poll).
+///
+/// Returns `(count_sent, soft_warnings)`. Per-file failures don't fail
+/// the whole drain.
+pub async fn drain_outbox(
     paths: &KeyPaths,
     key: &SigningKey,
 ) -> Result<(usize, Vec<String>), SyncError> {

@@ -46,6 +46,7 @@
 
 pub mod ipc;
 pub mod launchagent;
+pub mod outbox_watcher;
 pub mod relay_register;
 pub mod serve;
 pub mod tracing_init;
