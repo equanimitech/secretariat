@@ -29,6 +29,9 @@ use crate::infrastructure::channel_def_store::{
     delete_channel as delete_channel_tree, save_channel_def, ChannelDefStoreError,
     CHANNEL_DEF_FILENAME,
 };
+use crate::infrastructure::contract_store::{
+    channel_contract_path, save_stub_if_absent, ContractStoreError,
+};
 use crate::infrastructure::markdown::{parse_document, MarkdownError};
 
 #[derive(Debug, Error)]
@@ -51,6 +54,8 @@ pub enum ChannelOpError {
     ChannelNotFound(String),
     #[error("channel def store: {0}")]
     ChannelDefStore(#[from] ChannelDefStoreError),
+    #[error("contract store: {0}")]
+    ContractStore(#[from] ContractStoreError),
 }
 
 /// One row in `list_channels` output.
@@ -291,9 +296,16 @@ fn read_one(path: &Path) -> Result<ChannelEnvelope, ChannelOpError> {
     })
 }
 
-/// Create a channel by writing its `.channelDef` metadata file and
-/// pre-creating the `envelopes/` directory. Errors if the channel
-/// already has a `.channelDef`. `handle` must start with `channel:`.
+/// Create a channel by writing its `.channelDef` metadata file,
+/// pre-creating the `envelopes/` directory, and auto-scaffolding a
+/// stub `contract.md` (empty frontmatter — no overrides, inherit
+/// from ancestors). Errors if the channel already has a `.channelDef`.
+/// `handle` must start with `channel:`.
+///
+/// The contract-stub write is idempotent: if a `contract.md` already
+/// exists at the path (e.g. left from a previous incarnation of the
+/// channel before delete + recreate, or hand-placed by the principal),
+/// we leave it alone. Auto-scaffold never silently clobbers.
 pub fn create_channel(
     channels_root: &Path,
     handle: QueueHandle,
@@ -306,6 +318,8 @@ pub fn create_channel(
     }
     let def = ChannelDef::new(handle, name, description, created_at);
     save_channel_def(channels_root, &def, false)?;
+    let contract_path = channel_contract_path(channels_root, &def.handle);
+    save_stub_if_absent(&contract_path)?;
     Ok(def)
 }
 
@@ -496,6 +510,49 @@ mod tests {
         let h = QueueHandle::parse("channel:does:not:exist").unwrap();
         let r = read_channel(&channels, &h, 10);
         assert!(matches!(r, Err(ChannelOpError::ChannelNotFound(_))));
+    }
+
+    #[test]
+    fn create_channel_writes_stub_contract_md() {
+        let dir = TempDir::new().unwrap();
+        let channels = dir.path().join("channels");
+        let h = QueueHandle::parse("channel:dev:secretariat").unwrap();
+        let when = Utc.with_ymd_and_hms(2026, 5, 12, 0, 0, 0).unwrap();
+        create_channel(&channels, h.clone(), "Dev — Secretariat", "", when).unwrap();
+        let contract_path =
+            crate::infrastructure::contract_store::channel_contract_path(&channels, &h);
+        assert!(contract_path.is_file(), "stub contract.md should be written");
+        let (loaded, body) = crate::infrastructure::contract_store::load_contract(&contract_path)
+            .unwrap()
+            .unwrap();
+        assert!(loaded.is_empty(), "stub frontmatter should contribute nothing");
+        assert!(body.contains("Channel contract"));
+    }
+
+    #[test]
+    fn create_channel_does_not_clobber_hand_edited_contract() {
+        let dir = TempDir::new().unwrap();
+        let channels = dir.path().join("channels");
+        let h = QueueHandle::parse("channel:dev:secretariat").unwrap();
+        let when = Utc.with_ymd_and_hms(2026, 5, 12, 0, 0, 0).unwrap();
+
+        // Pre-stage a hand-edited contract on disk.
+        let contract_path =
+            crate::infrastructure::contract_store::channel_contract_path(&channels, &h);
+        fs::create_dir_all(contract_path.parent().unwrap()).unwrap();
+        fs::write(
+            &contract_path,
+            "---\ncadence_floor_minutes: 30\n---\nhand-edited prose\n",
+        )
+        .unwrap();
+
+        create_channel(&channels, h.clone(), "Dev — Secretariat", "", when).unwrap();
+
+        let (loaded, body) = crate::infrastructure::contract_store::load_contract(&contract_path)
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded.cadence_floor_minutes, Some(30));
+        assert!(body.contains("hand-edited"));
     }
 
     #[test]

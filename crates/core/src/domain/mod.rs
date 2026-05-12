@@ -6,6 +6,7 @@
 mod acts;
 mod attention_envelope;
 mod attested_document;
+mod channel_contract;
 mod channel_def;
 mod contact;
 mod envelope;
@@ -19,6 +20,7 @@ mod stamp;
 pub use acts::{EnvelopeDepth, EnvelopeUrgency, StampAct};
 pub use attention_envelope::AttentionEnvelope;
 pub use attested_document::{canonical_body_hash, AttestedDocument, DocumentInvariantError};
+pub use channel_contract::{ChannelContract, TrustGate};
 pub use channel_def::ChannelDef;
 pub use contact::{
     Contact, DisplayName, DisplayNameParseError, RelayEndpoint, RelayEndpointParseError,

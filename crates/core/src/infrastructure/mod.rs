@@ -4,6 +4,7 @@
 pub mod biometric;
 pub mod channel_def_store;
 pub mod cognition;
+pub mod contract_store;
 pub mod composite_did_resolver;
 pub mod contact_store;
 pub mod crypto;
@@ -28,6 +29,10 @@ pub use ed25519_signer::{AlwaysAllowGate, BiometricGate, Ed25519Signer};
 pub use channel_def_store::{
     channel_def_path, channel_dir, delete_channel as delete_channel_tree, load_channel_def,
     save_channel_def, ChannelDefStoreError, CHANNEL_DEF_FILENAME,
+};
+pub use contract_store::{
+    channel_contract_path, load_contract, org_contract_path, save_contract, save_stub_if_absent,
+    ContractStoreError, CONTRACT_FILENAME,
 };
 pub use keys::{generate_keypair, load_signing_key, save_signing_key, write_did_document, KeyError, KeyPaths};
 pub use markdown::{embed_stamp, parse_document, MarkdownError, ParsedDocument};
