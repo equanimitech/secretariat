@@ -26,8 +26,9 @@ pub use channels_ops::{
 pub use org_ops::{create_org, delete_org, list_orgs, show_org, OrgOpsError};
 pub use compose_envelope::{compose_envelope, ComposeError, ComposeRequest};
 pub use contract_ops::{
-    get_channel_contract, get_org_contract, set_channel_contract, set_org_contract,
-    ContractOpsError, ContractPatch, ContractView, PatchField,
+    get_channel_contract, get_org_contract, resolve_channel_contract, set_channel_contract,
+    set_org_contract, ContractLevel, ContractOpsError, ContractPatch, ContractView, PatchField,
+    ResolvedContract,
 };
 pub use contact_ops::{
     add_contact, find_by_did, find_by_slug, list_contacts, remove_contact, ContactOpError,

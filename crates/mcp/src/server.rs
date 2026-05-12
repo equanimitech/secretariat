@@ -57,10 +57,11 @@ use secretariat_core::application::{
     get_channel_contract as app_get_channel_contract,
     get_org_contract as app_get_org_contract, list_channels, list_contacts, list_inbox_files,
     list_orgs as app_list_orgs, list_outbox_files, read_channel, read_envelope,
+    resolve_channel_contract as app_resolve_channel_contract,
     set_channel_contract as app_set_channel_contract, set_org_contract as app_set_org_contract,
     show_org as app_show_org, stamp_document, try_contextify_after_capture, verify_document,
-    view_invite, CaptureRequest, CaptureRoots, ComposeRequest, ContractPatch, ContractView,
-    ListedEnvelope, PatchField, StampError, VerifyOutcome,
+    view_invite, CaptureRequest, CaptureRoots, ComposeRequest, ContractLevel, ContractPatch,
+    ContractView, ListedEnvelope, PatchField, ResolvedContract, StampError, VerifyOutcome,
 };
 use secretariat_core::domain::{OrgAlias, QueueHandle, Recipient, StampAct, TrustGate};
 use secretariat_core::infrastructure::org_store::org_channels_root;
@@ -611,6 +612,57 @@ impl ContractDto {
             cadence_floor_minutes: view.contract.cadence_floor_minutes,
             min_trust: view.contract.min_trust.map(|g| g.as_str().to_string()),
             body: view.body,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ResolveChannelContractParams {
+    pub handle: String,
+    #[serde(default)]
+    pub org: Option<String>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct ContractLevelDto {
+    pub scope: String,
+    pub path: String,
+    pub cadence_floor_minutes: Option<u32>,
+    pub min_trust: Option<String>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct ResolvedContractDto {
+    pub handle: String,
+    /// Merged view across the chain — what to actually enforce.
+    pub merged_cadence_floor_minutes: Option<u32>,
+    pub merged_min_trust: Option<String>,
+    /// One entry per `contract.local.md` file found along the walk.
+    pub chain: Vec<ContractLevelDto>,
+}
+
+impl ContractLevelDto {
+    fn from_level(level: ContractLevel) -> Self {
+        Self {
+            scope: level.scope,
+            path: level.path.display().to_string(),
+            cadence_floor_minutes: level.contract.cadence_floor_minutes,
+            min_trust: level.contract.min_trust.map(|g| g.as_str().to_string()),
+        }
+    }
+}
+
+impl ResolvedContractDto {
+    fn from_resolved(handle: String, r: ResolvedContract) -> Self {
+        Self {
+            handle,
+            merged_cadence_floor_minutes: r.merged.cadence_floor_minutes,
+            merged_min_trust: r.merged.min_trust.map(|g| g.as_str().to_string()),
+            chain: r
+                .chain
+                .into_iter()
+                .map(ContractLevelDto::from_level)
+                .collect(),
         }
     }
 }
@@ -1426,6 +1478,49 @@ impl SecretariatServer {
         Ok(Json(ContractDto::from_view(
             handle.as_str().to_string(),
             view,
+        )))
+    }
+
+    #[tool(
+        name = "resolve_channel_contract",
+        annotations(
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        ),
+        description = "Walk this principal's contract chain (org-root → ancestor channel \
+        directories → leaf) and return the merged consumption view per the accumulate \
+        rules: `cadence_floor_minutes` takes the MAX (tightest floor wins), `min_trust` \
+        takes the MAX-RESTRICTIVE (`stamp-required` dominates `signed-only`). \
+        \
+        Returns both the merged values (what to enforce) and the per-level breakdown \
+        (which file contributed what). Empty-frontmatter levels still appear in the chain \
+        — they just contribute nothing to the merge."
+    )]
+    async fn resolve_channel_contract(
+        &self,
+        Parameters(params): Parameters<ResolveChannelContractParams>,
+    ) -> Result<Json<ResolvedContractDto>, ErrorData> {
+        let handle = QueueHandle::parse(&params.handle).map_err(|e| {
+            invalid_request(format!("invalid handle `{}`: {e}", params.handle))
+        })?;
+        let alias = match params.org.as_deref() {
+            None => None,
+            Some(s) => Some(
+                OrgAlias::parse(s)
+                    .map_err(|e| invalid_request(format!("invalid alias `{s}`: {e}")))?,
+            ),
+        };
+        let resolved = app_resolve_channel_contract(
+            &self.paths.orgs_root,
+            &self.paths.channels,
+            alias.as_ref(),
+            &handle,
+        )
+        .map_err(|e| invalid_request(format!("resolve_channel_contract failed: {e}")))?;
+        Ok(Json(ResolvedContractDto::from_resolved(
+            handle.as_str().to_string(),
+            resolved,
         )))
     }
 

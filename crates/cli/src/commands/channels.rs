@@ -15,7 +15,7 @@ use clap::{Parser, Subcommand};
 
 use secretariat_core::application::{
     create_channel, delete_channel, get_channel_contract, list_channels, read_channel,
-    set_channel_contract, show_org, ContractPatch, PatchField,
+    resolve_channel_contract, set_channel_contract, show_org, ContractPatch, PatchField,
 };
 use secretariat_core::domain::{OrgAlias, QueueHandle, TrustGate};
 use secretariat_core::infrastructure::org_store::org_channels_root;
@@ -50,12 +50,23 @@ enum Cmd {
 
 #[derive(Subcommand, Debug)]
 enum ContractCmd {
-    /// Print the consumption contract for a channel.
+    /// Print the consumption contract for a channel (own level only).
     Get(ContractGetArgs),
     /// Apply a partial update to a channel's consumption contract.
     /// Fields not mentioned are left untouched; pass `--clear-*` to
     /// revert a field to inheriting from ancestors.
     Set(ContractSetArgs),
+    /// Print the *accumulated* contract — merged from org-root through
+    /// ancestor channels to the leaf, per the accumulate rules
+    /// (cadence_floor_minutes MAX, min_trust MAX-RESTRICTIVE).
+    Resolve(ContractResolveArgs),
+}
+
+#[derive(Parser, Debug)]
+pub struct ContractResolveArgs {
+    handle: String,
+    #[arg(long)]
+    org: Option<String>,
 }
 
 #[derive(Parser, Debug)]
@@ -141,7 +152,53 @@ pub fn run(args: Args) -> Result<()> {
         Cmd::Delete(d) => run_delete(&paths, d),
         Cmd::Contract(ContractCmd::Get(g)) => run_contract_get(&paths, g),
         Cmd::Contract(ContractCmd::Set(s)) => run_contract_set(&paths, s),
+        Cmd::Contract(ContractCmd::Resolve(r)) => run_contract_resolve(&paths, r),
     }
+}
+
+fn run_contract_resolve(
+    paths: &secretariat_core::infrastructure::KeyPaths,
+    args: ContractResolveArgs,
+) -> Result<()> {
+    let handle = QueueHandle::parse(&args.handle)
+        .map_err(|e| anyhow!("invalid handle `{}`: {e}", args.handle))?;
+    let org_alias = match args.org.as_deref() {
+        None => None,
+        Some(s) => Some(
+            OrgAlias::parse(s).map_err(|e| anyhow!("invalid org alias `{s}`: {e}"))?,
+        ),
+    };
+    let resolved =
+        resolve_channel_contract(&paths.orgs_root, &paths.channels, org_alias.as_ref(), &handle)
+            .with_context(|| format!("resolving contract for `{}`", handle.as_str()))?;
+    println!("handle: {}", handle.as_str());
+    println!(
+        "merged cadence_floor_minutes: {}",
+        resolved
+            .merged
+            .cadence_floor_minutes
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| "(none)".to_string())
+    );
+    println!(
+        "merged min_trust: {}",
+        resolved
+            .merged
+            .min_trust
+            .map(|g| g.as_str().to_string())
+            .unwrap_or_else(|| "(none)".to_string())
+    );
+    println!("chain:");
+    for level in &resolved.chain {
+        println!("  - {}", level.scope);
+        if let Some(n) = level.contract.cadence_floor_minutes {
+            println!("      cadence_floor_minutes: {n}");
+        }
+        if let Some(t) = level.contract.min_trust {
+            println!("      min_trust: {}", t.as_str());
+        }
+    }
+    Ok(())
 }
 
 fn run_contract_get(
