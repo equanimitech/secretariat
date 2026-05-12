@@ -51,12 +51,13 @@ pub struct KeyPaths {
     pub contacts: PathBuf,
     pub relay_state: PathBuf,
     pub peers_cache: PathBuf,
-    pub inbox: PathBuf,
-    pub outbox: PathBuf,
-    /// Flat local-queue captures (envelopes whose `recipient.owner == self`
-    /// whose handle's top namespace is anything *other than* `channel`,
-    /// e.g. `inbox:triage`, `area:writing`).
-    /// Files land at `<queues>/<namespace>/<slug>/<timestamp>.md`.
+    /// Legacy flat local-queue captures root (envelopes whose
+    /// `recipient.owner == self` whose handle's top namespace is
+    /// anything *other than* `channel`, e.g. `inbox:triage`,
+    /// `area:writing`). In v0.3 substrate, captures live under
+    /// `<root>/_self/<namespace>/<segments>/envelopes/...` — this
+    /// field is kept only for `capture_to_queue`, which has not yet
+    /// been migrated to the resolver. See follow-up after Slice 3.
     pub queues: PathBuf,
     /// Channel-tree captures (envelopes whose handle starts with `channel:`).
     /// Time-sharded layout: `<channels>/<segments-after-channel>/envelopes/YYYY/MM/DD/<timestamp>.md`.
@@ -93,8 +94,6 @@ impl KeyPaths {
             contacts: root.join("contacts.json"),
             relay_state: root.join("relay-state.json"),
             peers_cache: root.join("peers"),
-            inbox: root.join("inbox"),
-            outbox: root.join("outbox"),
             queues: root.join("queues"),
             channels: root.join("channels"),
             orgs_root: root.join("orgs"),
@@ -112,8 +111,6 @@ impl KeyPaths {
         for dir in [
             &self.root,
             &self.peers_cache,
-            &self.inbox,
-            &self.outbox,
             &self.queues,
             &self.channels,
             &self.orgs_root,
@@ -215,8 +212,6 @@ mod tests {
         paths.ensure_dirs().unwrap();
         assert!(paths.root.is_dir());
         assert!(paths.peers_cache.is_dir());
-        assert!(paths.inbox.is_dir());
-        assert!(paths.outbox.is_dir());
         assert!(paths.queues.is_dir());
         assert!(paths.channels.is_dir());
         assert!(paths.orgs_root.is_dir());
