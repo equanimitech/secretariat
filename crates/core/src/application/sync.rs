@@ -57,7 +57,7 @@ pub enum SyncError {
 }
 
 /// Per-relay outcome from one sync cycle.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
 pub struct RelaySyncReport {
     pub endpoint: String,
     pub inbound_count: usize,
@@ -68,7 +68,7 @@ pub struct RelaySyncReport {
     pub warnings: Vec<String>,
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SyncOutcome {
     pub per_relay: Vec<RelaySyncReport>,
     pub sent_envelopes: usize,

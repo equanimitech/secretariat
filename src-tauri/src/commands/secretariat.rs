@@ -15,6 +15,7 @@ use secretariat_core::application::{
     archive_envelope as core_archive_envelope, defer_envelope as core_defer_envelope,
     list_inbox_files, list_review_queue as core_list_review_queue,
     read_envelope as core_read_envelope, sync_now as core_sync_now,
+    SyncOutcome as CoreSyncOutcome,
 };
 use secretariat_core::domain::DisplayName;
 use secretariat_core::infrastructure::keys::{
@@ -336,16 +337,27 @@ pub struct SyncReport {
 #[specta::specta]
 pub async fn sync_now() -> Result<SyncReport, String> {
     let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
-    let did_file = paths.root.join("did");
-    let did_str = std::fs::read_to_string(&did_file)
-        .map_err(|e| format!("reading {}: {e}", did_file.display()))?;
-    let did = Did::parse(did_str.trim()).map_err(|e| format!("parsing DID: {e}"))?;
-    let key = load_signing_key(&paths.signing_key)
-        .map_err(|e| format!("loading signing key: {e}"))?;
 
-    let outcome = core_sync_now(&paths, &did, &key)
-        .await
-        .map_err(|e| format!("sync_now: {e}"))?;
+    // Prefer the running daemon's IPC socket so we don't race against
+    // its `RelayState` saves. Fall back to running the cycle in-proc
+    // when no daemon is reachable — same shape as the CLI's
+    // `sec daemon tick` (Slice 1, see daemon-evolution doc).
+    let outcome: CoreSyncOutcome = if secretariat_daemon::ipc::is_running(&paths).await {
+        let value = secretariat_daemon::ipc::call(&paths, "tick", None)
+            .await
+            .map_err(|e| format!("ipc tick: {e}"))?;
+        serde_json::from_value(value).map_err(|e| format!("decoding outcome: {e}"))?
+    } else {
+        let did_file = paths.root.join("did");
+        let did_str = std::fs::read_to_string(&did_file)
+            .map_err(|e| format!("reading {}: {e}", did_file.display()))?;
+        let did = Did::parse(did_str.trim()).map_err(|e| format!("parsing DID: {e}"))?;
+        let key = load_signing_key(&paths.signing_key)
+            .map_err(|e| format!("loading signing key: {e}"))?;
+        core_sync_now(&paths, &did, &key)
+            .await
+            .map_err(|e| format!("sync_now: {e}"))?
+    };
 
     Ok(SyncReport {
         per_relay: outcome

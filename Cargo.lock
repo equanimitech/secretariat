@@ -4854,6 +4854,7 @@ dependencies = [
  "log",
  "regex",
  "secretariat-core",
+ "secretariat-daemon",
  "serde",
  "serde_json",
  "specta",
@@ -4891,6 +4892,7 @@ dependencies = [
  "ed25519-dalek",
  "predicates",
  "secretariat-core",
+ "secretariat-daemon",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -4924,6 +4926,23 @@ dependencies = [
  "toml 0.8.2",
  "tracing",
  "x25519-dalek",
+]
+
+[[package]]
+name = "secretariat-daemon"
+version = "0.2.16"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "dirs 5.0.1",
+ "ed25519-dalek",
+ "secretariat-core",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
