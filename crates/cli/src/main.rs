@@ -23,6 +23,12 @@ enum Cmd {
     /// Capture a body of text into a local queue (idea, journal, future-self note).
     Capture(commands::capture::Args),
 
+    /// List and read the local channel tree (channel:foo:bar handles).
+    Channels(commands::channels::Args),
+
+    /// CRUD over organizations the principal owns locally.
+    Orgs(commands::orgs::Args),
+
     /// Embed a biometric-attested stamp into a markdown file.
     Stamp(commands::stamp::Args),
 
@@ -57,6 +63,8 @@ fn main() -> Result<()> {
         Cmd::Init(a) => commands::init::run(a),
         Cmd::Compose(a) => commands::compose::run(a),
         Cmd::Capture(a) => commands::capture::run(a),
+        Cmd::Channels(a) => commands::channels::run(a),
+        Cmd::Orgs(a) => commands::orgs::run(a),
         Cmd::Stamp(a) => commands::stamp::run(a),
         Cmd::Verify(a) => commands::verify::run(a),
         Cmd::List(a) => commands::list::run(a),

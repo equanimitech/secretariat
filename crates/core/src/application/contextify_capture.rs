@@ -395,7 +395,7 @@ fn relocate(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::application::{capture_to_queue, CaptureRequest};
+    use crate::application::{capture_to_queue, CaptureRequest, CaptureRoots};
     use crate::domain::Did;
     use crate::infrastructure::cognition::read_entries;
     use chrono::TimeZone;
@@ -437,7 +437,16 @@ mod tests {
             source: "test".to_string(),
         };
         let now = Utc.with_ymd_and_hms(2026, 5, 6, 12, 0, 0).unwrap();
-        capture_to_queue(req, queues_root, now).unwrap()
+        let channel_tree = queues_root.parent().unwrap().join("channels");
+        capture_to_queue(
+            req,
+            CaptureRoots {
+                flat_queues: queues_root,
+                channel_tree: &channel_tree,
+            },
+            now,
+        )
+        .unwrap()
     }
 
     #[tokio::test]
@@ -541,7 +550,16 @@ mod tests {
             body: "morning walk".into(),
             source: "test".into(),
         };
-        let capture_path = capture_to_queue(req, &queues, Utc::now()).unwrap();
+        let channel_tree = dir.path().join("channels");
+        let capture_path = capture_to_queue(
+            req,
+            CaptureRoots {
+                flat_queues: &queues,
+                channel_tree: &channel_tree,
+            },
+            Utc::now(),
+        )
+        .unwrap();
 
         let adapter = ScriptedAdapter {
             answer: Ok(RouteSuggestion {

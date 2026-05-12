@@ -53,9 +53,20 @@ pub struct KeyPaths {
     pub peers_cache: PathBuf,
     pub inbox: PathBuf,
     pub outbox: PathBuf,
-    /// Local-queue captures (substrate v0.3 — `Recipient::LocalQueue`).
+    /// Flat local-queue captures (envelopes whose `recipient.owner == self`
+    /// whose handle's top namespace is anything *other than* `channel`,
+    /// e.g. `inbox:triage`, `area:writing`).
     /// Files land at `<queues>/<namespace>/<slug>/<timestamp>.md`.
     pub queues: PathBuf,
+    /// Channel-tree captures (envelopes whose handle starts with `channel:`).
+    /// Time-sharded layout: `<channels>/<segments-after-channel>/envelopes/YYYY/MM/DD/<timestamp>.md`.
+    /// This is the **personal** (no-org) channel root. Org-scoped channels
+    /// live under `<orgs_root>/<alias>/channels/` instead.
+    pub channels: PathBuf,
+    /// Root for org-scoped state (v0.3 slice 1.5). Layout:
+    /// `<orgs_root>/<alias>/.org` (metadata) + `<orgs_root>/<alias>/channels/<segs>/...`
+    /// per `docs/decisions/2026-05-12-substrate-layout-v03.md`.
+    pub orgs_root: PathBuf,
     pub bin: PathBuf,
     pub template: PathBuf,
     pub attention_envelope: PathBuf,
@@ -85,6 +96,8 @@ impl KeyPaths {
             inbox: root.join("inbox"),
             outbox: root.join("outbox"),
             queues: root.join("queues"),
+            channels: root.join("channels"),
+            orgs_root: root.join("orgs"),
             bin: root.join("bin"),
             template: root.join("template.md"),
             attention_envelope: root.join("attention-envelope.md"),
@@ -102,6 +115,8 @@ impl KeyPaths {
             &self.inbox,
             &self.outbox,
             &self.queues,
+            &self.channels,
+            &self.orgs_root,
             &self.bin,
         ] {
             fs::create_dir_all(dir).map_err(|e| KeyError::Io {
@@ -202,7 +217,12 @@ mod tests {
         assert!(paths.peers_cache.is_dir());
         assert!(paths.inbox.is_dir());
         assert!(paths.outbox.is_dir());
+        assert!(paths.queues.is_dir());
+        assert!(paths.channels.is_dir());
+        assert!(paths.orgs_root.is_dir());
         assert!(paths.bin.is_dir());
+        assert!(paths.channels.ends_with("channels"));
+        assert!(paths.orgs_root.ends_with("orgs"));
     }
 
     #[test]

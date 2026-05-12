@@ -165,12 +165,13 @@ mod tests {
 
     #[test]
     fn review_queue_unions_outbox_and_local_queues() {
-        use crate::application::{capture_to_queue, CaptureRequest};
+        use crate::application::{capture_to_queue, CaptureRequest, CaptureRoots};
         use crate::domain::QueueHandle;
 
         let dir = TempDir::new().unwrap();
         let outbox = dir.path().join("outbox");
         let queues = dir.path().join("queues");
+        let channel_tree = dir.path().join("channels");
 
         // One unstamped peer draft in the outbox.
         write_envelope(&outbox.join("did_key_z6Mkb"), "draft.md", false);
@@ -182,7 +183,15 @@ mod tests {
             body: "fleeting thought".into(),
             source: "test".into(),
         };
-        capture_to_queue(req, &queues, chrono::Utc::now()).unwrap();
+        capture_to_queue(
+            req,
+            CaptureRoots {
+                flat_queues: &queues,
+                channel_tree: &channel_tree,
+            },
+            chrono::Utc::now(),
+        )
+        .unwrap();
 
         let unioned = list_review_queue(&outbox, &queues).unwrap();
         assert_eq!(unioned.len(), 2);

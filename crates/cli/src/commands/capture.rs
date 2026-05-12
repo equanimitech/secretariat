@@ -1,18 +1,18 @@
 //! `sec capture` — drop a body into a local queue.
 //!
-//! Local-queue captures (substrate v0.3) are envelopes addressed to
-//! `Recipient::LocalQueue(handle)` rather than to a peer. They never
-//! leave the principal's machine and cannot be stamped — by domain
-//! invariant. Use them for ideas, journal entries, future-self notes,
-//! agent bids, anything you want to surface again at the next review
-//! session.
+//! Captures are envelopes whose `recipient.owner == self_did`: same
+//! primitive as a peer letter, but the routing rule keeps them on disk.
+//! Use them for ideas, journal entries, future-self notes, agent bids —
+//! anything to surface again at the next review session. Stamps are
+//! optional (tamper-evident self-attestation), never required.
 
 use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
 use clap::Parser;
 
-use secretariat_core::application::{capture_to_queue, CaptureRequest};
-use secretariat_core::domain::QueueHandle;
+use secretariat_core::application::{capture_to_queue, show_org, CaptureRequest, CaptureRoots};
+use secretariat_core::domain::{OrgAlias, QueueHandle};
+use secretariat_core::infrastructure::org_store::org_channels_root;
 
 use super::paths::{key_paths, load_did};
 
@@ -38,6 +38,12 @@ pub struct Args {
     /// `mcp-capture`. Surfaces in the review session as grouping hint.
     #[arg(long, default_value_t = String::from("manual"))]
     source: String,
+
+    /// Optional org alias (`themia.pro`, `equanimi.tech`). When set AND
+    /// the queue handle starts with `channel:`, the capture lands in
+    /// that org's channel tree. Omit for personal captures.
+    #[arg(long)]
+    org: Option<String>,
 }
 
 pub fn run(args: Args) -> Result<()> {
@@ -73,7 +79,29 @@ pub fn run(args: Args) -> Result<()> {
         source: args.source,
     };
 
-    let path = capture_to_queue(req, &paths.queues, Utc::now())
+    let channel_tree = match args.org.as_deref() {
+        None => paths.channels.clone(),
+        Some(s) => {
+            let alias = OrgAlias::parse(s)
+                .map_err(|e| anyhow!("invalid --org `{s}`: {e}"))?;
+            if show_org(&paths.orgs_root, &alias)
+                .context("looking up org")?
+                .is_none()
+            {
+                return Err(anyhow!(
+                    "org `{}` does not exist — create it with `sec orgs create {}` first",
+                    alias.as_str(),
+                    alias.as_str()
+                ));
+            }
+            org_channels_root(&paths.orgs_root, &alias)
+        }
+    };
+    let roots = CaptureRoots {
+        flat_queues: &paths.queues,
+        channel_tree: &channel_tree,
+    };
+    let path = capture_to_queue(req, roots, Utc::now())
         .context("writing capture into local queue")?;
     println!("{}", path.display());
     Ok(())

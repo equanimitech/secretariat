@@ -79,12 +79,12 @@ pub async fn send_stamped_envelope(
     if parsed.stamp.is_none() {
         return Err(SendError::NotStamped);
     }
-    let recipient_did = &envelope.recipient.owner;
-    if recipient_did == &envelope.from {
+    if envelope.recipient.is_local(&envelope.from) {
         return Err(SendError::SelfAddressed {
-            did: recipient_did.as_str().to_string(),
+            did: envelope.recipient.owner.as_str().to_string(),
         });
     }
+    let recipient_did = &envelope.recipient.owner;
 
     let contact = contacts
         .find_by_did(recipient_did)

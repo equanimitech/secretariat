@@ -6,9 +6,12 @@
 mod acts;
 mod attention_envelope;
 mod attested_document;
+mod channel_def;
 mod contact;
 mod envelope;
 mod identity;
+mod org;
+mod org_alias;
 mod queue_handle;
 mod recipient;
 mod stamp;
@@ -16,11 +19,14 @@ mod stamp;
 pub use acts::{EnvelopeDepth, EnvelopeUrgency, StampAct};
 pub use attention_envelope::AttentionEnvelope;
 pub use attested_document::{canonical_body_hash, AttestedDocument, DocumentInvariantError};
+pub use channel_def::ChannelDef;
 pub use contact::{
     Contact, DisplayName, DisplayNameParseError, RelayEndpoint, RelayEndpointParseError,
 };
 pub use envelope::{EncryptionScheme, Envelope, EnvelopeBuilder};
 pub use identity::{Did, DidMethod, DidParseError, DocHash, Signature, SignatureParseError};
+pub use org::Org;
+pub use org_alias::{OrgAlias, OrgAliasError};
 pub use queue_handle::{QueueHandle, QueueHandleError};
 pub use recipient::Recipient;
 pub use stamp::Stamp;
