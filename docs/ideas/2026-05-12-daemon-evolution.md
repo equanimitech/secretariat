@@ -340,6 +340,52 @@ slow. Regenerable, never authoritative.
     are exempt — these are *control* operations, principal-facing, so
     they qualify. **Lean:** yes, ship them on MCP in Slice 1.
 
+11. **Per-reader review-state cursors (needs shaping before code).**
+    Once the channel-dir layout lands (Slice 3+), the receiver side
+    needs a way to know *what's new since last review*. The shape
+    doc's "cross-channel review verb" implies this state exists but
+    doesn't specify it. Sketch so far (not yet a decision):
+
+    - **Per-reader cursor file** per channel, e.g.
+      `<channel-dir>/.review-cursor` for the principal,
+      `<channel-dir>/.review-cursor.<agent-did-fragment>` for any
+      agent that subscribes (Secretariat agent included). Each
+      cursor records the last envelope the reader processed —
+      either a hash or an ISO timestamp. Reader-local, never
+      published, regenerable (matches consumption-contract pattern).
+    - **Append-only access ledger** (v0.4+) at
+      `<channel-dir>/.access.log` — one line per review session,
+      pure local audit. Optional; powers "what did I review last
+      Tuesday" + future routing-engine rules.
+    - **Composability with the routing engine.** Cursor is the
+      foundation; routing decides `unread × declared depth/urgency
+      × consumption contract → surface | digest | mute | bounce`.
+      Slice 10 (RoutingEngine, v0.4) reads cursor state; cursor
+      itself needs to ship earlier so review + digest work at all.
+    - **Reader-to-reader coordination is open.** Does the
+      Secretariat agent's cursor advance when the *principal*
+      reads, so the agent doesn't re-digest items the principal
+      already saw? Cleanest answer: each reader's cursor is fully
+      independent (agent digests on its own pace; if the
+      principal pre-read an item, the digest just confirms what
+      they already saw — no harm). Alternative: principal's cursor
+      shadows the agent's via a coordination file. Decide before
+      Slice 3.5 (the slice that would land the cursor primitive).
+    - **Granularity tradeoff.** Hash-based cursor is precise but
+      requires a sorted index to compare "before/after"; timestamp
+      cursor is fuzzy at the second boundary but trivially
+      comparable against the time-sharded `envelopes/YYYY/MM/DD/`
+      layout. Lean **timestamp + hash tiebreaker** (cursor = `(ts,
+      hash)`). Same shape as a SQL `(ORDER BY ts, id)` index.
+
+    Lives parallel to consumption contracts — both are
+    reader-local-per-channel state — but contracts declare
+    acceptance criteria *before* delivery while cursors track
+    processing *after* delivery. Worth a short decision doc
+    (`docs/decisions/2026-05-12-review-state-and-access-cursors.md`)
+    before Slice 3 hits review surfaces, since the Secretariat
+    agent's digest workflow is load-bearing on this primitive.
+
 ---
 
 ## 6. Non-goals (worth saying out loud)
