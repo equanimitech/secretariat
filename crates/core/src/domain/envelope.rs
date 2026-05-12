@@ -20,7 +20,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::{Did, EnvelopeDepth, EnvelopeUrgency, QueueHandle, Recipient};
+use super::{Did, DocHash, EnvelopeDepth, EnvelopeUrgency, QueueHandle, Recipient};
 
 /// The encryption scheme applied to the document body. v0 ships a single
 /// scheme; future versions may add others (post-quantum, etc.) by extending
@@ -82,6 +82,14 @@ pub struct Envelope {
     /// Body encryption scheme. `None` = plaintext markdown body. `Some(_)` =
     /// body is the wire string of an encrypted blob; decrypt after verify.
     pub encryption: Option<EncryptionScheme>,
+    /// Optional reference to a prior envelope's body hash that this
+    /// envelope is replying to. Root envelopes leave this `None`; threads
+    /// are chains of `reply_to` links. Causality is cryptographic
+    /// (`DocHash` of the parent body) — adapters materialize chains into
+    /// their native conversation view (e.g. Crisp session, Intercom
+    /// thread). Orphan replies (parent not yet seen) are valid; the
+    /// substrate does not enforce parent reachability.
+    pub reply_to: Option<DocHash>,
 }
 
 impl Envelope {
@@ -122,6 +130,8 @@ struct EnvelopeWire {
     cadence_hint: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     encryption: Option<EncryptionScheme>,
+    #[serde(rename = "replyTo", default, skip_serializing_if = "Option::is_none")]
+    reply_to: Option<DocHash>,
 }
 
 impl Serialize for Envelope {
@@ -137,6 +147,7 @@ impl Serialize for Envelope {
             source: self.source.clone(),
             cadence_hint: self.cadence_hint.clone(),
             encryption: self.encryption,
+            reply_to: self.reply_to.clone(),
         }
         .serialize(s)
     }
@@ -171,6 +182,7 @@ impl<'de> Deserialize<'de> for Envelope {
             source: w.source,
             cadence_hint: w.cadence_hint,
             encryption: w.encryption,
+            reply_to: w.reply_to,
         })
     }
 }
@@ -191,6 +203,7 @@ pub struct EnvelopeBuilder {
     source: String,
     cadence_hint: Option<String>,
     encryption: Option<EncryptionScheme>,
+    reply_to: Option<DocHash>,
 }
 
 impl EnvelopeBuilder {
@@ -203,6 +216,7 @@ impl EnvelopeBuilder {
             source: String::new(),
             cadence_hint: None,
             encryption: None,
+            reply_to: None,
         }
     }
 
@@ -231,6 +245,11 @@ impl EnvelopeBuilder {
         self
     }
 
+    pub fn reply_to(mut self, parent: DocHash) -> Self {
+        self.reply_to = Some(parent);
+        self
+    }
+
     pub fn build(self) -> Envelope {
         Envelope {
             from: self.from,
@@ -240,6 +259,7 @@ impl EnvelopeBuilder {
             source: self.source,
             cadence_hint: self.cadence_hint,
             encryption: self.encryption,
+            reply_to: self.reply_to,
         }
     }
 }
@@ -391,6 +411,53 @@ mod tests {
             back.encryption,
             Some(EncryptionScheme::X25519XChaCha20Poly1305)
         );
+    }
+
+    #[test]
+    fn envelope_omits_reply_to_when_root() {
+        let e = fixture();
+        assert!(e.reply_to.is_none());
+        let yaml = serde_yaml::to_string(&e).unwrap();
+        assert!(!yaml.contains("replyTo"));
+    }
+
+    #[test]
+    fn envelope_emits_reply_to_when_threaded() {
+        let parent = DocHash::from_bytes([0x42; 32]);
+        let e = Envelope::builder(rafa(), peer_to_marcelo())
+            .source("reply")
+            .reply_to(parent.clone())
+            .build();
+        let yaml = serde_yaml::to_string(&e).unwrap();
+        assert!(yaml.contains(&format!("replyTo: {parent}")));
+    }
+
+    #[test]
+    fn envelope_reply_to_yaml_roundtrip() {
+        let parent = DocHash::from_bytes([0xab; 32]);
+        let e = Envelope::builder(rafa(), peer_to_marcelo())
+            .source("reply")
+            .reply_to(parent.clone())
+            .build();
+        let yaml = serde_yaml::to_string(&e).unwrap();
+        let back: Envelope = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(e, back);
+        assert_eq!(back.reply_to, Some(parent));
+    }
+
+    #[test]
+    fn legacy_envelope_without_reply_to_reads_as_root() {
+        // Pre-threading envelope — no `replyTo` key. Must read with
+        // `reply_to: None` (i.e. as a root envelope).
+        let yaml = "$type: tech.equanimi.secretariat.envelope\n\
+                    from: did:web:rafa.equanimi.tech\n\
+                    to: did:web:marcelo.ballestiero.com\n\
+                    handle: inbox:default\n\
+                    depth: subtle\n\
+                    urgency: whenever\n\
+                    source: legacy-test\n";
+        let env: Envelope = serde_yaml::from_str(yaml).unwrap();
+        assert!(env.reply_to.is_none());
     }
 
     #[test]
