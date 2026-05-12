@@ -5,6 +5,7 @@ use chrono::Utc;
 use clap::Parser;
 
 use secretariat_core::application::{compose_envelope, ComposeRequest};
+use secretariat_core::infrastructure::queue_dir::AliasMap;
 use secretariat_core::domain::{
     Did, EnvelopeDepth, EnvelopeUrgency, QueueHandle, Recipient,
 };
@@ -107,7 +108,9 @@ pub fn run(args: Args) -> Result<()> {
         body: args.body,
     };
 
-    let path = compose_envelope(req, &paths.template, &paths.outbox, Utc::now())
+    let self_did = load_did(&paths)?;
+    let aliases = AliasMap::load(self_did, &paths).context("loading alias map")?;
+    let path = compose_envelope(req, &paths.template, &paths.root, &aliases, Utc::now())
         .context("composing envelope")?;
     println!("{}", path.display());
     Ok(())

@@ -76,10 +76,15 @@ pub async fn serve(paths: &KeyPaths, did: &Did, key: &SigningKey) -> Result<()> 
     // `tick_lock` with `run_tick` so it can't race the poll loop's
     // outbox drain. The poll loop stays as the safety net for missed
     // events (e.g. watcher restart during a write).
+    // v0.3 substrate: there's no single `paths.outbox` anymore — each
+    // queue carries its own `outbox/` subdir scattered across
+    // `<root>/<alias>/<namespace>/<segments>/`. Watching the
+    // substrate root covers them all; the watcher's filter (`.md`
+    // outside any `sent/` ancestor) keeps spurious events at bay.
     let watcher_key = key.clone();
     let watcher_paths = paths.clone();
     let outbox_handle = crate::outbox_watcher::spawn_watcher(
-        paths.outbox.clone(),
+        paths.root.clone(),
         crate::outbox_watcher::DEFAULT_DEBOUNCE,
         move || {
             let paths = watcher_paths.clone();

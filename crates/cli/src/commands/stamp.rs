@@ -130,19 +130,17 @@ fn try_send_now(
     paths: &KeyPaths,
     key: &ed25519_dalek::SigningKey,
 ) -> Result<Option<secretariat_core::application::SendOutcome>> {
-    // Only auto-deliver when the file lives under outbox/<recipient>/. Files
-    // stamped elsewhere (standalone attestations, draft repos) shouldn't be
-    // pushed to a relay.
+    // Only auto-deliver when the file lives directly inside any
+    // `outbox/` directory. The v0.3 substrate has one outbox per
+    // queue (`<root>/<alias>/<namespace>/<segments>/outbox/`); any
+    // file whose immediate parent is named `outbox` qualifies. Files
+    // stamped elsewhere (standalone attestations, draft repos) won't
+    // match and are quietly skipped.
     let parent = match stamped_path.parent() {
         Some(p) => p,
         None => return Ok(None),
     };
-    let outbox_canon = paths.outbox.canonicalize().ok();
-    let parent_canon = parent.canonicalize().ok();
-    let inside_outbox = match (outbox_canon.as_ref(), parent_canon.as_ref()) {
-        (Some(out), Some(par)) => par.starts_with(out) && par != out,
-        _ => false,
-    };
+    let inside_outbox = parent.file_name().and_then(|n| n.to_str()) == Some("outbox");
     if !inside_outbox {
         return Ok(None);
     }

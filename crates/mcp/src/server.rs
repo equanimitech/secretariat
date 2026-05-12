@@ -590,8 +590,19 @@ impl SecretariatServer {
             body,
         };
 
-        let path = compose_envelope(req, &self.paths.template, &self.paths.outbox, Utc::now())
-            .map_err(|e| invalid_request(format!("compose failed: {e}")))?;
+        let self_did = load_principal_did(&self.paths)?;
+        let aliases = secretariat_core::infrastructure::queue_dir::AliasMap::load(
+            self_did, &self.paths,
+        )
+        .map_err(|e| invalid_request(format!("loading alias map: {e}")))?;
+        let path = compose_envelope(
+            req,
+            &self.paths.template,
+            &self.paths.root,
+            &aliases,
+            Utc::now(),
+        )
+        .map_err(|e| invalid_request(format!("compose failed: {e}")))?;
 
         info!(file = %path.display(), "composed envelope via MCP");
 

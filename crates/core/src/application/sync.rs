@@ -317,8 +317,9 @@ enum ClaimDrainError {
 // 3. Drain outbox
 // ---------------------------------------------------------------------------
 
-/// Walk `~/.secretariat/outbox/<recipient-did>/*.md`, deliver every
-/// stamped draft via its peer's relay, move successes into `sent/`.
+/// Walk the substrate tree for every `<root>/<alias>/<namespace>/
+/// <segments>/outbox/*.md`, deliver every stamped draft via its peer's
+/// relay, move successes into the queue's `outbox/sent/` subdir.
 /// Unstamped drafts are skipped silently.
 ///
 /// Exposed for the daemon's FS-notify-driven outbox watcher (Slice 2) so
@@ -334,51 +335,94 @@ pub async fn drain_outbox(
 ) -> Result<(usize, Vec<String>), SyncError> {
     let mut sent = 0;
     let mut warnings = Vec::new();
-
-    if !paths.outbox.exists() {
-        return Ok((sent, warnings));
-    }
     let contacts = ContactBook::load(&paths.contacts)?;
+    walk_outboxes_recursive(&paths.root, &contacts, key, &mut sent, &mut warnings).await?;
+    Ok((sent, warnings))
+}
 
-    for entry in std::fs::read_dir(&paths.outbox).map_err(|e| SyncError::Io {
-        path: paths.outbox.clone(),
+/// Walk the substrate recursively, draining any `outbox/` directory we
+/// encounter. Skips:
+/// - The legacy `_unsorted/` fallback (not a queue).
+/// - The principal-level dotfiles + the `bin/`, `logs/`, `peers/`
+///   trees — none of those carry envelopes.
+/// - The `sent/` subdir under each `outbox/` — that's the daemon's
+///   own post-delivery target and re-draining it would loop.
+async fn walk_outboxes_recursive(
+    dir: &std::path::Path,
+    contacts: &ContactBook,
+    key: &SigningKey,
+    sent: &mut usize,
+    warnings: &mut Vec<String>,
+) -> Result<(), SyncError> {
+    if !dir.exists() {
+        return Ok(());
+    }
+    let entries = std::fs::read_dir(dir).map_err(|e| SyncError::Io {
+        path: dir.to_path_buf(),
         source: e,
-    })? {
+    })?;
+    for entry in entries {
         let entry = entry.map_err(|e| SyncError::Io {
-            path: paths.outbox.clone(),
+            path: dir.to_path_buf(),
             source: e,
         })?;
-        let recipient_dir = entry.path();
-        if !recipient_dir.is_dir() {
+        let path = entry.path();
+        if !path.is_dir() {
             continue;
         }
-        let sent_dir = recipient_dir.join("sent");
-
-        for inner in std::fs::read_dir(&recipient_dir).map_err(|e| SyncError::Io {
-            path: recipient_dir.clone(),
-            source: e,
-        })? {
-            let inner = match inner {
-                Ok(i) => i,
-                Err(e) => {
-                    warnings.push(format!(
-                        "{}: {e}",
-                        recipient_dir.display()
-                    ));
-                    continue;
-                }
-            };
-            let p = inner.path();
-            if !p.is_file() || p.extension().and_then(|x| x.to_str()) != Some("md") {
-                continue;
-            }
-            match send_stamped_envelope(&p, &contacts, key, &sent_dir).await {
-                Ok(_) => sent += 1,
-                // Unstamped drafts are normal — skip silently.
-                Err(SendError::NotStamped) => continue,
-                Err(e) => warnings.push(format!("{}: {e}", p.display())),
-            }
+        let name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("");
+        if name == "outbox" {
+            drain_one_outbox(&path, contacts, key, sent, warnings).await;
+        } else if !should_skip_for_drain(name) {
+            Box::pin(walk_outboxes_recursive(&path, contacts, key, sent, warnings)).await?;
         }
     }
-    Ok((sent, warnings))
+    Ok(())
+}
+
+async fn drain_one_outbox(
+    outbox: &std::path::Path,
+    contacts: &ContactBook,
+    key: &SigningKey,
+    sent: &mut usize,
+    warnings: &mut Vec<String>,
+) {
+    let sent_dir = outbox.join("sent");
+    let read = match std::fs::read_dir(outbox) {
+        Ok(r) => r,
+        Err(e) => {
+            warnings.push(format!("{}: {e}", outbox.display()));
+            return;
+        }
+    };
+    for inner in read {
+        let inner = match inner {
+            Ok(i) => i,
+            Err(e) => {
+                warnings.push(format!("{}: {e}", outbox.display()));
+                continue;
+            }
+        };
+        let p = inner.path();
+        if !p.is_file() || p.extension().and_then(|x| x.to_str()) != Some("md") {
+            continue;
+        }
+        match send_stamped_envelope(&p, contacts, key, &sent_dir).await {
+            Ok(_) => *sent += 1,
+            Err(SendError::NotStamped) => continue,
+            Err(e) => warnings.push(format!("{}: {e}", p.display())),
+        }
+    }
+}
+
+fn should_skip_for_drain(name: &str) -> bool {
+    name.starts_with('.')
+        || matches!(
+            name,
+            "_unsorted" | "_ciphertext" | "envelopes" | "deferred" | "archived" | "sent"
+                | "bin" | "logs" | "peers"
+        )
 }

@@ -1,9 +1,11 @@
-//! Use case: scaffold an AG-shaped envelope to the outbox.
+//! Use case: scaffold an AG-shaped envelope into a per-queue outbox.
 //!
 //! Reads the user's customizable template at `~/.secretariat/template.md`,
 //! prepends a `$envelope:` frontmatter block, and writes the result to
-//! `outbox/<sanitized-recipient>/<timestamp>.md`. No stamp is added — the
-//! principal stamps later via `sec stamp`.
+//! `<root>/<alias-of-to>/<namespace>/<segments>/outbox/<timestamp>.md` —
+//! one outbox per queue, derived from the recipient via the
+//! `queue_dir` resolver. No stamp is added — the principal stamps
+//! later via `sec stamp`.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -15,8 +17,8 @@ use thiserror::Error;
 use crate::domain::{
     Did, Envelope, EnvelopeBuilder, EnvelopeDepth, EnvelopeUrgency, Recipient,
 };
-use crate::infrastructure::did_web_resolver::sanitize_did_for_filename;
 use crate::infrastructure::markdown::{embed_stamp, MarkdownError};
+use crate::infrastructure::queue_dir::{outbox_dir, AliasMap};
 
 #[derive(Debug, Error)]
 pub enum ComposeError {
@@ -47,12 +49,12 @@ pub struct ComposeRequest {
 pub fn compose_envelope(
     request: ComposeRequest,
     template_path: &Path,
-    outbox_root: &Path,
+    root: &Path,
+    aliases: &AliasMap,
     now: DateTime<Utc>,
 ) -> Result<PathBuf, ComposeError> {
     let envelope = build_envelope(&request);
-    let recipient_dir_name = sanitize_did_for_filename(request.recipient.owner.as_str());
-    let target_dir = outbox_root.join(recipient_dir_name);
+    let target_dir = outbox_dir(aliases, &request.recipient, root);
     fs::create_dir_all(&target_dir).map_err(|e| ComposeError::Io {
         path: target_dir.clone(),
         source: e,
@@ -141,17 +143,27 @@ mod tests {
     use chrono::TimeZone;
     use tempfile::TempDir;
 
+    fn rafa_did() -> Did {
+        Did::parse("did:web:rafa.equanimi.tech").unwrap()
+    }
+
+    fn marcelo_did() -> Did {
+        Did::parse("did:web:marcelo.ballestiero.com").unwrap()
+    }
+
     #[test]
-    fn composes_to_named_recipient_dir() {
+    fn composes_to_peer_queue_outbox() {
         let dir = TempDir::new().unwrap();
         let template = dir.path().join("template.md");
         fs::write(&template, "# Title\n\nBody.\n").unwrap();
-        let outbox = dir.path().join("outbox");
+        let root = dir.path();
+        let mut aliases = AliasMap::new(rafa_did());
+        aliases.insert(marcelo_did(), "marcelo");
 
         let req = ComposeRequest {
-            from: Did::parse("did:web:rafa.equanimi.tech").unwrap(),
+            from: rafa_did(),
             recipient: Recipient::new(
-                Did::parse("did:web:marcelo.ballestiero.com").unwrap(),
+                marcelo_did(),
                 QueueHandle::parse("inbox:default").unwrap(),
             ),
             depth: EnvelopeDepth::Subtle,
@@ -162,13 +174,13 @@ mod tests {
         };
 
         let now = Utc.with_ymd_and_hms(2026, 4, 30, 14, 25, 0).unwrap();
-        let path = compose_envelope(req.clone(), &template, &outbox, now).unwrap();
+        let path = compose_envelope(req, &template, root, &aliases, now).unwrap();
 
-        assert!(path
-            .parent()
-            .unwrap()
-            .to_string_lossy()
-            .contains("did_web_marcelo.ballestiero.com"));
+        // Lives under <root>/marcelo/inbox/default/outbox/.
+        assert_eq!(
+            path.parent().unwrap(),
+            root.join("marcelo/inbox/default/outbox"),
+        );
         assert!(path
             .file_name()
             .unwrap()
@@ -182,20 +194,20 @@ mod tests {
     }
 
     #[test]
-    fn composes_self_letter_to_own_did_dir() {
-        // Self-addressed letter — owner == from. compose_envelope writes
-        // it to outbox/<sanitized_self_did>/. (Captures use
-        // capture_to_queue, which writes to queues/<ns>/<slug>/.)
+    fn composes_self_letter_under_self_alias() {
+        // Self-addressed envelope — owner == from. The resolver maps
+        // to `_self`, the handle's namespace + segments give the
+        // rest, and the file lands in that queue's `outbox/`.
         let dir = TempDir::new().unwrap();
         let template = dir.path().join("template.md");
         fs::write(&template, "# Self\n").unwrap();
-        let outbox = dir.path().join("outbox");
+        let root = dir.path();
+        let aliases = AliasMap::new(rafa_did());
 
-        let me = Did::parse("did:web:rafa.equanimi.tech").unwrap();
         let req = ComposeRequest {
-            from: me.clone(),
+            from: rafa_did(),
             recipient: Recipient::new(
-                me.clone(),
+                rafa_did(),
                 QueueHandle::parse("inbox:default").unwrap(),
             ),
             depth: EnvelopeDepth::Gross,
@@ -206,12 +218,11 @@ mod tests {
         };
 
         let now = Utc.with_ymd_and_hms(2026, 4, 30, 9, 0, 0).unwrap();
-        let path = compose_envelope(req, &template, &outbox, now).unwrap();
-        assert!(path
-            .parent()
-            .unwrap()
-            .to_string_lossy()
-            .contains("did_web_rafa.equanimi.tech"));
+        let path = compose_envelope(req, &template, root, &aliases, now).unwrap();
+        assert_eq!(
+            path.parent().unwrap(),
+            root.join("_self/inbox/default/outbox"),
+        );
     }
 
     #[test]
@@ -223,13 +234,13 @@ mod tests {
             "---\nfoo: bar\n---\n# After\nbody\n",
         )
         .unwrap();
-        let outbox = dir.path().join("outbox");
+        let root = dir.path();
+        let aliases = AliasMap::new(rafa_did());
 
-        let me = Did::parse("did:web:rafa.equanimi.tech").unwrap();
         let req = ComposeRequest {
-            from: me.clone(),
+            from: rafa_did(),
             recipient: Recipient::new(
-                me,
+                rafa_did(),
                 QueueHandle::parse("inbox:scratch").unwrap(),
             ),
             depth: EnvelopeDepth::Gross,
@@ -240,10 +251,9 @@ mod tests {
         };
 
         let now = Utc.with_ymd_and_hms(2026, 4, 30, 9, 0, 0).unwrap();
-        let path = compose_envelope(req, &template, &outbox, now).unwrap();
+        let path = compose_envelope(req, &template, root, &aliases, now).unwrap();
 
         let content = fs::read_to_string(&path).unwrap();
-        // The template's `foo: bar` frontmatter must NOT appear in the output.
         assert!(!content.contains("foo: bar"));
         assert!(content.contains("# After"));
         assert!(content.contains("$envelope:"));
