@@ -46,8 +46,12 @@
 //! address stays `(to-DID, handle)`.
 
 use crate::domain::{Did, Recipient};
+use crate::infrastructure::contact_store::{ContactBook, ContactStoreError};
+use crate::infrastructure::keys::KeyPaths;
+use crate::infrastructure::org_store::{list_org_dirs, OrgStoreError};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use thiserror::Error;
 
 /// Reserved alias for the principal's own DID.
 pub const SELF_ALIAS: &str = "_self";
@@ -78,6 +82,34 @@ impl AliasMap {
         self.by_did.insert(did.as_str().to_string(), alias.into());
     }
 
+    /// Build the alias map from the principal's contact book and org
+    /// directory. Contacts contribute `display_name.slug() → did`;
+    /// orgs contribute `OrgAlias.as_str() → did` (skipping orgs that
+    /// don't yet have a canonical DID, since those can't be wire-
+    /// addressed). Missing files are tolerated as empty — a fresh
+    /// install with no contacts/orgs still produces a valid (empty)
+    /// map.
+    pub fn load(self_did: Did, paths: &KeyPaths) -> Result<Self, AliasMapError> {
+        let mut map = Self::new(self_did);
+
+        if paths.contacts.exists() {
+            let book = ContactBook::load(&paths.contacts)?;
+            for contact in book.iter() {
+                map.insert(contact.did.clone(), contact.display_name.slug());
+            }
+        }
+
+        if paths.orgs_root.exists() {
+            for org in list_org_dirs(&paths.orgs_root)? {
+                if let Some(did) = org.did {
+                    map.insert(did, org.alias.as_str().to_string());
+                }
+            }
+        }
+
+        Ok(map)
+    }
+
     /// Resolve a DID to its on-disk alias. Self always returns
     /// `_self`; known peers/orgs return their registered alias;
     /// unknown DIDs get a sanitized fallback that's safe across
@@ -96,6 +128,14 @@ impl AliasMap {
 
 fn sanitize_did_fallback(did: &str) -> String {
     did.replace([':', '/'], "_")
+}
+
+#[derive(Debug, Error)]
+pub enum AliasMapError {
+    #[error("contact store: {0}")]
+    Contacts(#[from] ContactStoreError),
+    #[error("org store: {0}")]
+    Orgs(#[from] OrgStoreError),
 }
 
 /// Compute the on-disk queue directory for a `Recipient` under the

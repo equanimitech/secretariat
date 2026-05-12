@@ -33,6 +33,8 @@ use crate::application::{
 };
 use crate::infrastructure::contact_store::ContactBook;
 use crate::infrastructure::keys::KeyPaths;
+use crate::infrastructure::markdown::parse_document;
+use crate::infrastructure::queue_dir::{envelopes_dir, AliasMap, AliasMapError};
 use crate::infrastructure::transport::{
     ClaimedInviteWire, RelayClient, RelayClientError, RelayInbound, RelayState,
 };
@@ -46,6 +48,8 @@ pub enum SyncError {
     RelayStateIo(#[from] crate::infrastructure::transport::RelayStateError),
     #[error("contacts io: {0}")]
     ContactsIo(#[from] crate::infrastructure::contact_store::ContactStoreError),
+    #[error("alias map: {0}")]
+    AliasMap(#[from] AliasMapError),
     #[error("key/path setup: {0}")]
     Keys(#[from] crate::infrastructure::keys::KeyError),
     #[error("io error at {path}: {source}")]
@@ -90,6 +94,12 @@ pub async fn sync_now(
 
     let mut outcome = SyncOutcome::default();
 
+    // One alias map per sync cycle. Loading it once means a contact
+    // added partway through the cycle won't be reflected until next
+    // tick — fine, since the alternative (reload per envelope) would
+    // hit `contacts.json` n times for a one-second window of staleness.
+    let aliases = AliasMap::load(did.clone(), paths)?;
+
     let mut state = RelayState::load(&paths.relay_state)?;
     let endpoints: Vec<String> = state
         .iter()
@@ -104,7 +114,7 @@ pub async fn sync_now(
         };
 
         // 1. Poll inbound.
-        match poll_one_relay(&mut state, &endpoint, did, key, paths).await {
+        match poll_one_relay(&mut state, &endpoint, did, key, paths, &aliases).await {
             Ok(count) => report.inbound_count = count,
             Err(e) => report.warnings.push(format!("inbound poll: {e}")),
         }
@@ -139,6 +149,7 @@ async fn poll_one_relay(
     did: &Did,
     key: &SigningKey,
     paths: &KeyPaths,
+    aliases: &AliasMap,
 ) -> Result<usize, RelayClientError> {
     let client = RelayClient::new(endpoint, did.clone(), key);
 
@@ -152,7 +163,7 @@ async fn poll_one_relay(
     let inbound = client.poll(&token, cursor).await?;
     let mut max_id = cursor;
     for env in &inbound {
-        if let Err(e) = file_inbound(paths, env) {
+        if let Err(e) = file_inbound(paths, aliases, env) {
             // Soft failure on a single envelope shouldn't poison the cursor;
             // log via the returned RelayClientError variant the caller can
             // propagate.
@@ -190,7 +201,23 @@ async fn refresh_token_if_needed(
     Ok(())
 }
 
-fn file_inbound(paths: &KeyPaths, env: &RelayInbound) -> Result<(), std::io::Error> {
+/// Route one inbound envelope to its on-disk queue directory.
+///
+/// Reads `(to, handle)` out of the envelope's frontmatter (which is
+/// plaintext — only the body is sealed) and writes the file under
+/// `<root>/<alias-of-to>/<namespace>/<segments>/envelopes/YYYY/MM/DD/`.
+///
+/// Envelopes whose body can't be parsed as UTF-8 markdown, or that
+/// parse but have no `$envelope.recipient` (legacy peer letters from
+/// before the queues-as-primitive collapse), fall back to
+/// `<root>/_unsorted/`. The daemon never decrypts, so we only need
+/// the frontmatter to route — encrypted body bytes are preserved
+/// verbatim.
+fn file_inbound(
+    paths: &KeyPaths,
+    aliases: &AliasMap,
+    env: &RelayInbound,
+) -> Result<(), std::io::Error> {
     let sender_short = env
         .sender_did
         .as_ref()
@@ -198,7 +225,22 @@ fn file_inbound(paths: &KeyPaths, env: &RelayInbound) -> Result<(), std::io::Err
         .unwrap_or_else(|| "unknown".to_string());
     let timestamp = env.queued_at.format("%Y-%m-%dT%H-%M-%SZ");
     let filename = format!("{timestamp}-{sender_short}-id{:06}.md", env.id);
-    let path = paths.inbox.join(filename);
+
+    let body_str = std::str::from_utf8(&env.body).ok();
+    let recipient = body_str
+        .and_then(|s| parse_document(s).ok())
+        .and_then(|d| d.envelope.map(|e| e.recipient));
+
+    let target_dir = match recipient {
+        Some(r) => {
+            let base = envelopes_dir(aliases, &r, &paths.root);
+            base.join(env.queued_at.format("%Y/%m/%d").to_string())
+        }
+        None => paths.root.join("_unsorted"),
+    };
+
+    std::fs::create_dir_all(&target_dir)?;
+    let path = target_dir.join(filename);
     std::fs::write(&path, &env.body)
 }
 
