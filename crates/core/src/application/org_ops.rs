@@ -35,7 +35,7 @@ pub enum OrgOpsError {
 
 /// Create an org with the given metadata. Errors if an org with the
 /// same alias already exists at `orgs_root`. Auto-scaffolds a stub
-/// `<org-dir>/contract.md` at the org root (idempotent — hand-edits
+/// `<org-dir>/contract.local.md` at the org root (idempotent — hand-edits
 /// survive a re-run).
 pub fn create_org(
     orgs_root: &Path,
@@ -150,7 +150,7 @@ mod tests {
         let contract_path = crate::infrastructure::contract_store::org_contract_path(
             &crate::infrastructure::org_store::org_dir(&root, &a),
         );
-        assert!(contract_path.is_file(), "stub org contract.md should be written");
+        assert!(contract_path.is_file(), "stub org contract.local.md should be written");
         let (loaded, body) = crate::infrastructure::contract_store::load_contract(&contract_path)
             .unwrap()
             .unwrap();

@@ -1,6 +1,6 @@
 //! `ChannelContract` — per-principal consumption overrides for a channel.
 //!
-//! Per AGENTS.md rule #6: `<channel-dir>/contract.md` is **the
+//! Per AGENTS.md rule #6: `<channel-dir>/contract.local.md` is **the
 //! principal's private consumption contract for that channel** — how
 //! *they* approach it. Cadence they poll at, minimum trust they
 //! require before surfacing, depth/urgency filters, notify rules.
@@ -86,7 +86,7 @@ pub struct ChannelContract {
 
 impl ChannelContract {
     /// Empty contract — contributes nothing to a merge. Equivalent to
-    /// an empty-frontmatter `contract.md`.
+    /// an empty-frontmatter `contract.local.md`.
     pub fn empty() -> Self {
         Self::default()
     }

@@ -1,11 +1,19 @@
 //! Per-level **consumption** contract storage at
-//! `<channel-dir>/contract.md` (and the org-root variant at
-//! `<org-dir>/contract.md`).
+//! `<channel-dir>/contract.local.md` (and the org-root variant at
+//! `<org-dir>/contract.local.md`).
 //!
 //! These files are **private to the subscriber**: how *they* approach
 //! the channel/org, not what the channel demands of its members. Never
-//! sent on wire. See [`crate::domain::ChannelContract`] for the
-//! consumption-vs-governance split.
+//! sent on wire. Never committed to a shared substrate. The `.local`
+//! suffix mirrors the Claude Code convention (`CLAUDE.md` shared vs
+//! `CLAUDE.local.md` private) so visibility is explicit in the
+//! filename.
+//!
+//! See [`crate::domain::ChannelContract`] for the consumption-vs-
+//! governance split. Bare `contract.md` (without `.local`) is reserved
+//! for the future **governance** artifact — roster, channel-wide
+//! artifact policy, shared with all subscribers; eventually a signed
+//! envelope.
 //!
 //! On-disk shape: markdown file with YAML frontmatter:
 //!
@@ -36,7 +44,13 @@ use crate::domain::{ChannelContract, QueueHandle, TrustGate};
 
 use super::channel_def_store::channel_dir;
 
-pub const CONTRACT_FILENAME: &str = "contract.md";
+/// On-disk filename for the **private consumption** contract.
+///
+/// Suffix `.local` mirrors the Claude Code convention
+/// (`CLAUDE.md` shared vs `CLAUDE.local.md` private). The bare
+/// `contract.md` filename is reserved for the future **governance**
+/// artifact — shared with the roster, eventually a signed envelope.
+pub const CONTRACT_FILENAME: &str = "contract.local.md";
 
 /// On-disk `$type` discriminator. Mirrors the lexicon name even though
 /// v0.3 does not yet drive runtime validation against the schema.
@@ -82,7 +96,7 @@ pub fn org_contract_path(org_dir: &Path) -> PathBuf {
     org_dir.join(CONTRACT_FILENAME)
 }
 
-/// Write a `contract.md`. The parent directory must already exist.
+/// Write a `contract.local.md`. The parent directory must already exist.
 /// When `overwrite` is false and the file is present, returns
 /// `AlreadyExists` — the create-channel auto-scaffold relies on this
 /// being non-destructive.
@@ -100,7 +114,7 @@ pub fn save_contract(
         message: e,
     })?;
     let rendered = format!("---\n{yaml}---\n{body}");
-    let tmp = path.with_extension("md.tmp");
+    let tmp = path.with_extension("local.md.tmp");
     std::fs::write(&tmp, rendered.as_bytes()).map_err(|e| ContractStoreError::Io {
         path: tmp.clone(),
         source: e,
@@ -112,7 +126,7 @@ pub fn save_contract(
     Ok(())
 }
 
-/// Write the stub `contract.md` that ships with a freshly-created
+/// Write the stub `contract.local.md` that ships with a freshly-created
 /// channel: empty frontmatter (no overrides) + a short explanatory
 /// body. No-op if the file already exists — auto-scaffold is
 /// idempotent across repeated `create_channel` calls so we never
@@ -226,7 +240,7 @@ mod tests {
     #[test]
     fn stub_round_trips_as_empty_contract() {
         let dir = TempDir::new().unwrap();
-        let path = dir.path().join("contract.md");
+        let path = dir.path().join(CONTRACT_FILENAME);
         let written = save_stub_if_absent(&path).unwrap();
         assert!(written);
         let (loaded, body) = load_contract(&path).unwrap().unwrap();
@@ -237,7 +251,7 @@ mod tests {
     #[test]
     fn stub_is_idempotent_no_overwrite() {
         let dir = TempDir::new().unwrap();
-        let path = dir.path().join("contract.md");
+        let path = dir.path().join(CONTRACT_FILENAME);
         assert!(save_stub_if_absent(&path).unwrap());
         // Hand-edit between calls — second save_stub must not clobber.
         std::fs::write(&path, "---\ncadence_floor_minutes: 30\n---\nhand-edited\n").unwrap();
@@ -251,7 +265,7 @@ mod tests {
     #[test]
     fn round_trips_full_contract() {
         let dir = TempDir::new().unwrap();
-        let path = dir.path().join("contract.md");
+        let path = dir.path().join(CONTRACT_FILENAME);
         let c = ChannelContract {
             cadence_floor_minutes: Some(15),
             min_trust: Some(TrustGate::StampRequired),
@@ -265,7 +279,7 @@ mod tests {
     #[test]
     fn refuses_to_overwrite_unless_explicit() {
         let dir = TempDir::new().unwrap();
-        let path = dir.path().join("contract.md");
+        let path = dir.path().join(CONTRACT_FILENAME);
         save_contract(&path, &ChannelContract::empty(), "body\n", false).unwrap();
         let err = save_contract(&path, &ChannelContract::empty(), "body\n", false);
         assert!(matches!(err, Err(ContractStoreError::AlreadyExists(_))));
@@ -276,7 +290,7 @@ mod tests {
     #[test]
     fn unknown_min_trust_errors() {
         let dir = TempDir::new().unwrap();
-        let path = dir.path().join("contract.md");
+        let path = dir.path().join(CONTRACT_FILENAME);
         std::fs::write(&path, "---\nmin_trust: wide-open\n---\n").unwrap();
         let r = load_contract(&path);
         assert!(matches!(r, Err(ContractStoreError::UnknownTrustGate { .. })));
@@ -289,7 +303,7 @@ mod tests {
         // `inherit_from_parent`). These belong to governance, not
         // consumption — we just ignore them rather than failing the load.
         let dir = TempDir::new().unwrap();
-        let path = dir.path().join("contract.md");
+        let path = dir.path().join(CONTRACT_FILENAME);
         std::fs::write(
             &path,
             "---\nroster:\n  - did:web:rafa.equanimi.tech\ninherit_from_parent: true\ncadence_floor_minutes: 30\n---\n",
@@ -303,14 +317,14 @@ mod tests {
     #[test]
     fn missing_file_loads_as_none() {
         let dir = TempDir::new().unwrap();
-        let path = dir.path().join("contract.md");
+        let path = dir.path().join(CONTRACT_FILENAME);
         assert!(load_contract(&path).unwrap().is_none());
     }
 
     #[test]
     fn missing_frontmatter_delimiters_error() {
         let dir = TempDir::new().unwrap();
-        let path = dir.path().join("contract.md");
+        let path = dir.path().join(CONTRACT_FILENAME);
         std::fs::write(&path, "no frontmatter at all\n").unwrap();
         let r = load_contract(&path);
         assert!(matches!(r, Err(ContractStoreError::MalformedFrontmatter { .. })));

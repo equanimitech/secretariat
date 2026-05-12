@@ -3,6 +3,7 @@
 pub mod capture_ops;
 pub mod channels_ops;
 pub mod compose_envelope;
+pub mod contract_ops;
 pub mod org_ops;
 pub mod contact_ops;
 pub mod contextify_capture;
@@ -24,6 +25,10 @@ pub use channels_ops::{
 };
 pub use org_ops::{create_org, delete_org, list_orgs, show_org, OrgOpsError};
 pub use compose_envelope::{compose_envelope, ComposeError, ComposeRequest};
+pub use contract_ops::{
+    get_channel_contract, get_org_contract, set_channel_contract, set_org_contract,
+    ContractOpsError, ContractPatch, ContractView, PatchField,
+};
 pub use contact_ops::{
     add_contact, find_by_did, find_by_slug, list_contacts, remove_contact, ContactOpError,
 };

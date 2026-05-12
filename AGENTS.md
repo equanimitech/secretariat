@@ -108,11 +108,23 @@ These are non-negotiable. They override the template's defaults where they confl
 6. **Respect attention envelopes and per-channel consumption contracts.**
    `~/.secretariat/attention-envelope.md` declares the principal's global
    bounds (depths, urgencies, cadence). Per-channel
-   `<channel-dir>/contract.md` files declare per-channel overrides (cadence,
-   depth, notify, filter). Per-channel overrides win for traffic in that
-   channel. Queue to a local outbox rather than surfacing inline if the
-   bid would violate cadence. The protocol detects bound violations;
-   Claude pre-empts them.
+   `<channel-dir>/contract.local.md` files declare per-channel overrides
+   (cadence, depth, notify, filter); a parallel org-root file at
+   `<org-dir>/contract.local.md` carries org-wide overrides that
+   accumulate down the channel tree. Per-channel overrides win for
+   traffic in that channel. Queue to a local outbox rather than surfacing
+   inline if the bid would violate cadence. The protocol detects bound
+   violations; Claude pre-empts them.
+
+   The `.local` suffix is load-bearing: these files are **private to
+   the subscriber** — receiver-side preferences/filters, never sent on
+   wire, never shared with the roster, ignored by any future `git`
+   backup of `~/.secretariat/`. The bare `contract.md` filename
+   (without `.local`) is reserved for the future **channel governance**
+   artifact — roster, channel-wide artifact policy ("this channel only
+   carries stamped envelopes"), shared with all roster members,
+   eventually a signed envelope. Don't conflate the two; the file
+   extension carries the visibility contract.
 
 7. **Place drafts in the queue's local `outbox/` directory.** For channel
    posts: `<channel-dir>/outbox/`. For direct messages (queue owned by a

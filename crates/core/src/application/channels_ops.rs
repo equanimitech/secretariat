@@ -298,11 +298,11 @@ fn read_one(path: &Path) -> Result<ChannelEnvelope, ChannelOpError> {
 
 /// Create a channel by writing its `.channelDef` metadata file,
 /// pre-creating the `envelopes/` directory, and auto-scaffolding a
-/// stub `contract.md` (empty frontmatter — no overrides, inherit
+/// stub `contract.local.md` (empty frontmatter — no overrides, inherit
 /// from ancestors). Errors if the channel already has a `.channelDef`.
 /// `handle` must start with `channel:`.
 ///
-/// The contract-stub write is idempotent: if a `contract.md` already
+/// The contract-stub write is idempotent: if a `contract.local.md` already
 /// exists at the path (e.g. left from a previous incarnation of the
 /// channel before delete + recreate, or hand-placed by the principal),
 /// we leave it alone. Auto-scaffold never silently clobbers.
@@ -521,7 +521,7 @@ mod tests {
         create_channel(&channels, h.clone(), "Dev — Secretariat", "", when).unwrap();
         let contract_path =
             crate::infrastructure::contract_store::channel_contract_path(&channels, &h);
-        assert!(contract_path.is_file(), "stub contract.md should be written");
+        assert!(contract_path.is_file(), "stub contract.local.md should be written");
         let (loaded, body) = crate::infrastructure::contract_store::load_contract(&contract_path)
             .unwrap()
             .unwrap();
