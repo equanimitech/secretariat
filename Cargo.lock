@@ -5033,6 +5033,7 @@ dependencies = [
  "rmcp",
  "schemars 1.2.1",
  "secretariat-core",
+ "secretariat-daemon",
  "serde",
  "serde_json",
  "thiserror 1.0.69",

@@ -114,6 +114,29 @@ async fn fallback_runs_in_proc_when_no_daemon() {
         .expect("in-proc fallback should succeed against an empty install");
 }
 
+/// A stale socket file (file at `socket_path` that nothing is listening
+/// on — e.g. a previous daemon crashed without cleaning up) must not
+/// block startup. The server should detect the file is dead via
+/// connect-probe and recreate it. Exercises the cleanup branch of the
+/// startup logic.
+#[tokio::test]
+async fn stale_socket_file_is_reclaimed() {
+    let (_tmp, paths, did, key) = fixture(0x88);
+
+    // Plant a stale file at the socket path. A bare file, not a real
+    // socket — exactly the residue a crashed daemon leaves behind.
+    std::fs::write(socket_path(&paths), b"stale residue").unwrap();
+    assert!(socket_path(&paths).exists());
+
+    let _handle = spawn_server(paths.clone(), did, key);
+    wait_for_socket(&paths).await;
+
+    // The server must have detected the stale file, unlinked it, and
+    // bound a real listener. A round-trip ping proves it's live.
+    let res = call(&paths, "ping", None).await.expect("ping after stale");
+    assert_eq!(res, serde_json::json!({ "ok": true }));
+}
+
 /// Malformed JSON on the wire must produce a structured `-32700` error
 /// response, not a closed connection. Protects the parse-error handling
 /// path that the accept loop otherwise only surfaces via `warn!`.

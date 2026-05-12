@@ -12,6 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 secretariat-core = { path = "../core" }
+secretariat-daemon = { path = "../daemon" }
 
 anyhow.workspace = true
 serde.workspace = true
