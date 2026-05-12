@@ -14,6 +14,7 @@ pub mod keys;
 pub mod markdown;
 pub mod org_store;
 pub mod profile_store;
+pub mod queue_dir;
 #[cfg(target_os = "macos")]
 pub mod touchid;
 pub mod transport;
@@ -35,5 +36,8 @@ pub use org_store::{
     org_metadata_path, save_org, OrgStoreError, ORG_METADATA_FILENAME,
 };
 pub use profile_store::{load_profile, save_profile, PrincipalProfile, ProfileStoreError};
+pub use queue_dir::{
+    ciphertext_dir, envelopes_dir, outbox_dir, queue_dir, AliasMap, SELF_ALIAS,
+};
 #[cfg(target_os = "macos")]
 pub use touchid::TouchIdGate;
