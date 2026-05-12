@@ -871,7 +871,7 @@ impl SecretariatServer {
         Parameters(params): Parameters<InboxActionParams>,
     ) -> Result<Json<InboxActionOutput>, ErrorData> {
         let path = PathBuf::from(&params.file_path);
-        let moved = archive_envelope(&path, &self.paths.inbox)
+        let moved = archive_envelope(&path)
             .map_err(|e| invalid_request(format!("archive failed: {e}")))?;
         info!(file = %path.display(), to = %moved.display(), "archived envelope via MCP");
         Ok(Json(InboxActionOutput {
@@ -1447,12 +1447,12 @@ impl ServerHandler for SecretariatServer {
             RESOURCE_CONTACTS_URI => render_contacts(&self.paths.contacts)?,
             RESOURCE_INBOX_URI => render_envelope_listing(
                 "Inbox",
-                list_inbox_files(&self.paths.inbox)
+                list_inbox_files(&self.paths.root)
                     .map_err(|e| internal_error(format!("list_inbox: {e}")))?,
             ),
             RESOURCE_OUTBOX_URI => render_envelope_listing(
                 "Outbox",
-                list_outbox_files(&self.paths.outbox)
+                list_outbox_files(&self.paths.root)
                     .map_err(|e| internal_error(format!("list_outbox: {e}")))?,
             ),
             other => {

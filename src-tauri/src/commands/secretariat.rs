@@ -256,27 +256,29 @@ impl From<secretariat_core::application::ListedEnvelope> for EnvelopeListing {
     }
 }
 
-/// List received envelopes (`~/.secretariat/inbox/`).
+/// List received envelopes — walks the v0.3 substrate tree under
+/// `~/.secretariat/` for every `envelopes/` directory and collects
+/// the `.md` leaves.
 #[tauri::command]
 #[specta::specta]
 pub async fn list_inbox() -> Result<Vec<EnvelopeListing>, String> {
     let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
-    let listed = list_inbox_files(&paths.inbox).map_err(|e| format!("list_inbox: {e}"))?;
+    let listed = list_inbox_files(&paths.root).map_err(|e| format!("list_inbox: {e}"))?;
     Ok(listed.into_iter().map(EnvelopeListing::from).collect())
 }
 
-/// List the principal's review queue — every unstamped envelope
-/// addressed to a queue, peer or local. Substrate v0.3 (queues-as-
-/// primitive) unions `outbox/<peer>/*.md` (peer letters waiting to be
-/// stamped) with `queues/<ns>/<slug>/*.md` (local captures: ideas,
-/// journal, future-self notes). Both `to` and `queue` are populated
-/// on every entry — discriminate local vs peer by comparing `to` to
-/// the principal's own DID.
+/// List the principal's review queue — unstamped outbox drafts plus
+/// every envelope on disk. Substrate v0.3 (namespace-symmetric
+/// queues) unions per-queue `outbox/*.md` (drafts awaiting a stamp)
+/// with per-queue `envelopes/*.md` (received letters + local
+/// captures) under one substrate root. Both `to` and `queue` are
+/// populated on every entry — discriminate local vs peer by
+/// comparing `to` to the principal's own DID.
 #[tauri::command]
 #[specta::specta]
 pub async fn list_review_queue() -> Result<Vec<EnvelopeListing>, String> {
     let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
-    let listed = core_list_review_queue(&paths.outbox, &paths.queues)
+    let listed = core_list_review_queue(&paths.root)
         .map_err(|e| format!("list_review_queue: {e}"))?;
     Ok(listed.into_iter().map(EnvelopeListing::from).collect())
 }
@@ -380,9 +382,9 @@ pub async fn sync_now() -> Result<SyncReport, String> {
 #[tauri::command]
 #[specta::specta]
 pub async fn defer_inbox_envelope(file_path: String) -> Result<String, String> {
-    let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
+    let _paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
     let p = std::path::PathBuf::from(file_path);
-    let dest = core_defer_envelope(&p, &paths.inbox)
+    let dest = core_defer_envelope(&p)
         .map_err(|e| format!("defer_envelope: {e}"))?;
     Ok(dest.display().to_string())
 }
@@ -392,9 +394,9 @@ pub async fn defer_inbox_envelope(file_path: String) -> Result<String, String> {
 #[tauri::command]
 #[specta::specta]
 pub async fn archive_inbox_envelope(file_path: String) -> Result<String, String> {
-    let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
+    let _paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
     let p = std::path::PathBuf::from(file_path);
-    let dest = core_archive_envelope(&p, &paths.inbox)
+    let dest = core_archive_envelope(&p)
         .map_err(|e| format!("archive_envelope: {e}"))?;
     Ok(dest.display().to_string())
 }

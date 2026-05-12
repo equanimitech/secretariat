@@ -1,12 +1,13 @@
 //! Use cases for triaging an inbox envelope during a review session.
 //!
-//! Three actions move the file out of the active inbox; one (reply) is
-//! handled outside this module (composer creates a new outbox draft).
+//! Two actions move the file out of the active envelopes/ tree but
+//! keep it on disk for history. Both infer the *queue directory*
+//! (the parent of `envelopes/`) by walking up the file path, then
+//! move the file to `<queue-dir>/deferred/` or `<queue-dir>/archived/`.
 //!
-//! - **Defer** (remind me later) — move to `inbox/deferred/`. Future bubble-up
-//!   logic surfaces these back; v1 just stages them out of the way.
-//! - **Archive** (ignore / handled) — move to `inbox/archived/`. Out of the
-//!   active queue, kept on disk for history.
+//! - **Defer** (remind me later) — move to `<queue-dir>/deferred/`. Future
+//!   bubble-up logic surfaces these back; v1 just stages them out of the way.
+//! - **Archive** (ignore / handled) — move to `<queue-dir>/archived/`.
 //!
 //! See `docs/ideas/two-buttons-cadenced-reviews.md` and
 //! `docs/ideas/bubble-up-like-hey.md` for design context.
@@ -23,29 +24,46 @@ pub enum InboxActionError {
         #[source]
         source: std::io::Error,
     },
-    #[error("not an inbox file: {path}")]
-    NotInInbox { path: PathBuf },
+    #[error("not an envelope under any queue: {path}")]
+    NotInQueue { path: PathBuf },
     #[error("envelope file not found: {path}")]
     NotFound { path: PathBuf },
 }
 
-/// Move an envelope out of the active inbox into the deferred subfolder.
-/// Idempotent against the destination — if a file with the same name
-/// already exists in `deferred/`, the existing one is overwritten (the
-/// principal is re-deferring, that's fine).
-pub fn defer_envelope(file_path: &Path, inbox_root: &Path) -> Result<PathBuf, InboxActionError> {
-    move_into_subdir(file_path, inbox_root, "deferred")
+/// Move an envelope from `<queue-dir>/envelopes/.../<file>.md` into
+/// `<queue-dir>/deferred/<file>.md`. Idempotent against the
+/// destination — re-deferring overwrites a previous deferred file
+/// with the same basename.
+pub fn defer_envelope(file_path: &Path) -> Result<PathBuf, InboxActionError> {
+    move_into_queue_subdir(file_path, "deferred")
 }
 
-/// Move an envelope out of the active inbox into the archived subfolder.
-/// Same idempotency semantics as `defer_envelope`.
-pub fn archive_envelope(file_path: &Path, inbox_root: &Path) -> Result<PathBuf, InboxActionError> {
-    move_into_subdir(file_path, inbox_root, "archived")
+/// Move an envelope from `<queue-dir>/envelopes/.../<file>.md` into
+/// `<queue-dir>/archived/<file>.md`. Same idempotency as `defer_envelope`.
+pub fn archive_envelope(file_path: &Path) -> Result<PathBuf, InboxActionError> {
+    move_into_queue_subdir(file_path, "archived")
 }
 
-fn move_into_subdir(
+/// Walk up the path looking for an ancestor named `envelopes`; the
+/// parent of that ancestor is the queue directory. Returns
+/// `NotInQueue` if the file isn't under an `envelopes/` subtree.
+fn find_queue_dir(file_path: &Path) -> Result<PathBuf, InboxActionError> {
+    let mut current = file_path.parent();
+    while let Some(p) = current {
+        if p.file_name().and_then(|n| n.to_str()) == Some("envelopes") {
+            if let Some(q) = p.parent() {
+                return Ok(q.to_path_buf());
+            }
+        }
+        current = p.parent();
+    }
+    Err(InboxActionError::NotInQueue {
+        path: file_path.to_path_buf(),
+    })
+}
+
+fn move_into_queue_subdir(
     file_path: &Path,
-    inbox_root: &Path,
     subdir_name: &str,
 ) -> Result<PathBuf, InboxActionError> {
     if !file_path.exists() {
@@ -53,35 +71,15 @@ fn move_into_subdir(
             path: file_path.to_path_buf(),
         });
     }
-
-    // The file must live directly under `inbox_root` (not already in a subdir).
-    let parent = file_path
-        .parent()
-        .ok_or_else(|| InboxActionError::NotInInbox {
-            path: file_path.to_path_buf(),
-        })?;
-    let parent_canon = parent.canonicalize().map_err(|e| InboxActionError::Io {
-        path: parent.to_path_buf(),
-        source: e,
-    })?;
-    let inbox_canon = inbox_root.canonicalize().map_err(|e| InboxActionError::Io {
-        path: inbox_root.to_path_buf(),
-        source: e,
-    })?;
-    if parent_canon != inbox_canon {
-        return Err(InboxActionError::NotInInbox {
-            path: file_path.to_path_buf(),
-        });
-    }
-
-    let dest_dir = inbox_root.join(subdir_name);
+    let queue_dir = find_queue_dir(file_path)?;
+    let dest_dir = queue_dir.join(subdir_name);
     std::fs::create_dir_all(&dest_dir).map_err(|e| InboxActionError::Io {
         path: dest_dir.clone(),
         source: e,
     })?;
     let file_name = file_path
         .file_name()
-        .ok_or_else(|| InboxActionError::NotInInbox {
+        .ok_or_else(|| InboxActionError::NotInQueue {
             path: file_path.to_path_buf(),
         })?;
     let dest = dest_dir.join(file_name);
@@ -106,51 +104,52 @@ mod tests {
     }
 
     #[test]
-    fn defer_moves_file_to_deferred_subdir() {
+    fn defer_moves_file_to_queue_deferred_subdir() {
         let dir = TempDir::new().unwrap();
-        let inbox = dir.path().join("inbox");
-        fs::create_dir_all(&inbox).unwrap();
-        let envelope = write_envelope(&inbox, "test.md");
+        let queue = dir.path().join("_self/inbox/default");
+        let active = queue.join("envelopes/2026/05/12");
+        fs::create_dir_all(&active).unwrap();
+        let envelope = write_envelope(&active, "test.md");
 
-        let dest = defer_envelope(&envelope, &inbox).unwrap();
+        let dest = defer_envelope(&envelope).unwrap();
         assert!(!envelope.exists());
         assert!(dest.exists());
-        assert!(dest.starts_with(inbox.join("deferred")));
+        assert!(dest.starts_with(queue.join("deferred")));
     }
 
     #[test]
-    fn archive_moves_file_to_archived_subdir() {
+    fn archive_moves_file_to_queue_archived_subdir() {
         let dir = TempDir::new().unwrap();
-        let inbox = dir.path().join("inbox");
-        fs::create_dir_all(&inbox).unwrap();
-        let envelope = write_envelope(&inbox, "test.md");
+        let queue = dir.path().join("_self/inbox/default");
+        let active = queue.join("envelopes/2026/05/12");
+        fs::create_dir_all(&active).unwrap();
+        let envelope = write_envelope(&active, "test.md");
 
-        let dest = archive_envelope(&envelope, &inbox).unwrap();
+        let dest = archive_envelope(&envelope).unwrap();
         assert!(!envelope.exists());
         assert!(dest.exists());
-        assert!(dest.starts_with(inbox.join("archived")));
+        assert!(dest.starts_with(queue.join("archived")));
     }
 
     #[test]
-    fn rejects_files_already_in_subdir() {
+    fn rejects_files_not_under_any_envelopes_dir() {
         let dir = TempDir::new().unwrap();
-        let inbox = dir.path().join("inbox");
-        let deferred = inbox.join("deferred");
-        fs::create_dir_all(&deferred).unwrap();
-        let envelope = write_envelope(&deferred, "already.md");
+        let stray = dir.path().join("stray-dir");
+        fs::create_dir_all(&stray).unwrap();
+        let envelope = write_envelope(&stray, "loose.md");
 
-        let err = defer_envelope(&envelope, &inbox).unwrap_err();
-        assert!(matches!(err, InboxActionError::NotInInbox { .. }));
+        let err = defer_envelope(&envelope).unwrap_err();
+        assert!(matches!(err, InboxActionError::NotInQueue { .. }));
     }
 
     #[test]
     fn rejects_missing_files() {
         let dir = TempDir::new().unwrap();
-        let inbox = dir.path().join("inbox");
-        fs::create_dir_all(&inbox).unwrap();
-        let phantom = inbox.join("phantom.md");
+        let phantom = dir
+            .path()
+            .join("_self/inbox/default/envelopes/2026/05/12/phantom.md");
 
-        let err = archive_envelope(&phantom, &inbox).unwrap_err();
+        let err = archive_envelope(&phantom).unwrap_err();
         assert!(matches!(err, InboxActionError::NotFound { .. }));
     }
 }

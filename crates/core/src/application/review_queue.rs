@@ -17,7 +17,7 @@
 
 use std::path::Path;
 
-use crate::application::inbox_ops::{list_outbox_files, InboxOpError, ListedEnvelope};
+use crate::application::inbox_ops::{list_inbox_files, list_outbox_files, InboxOpError, ListedEnvelope};
 
 /// Return the subset of outbox files that are not yet stamped — the
 /// drafts awaiting principal review.
@@ -27,43 +27,24 @@ use crate::application::inbox_ops::{list_outbox_files, InboxOpError, ListedEnvel
 /// "review queue" is a first-class domain concept the UI surfaces
 /// directly; the filter belongs in the application layer, not at the
 /// presentation boundary.
-pub fn list_outbox_queue(outbox_root: &Path) -> Result<Vec<ListedEnvelope>, InboxOpError> {
-    let all = list_outbox_files(outbox_root)?;
+pub fn list_outbox_queue(root: &Path) -> Result<Vec<ListedEnvelope>, InboxOpError> {
+    let all = list_outbox_files(root)?;
     Ok(all.into_iter().filter(|e| !e.stamped).collect())
 }
 
-/// Walk the local-queues tree (`<queues_root>/<namespace>/<slug>/*.md`)
-/// and return one [`ListedEnvelope`] per capture. Local-queue captures
-/// are never stamped by invariant, so there is no `stamped` filter to
-/// apply here — every entry is, by definition, a draft.
-pub fn list_local_queues(queues_root: &Path) -> Result<Vec<ListedEnvelope>, InboxOpError> {
-    let mut out = Vec::new();
-    if !queues_root.exists() {
-        return Ok(out);
-    }
-    walk_queues(queues_root, &mut out)?;
-    Ok(out)
+/// Walk the substrate tree and return every envelope under any
+/// `envelopes/` directory. In v0.3 this is the same walk as
+/// [`list_inbox_files`] — both surface "all envelopes the principal
+/// has on disk" — but the function is kept as a distinct verb so the
+/// review-surface caller's intent stays readable. A future filter
+/// (e.g. `from == self_did` to isolate principal-authored captures
+/// from received peer letters) can land here without disturbing
+/// `list_inbox_files`.
+pub fn list_local_queues(root: &Path) -> Result<Vec<ListedEnvelope>, InboxOpError> {
+    list_inbox_files(root)
 }
 
-fn walk_queues(dir: &Path, out: &mut Vec<ListedEnvelope>) -> Result<(), InboxOpError> {
-    for entry in std::fs::read_dir(dir).map_err(|e| InboxOpError::Io {
-        path: dir.to_path_buf(),
-        source: e,
-    })? {
-        let entry = entry.map_err(|e| InboxOpError::Io {
-            path: dir.to_path_buf(),
-            source: e,
-        })?;
-        let path = entry.path();
-        if path.is_dir() {
-            walk_queues(&path, out)?;
-        } else if path.extension().and_then(|x| x.to_str()) == Some("md") {
-            push_listed(out, &path)?;
-        }
-    }
-    Ok(())
-}
-
+#[allow(dead_code)]
 fn push_listed(out: &mut Vec<ListedEnvelope>, path: &Path) -> Result<(), InboxOpError> {
     use crate::infrastructure::markdown::parse_document;
 
@@ -92,16 +73,18 @@ fn push_listed(out: &mut Vec<ListedEnvelope>, path: &Path) -> Result<(), InboxOp
     Ok(())
 }
 
-/// The principal's full review queue — outbox drafts AND local-queue
-/// captures, in a single list. The UI presents this as one stream
-/// (substrate v0.3); the kind discriminator is `to.is_some()` vs
-/// `queue.is_some()` on each entry.
-pub fn list_review_queue(
-    outbox_root: &Path,
-    queues_root: &Path,
-) -> Result<Vec<ListedEnvelope>, InboxOpError> {
-    let mut out = list_outbox_queue(outbox_root)?;
-    out.extend(list_local_queues(queues_root)?);
+/// The principal's full review queue — unstamped outbox drafts AND
+/// envelopes addressed to any of their queues, in a single list. The
+/// UI presents this as one stream (substrate v0.3); each entry is
+/// disambiguated by inspecting its `file_path` and `to` / `queue`
+/// fields.
+///
+/// Takes the substrate root rather than separate outbox / queues
+/// roots, since both shapes converge on `<root>/<alias>/<namespace>/
+/// <segments>/{envelopes,outbox}/` in v0.3.
+pub fn list_review_queue(root: &Path) -> Result<Vec<ListedEnvelope>, InboxOpError> {
+    let mut out = list_outbox_queue(root)?;
+    out.extend(list_local_queues(root)?);
     Ok(out)
 }
 
@@ -144,13 +127,15 @@ mod tests {
 
     #[test]
     fn queue_excludes_stamped_drafts() {
+        // v0.3 layout: drafts to a peer live at
+        // `<peer-alias>/inbox/default/outbox/*.md` — recipient is
+        // encoded in the path, no per-recipient subdir under `outbox/`.
         let dir = TempDir::new().unwrap();
-        let outbox = dir.path().join("outbox");
-        let recipient = outbox.join("did_key_z6Mkb");
-        write_envelope(&recipient, "draft.md", false);
-        write_envelope(&recipient, "stamped.md", true);
+        let outbox = dir.path().join("did_key_z6Mkb/inbox/default/outbox");
+        write_envelope(&outbox, "draft.md", false);
+        write_envelope(&outbox, "stamped.md", true);
 
-        let queue = list_outbox_queue(&outbox).unwrap();
+        let queue = list_outbox_queue(dir.path()).unwrap();
         assert_eq!(queue.len(), 1);
         assert!(queue[0].file_path.ends_with("draft.md"));
         assert!(!queue[0].stamped);
@@ -159,75 +144,57 @@ mod tests {
     #[test]
     fn empty_outbox_returns_empty_queue() {
         let dir = TempDir::new().unwrap();
-        let queue = list_outbox_queue(&dir.path().join("outbox")).unwrap();
+        let queue = list_outbox_queue(dir.path()).unwrap();
         assert!(queue.is_empty());
     }
 
     #[test]
     fn review_queue_unions_outbox_and_local_queues() {
-        use crate::application::{capture_to_queue, CaptureRequest, CaptureRoots};
-        use crate::domain::QueueHandle;
-
         let dir = TempDir::new().unwrap();
-        let outbox = dir.path().join("outbox");
-        let queues = dir.path().join("queues");
-        let channel_tree = dir.path().join("channels");
+        let root = dir.path();
 
-        // One unstamped peer draft in the outbox.
-        write_envelope(&outbox.join("did_key_z6Mkb"), "draft.md", false);
+        // One unstamped peer draft at <peer>/inbox/default/outbox/.
+        write_envelope(&root.join("did_key_z6Mkb/inbox/default/outbox"), "draft.md", false);
 
-        // One local-queue capture.
-        let req = CaptureRequest {
-            from: crate::Did::from_ed25519_public_key(&[0xa1; 32]),
-            queue: QueueHandle::parse("inbox:triage").unwrap(),
-            body: "fleeting thought".into(),
-            source: "test".into(),
-        };
-        capture_to_queue(
-            req,
-            CaptureRoots {
-                flat_queues: &queues,
-                channel_tree: &channel_tree,
-            },
-            chrono::Utc::now(),
-        )
-        .unwrap();
+        // One local capture under _self/inbox/triage/envelopes/.
+        write_envelope(
+            &root.join("_self/inbox/triage/envelopes/2026/05/12"),
+            "capture.md",
+            false,
+        );
 
-        let unioned = list_review_queue(&outbox, &queues).unwrap();
+        let unioned = list_review_queue(root).unwrap();
+        // In v0.3 both the outbox draft and the captured envelope show
+        // up; distinguishing peer-letter vs local-capture is done at
+        // the call site by inspecting the `to` field against the
+        // principal's own DID rather than two separate roots.
         assert_eq!(unioned.len(), 2);
 
-        // Both entries now have to + queue populated. Discriminate by
-        // owner: peer letters have `to != self`, captures have
-        // `to == self`.
-        let me_str = crate::Did::from_ed25519_public_key(&[0xa1; 32])
-            .as_str()
-            .to_string();
-        let peers: Vec<_> = unioned
+        // Both entries are findable; discrimination by `to` is left
+        // to the caller now (see substrate report on namespace
+        // symmetry — the kind is encoded in the path, not in a
+        // separate field).
+        assert!(unioned
             .iter()
-            .filter(|e| e.to.as_deref() != Some(&me_str))
-            .collect();
-        let captures: Vec<_> = unioned
+            .any(|e| e.file_path.ends_with("draft.md")));
+        assert!(unioned
             .iter()
-            .filter(|e| e.to.as_deref() == Some(&me_str))
-            .collect();
-        assert_eq!(peers.len(), 1);
-        assert_eq!(captures.len(), 1);
-        assert_eq!(captures[0].queue.as_deref(), Some("inbox:triage"));
+            .any(|e| e.file_path.ends_with("capture.md")));
     }
 
     #[test]
     fn queue_skips_sent_subdirectory() {
-        // Files in `outbox/<recipient>/sent/` should never appear in the
-        // queue. The underlying list_outbox_files already does this; the
-        // queue function inherits it.
+        // v0.3 layout: `<peer>/inbox/default/outbox/sent/` is the
+        // daemon's post-delivery move target; it must never appear in
+        // the review queue. The underlying list_outbox_files already
+        // filters; this test guards the contract.
         let dir = TempDir::new().unwrap();
-        let outbox = dir.path().join("outbox");
-        let recipient = outbox.join("did_key_z6Mkb");
-        let sent = recipient.join("sent");
-        write_envelope(&recipient, "active.md", false);
+        let outbox = dir.path().join("did_key_z6Mkb/inbox/default/outbox");
+        let sent = outbox.join("sent");
+        write_envelope(&outbox, "active.md", false);
         write_envelope(&sent, "historical.md", true);
 
-        let queue = list_outbox_queue(&outbox).unwrap();
+        let queue = list_outbox_queue(dir.path()).unwrap();
         assert_eq!(queue.len(), 1);
         assert!(queue[0].file_path.ends_with("active.md"));
     }

@@ -62,46 +62,114 @@ pub struct ReadResult {
     pub was_encrypted: bool,
 }
 
-/// Walk a directory one level deep, listing `.md` files. For the outbox,
-/// recurses one extra level into `<recipient-did>/` subdirs (but skips the
-/// `sent/` subdirectory).
-pub fn list_outbox_files(outbox_root: &Path) -> Result<Vec<ListedEnvelope>, InboxOpError> {
+/// Walk the substrate root and collect every `.md` file under any
+/// `envelopes/` directory. The new (v0.3+) layout puts received
+/// envelopes under `<root>/<alias>/<namespace>/<segments>/envelopes/
+/// YYYY/MM/DD/*.md` — so the walker descends through alias dirs,
+/// namespace + segment dirs, and the time-shard subtree.
+///
+/// Skips: principal-level files (anything that isn't a directory),
+/// dotfile dirs, and the legacy `_unsorted/` bucket (which holds
+/// inbound envelopes whose frontmatter couldn't be parsed for
+/// routing — those need manual triage, not the regular listing).
+///
+/// `deferred/` and `archived/` siblings of `envelopes/` are NOT
+/// walked — the principal moved those out of the active surface on
+/// purpose. They live on disk for history.
+pub fn list_inbox_files(root: &Path) -> Result<Vec<ListedEnvelope>, InboxOpError> {
     let mut out = Vec::new();
-    if !outbox_root.exists() {
-        return Ok(out);
+    walk_envelopes_tree(root, &mut out)?;
+    Ok(out)
+}
+
+/// Walk the substrate root and collect every `.md` file under any
+/// `outbox/` directory — the per-queue drafts the daemon ferries.
+/// Skips `sent/` subdirs (the daemon's own post-delivery move
+/// target) so a `list_outbox` view shows only what's still in flight.
+pub fn list_outbox_files(root: &Path) -> Result<Vec<ListedEnvelope>, InboxOpError> {
+    let mut out = Vec::new();
+    walk_outbox_tree(root, &mut out)?;
+    Ok(out)
+}
+
+fn walk_envelopes_tree(
+    dir: &Path,
+    out: &mut Vec<ListedEnvelope>,
+) -> Result<(), InboxOpError> {
+    if !dir.exists() {
+        return Ok(());
     }
-    for entry in read_dir(outbox_root)? {
-        let entry = io_entry(entry, outbox_root)?;
+    for entry in read_dir(dir)? {
+        let entry = io_entry(entry, dir)?;
         let path = entry.path();
-        if path.is_dir() {
-            // recipient dir; collect .md files (skip nested `sent/`).
+        if !path.is_dir() {
+            continue;
+        }
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if name == "envelopes" {
+            // We're inside a queue's envelopes/ — descend through the
+            // time-shard subtree and collect every .md leaf.
+            walk_md_leaves(&path, out)?;
+        } else if !should_skip(name) {
+            walk_envelopes_tree(&path, out)?;
+        }
+    }
+    Ok(())
+}
+
+fn walk_outbox_tree(
+    dir: &Path,
+    out: &mut Vec<ListedEnvelope>,
+) -> Result<(), InboxOpError> {
+    if !dir.exists() {
+        return Ok(());
+    }
+    for entry in read_dir(dir)? {
+        let entry = io_entry(entry, dir)?;
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if name == "outbox" {
+            // Walk one level deep for `.md`; skip the `sent/` subdir.
             for inner in read_dir(&path)? {
                 let inner = io_entry(inner, &path)?;
                 let inner_path = inner.path();
                 if inner_path.is_file() && has_md_ext(&inner_path) {
-                    push_envelope(&mut out, &inner_path)?;
+                    push_envelope(out, &inner_path)?;
                 }
             }
-        } else if has_md_ext(&path) {
-            push_envelope(&mut out, &path)?;
+        } else if !should_skip(name) {
+            walk_outbox_tree(&path, out)?;
         }
     }
-    Ok(out)
+    Ok(())
 }
 
-pub fn list_inbox_files(inbox_root: &Path) -> Result<Vec<ListedEnvelope>, InboxOpError> {
-    let mut out = Vec::new();
-    if !inbox_root.exists() {
-        return Ok(out);
-    }
-    for entry in read_dir(inbox_root)? {
-        let entry = io_entry(entry, inbox_root)?;
+fn walk_md_leaves(dir: &Path, out: &mut Vec<ListedEnvelope>) -> Result<(), InboxOpError> {
+    for entry in read_dir(dir)? {
+        let entry = io_entry(entry, dir)?;
         let path = entry.path();
-        if path.is_file() && has_md_ext(&path) {
-            push_envelope(&mut out, &path)?;
+        if path.is_dir() {
+            walk_md_leaves(&path, out)?;
+        } else if has_md_ext(&path) {
+            push_envelope(out, &path)?;
         }
     }
-    Ok(out)
+    Ok(())
+}
+
+/// Skip dotfiles, ciphertext blobs, the legacy unsorted bucket, and
+/// the principal's own deferred/archived buckets (those are
+/// intentionally out-of-view).
+fn should_skip(name: &str) -> bool {
+    name.starts_with('.')
+        || name == "_unsorted"
+        || name == "_ciphertext"
+        || name == "deferred"
+        || name == "archived"
+        || name == "sent"
 }
 
 /// Decrypt + return the body of an envelope file. Plaintext envelopes pass
@@ -209,20 +277,50 @@ mod tests {
     }
 
     #[test]
-    fn list_inbox_returns_files() {
-        let dir = TempDir::new().unwrap();
+    fn list_inbox_walks_alias_namespace_segments_tree() {
+        let root = TempDir::new().unwrap();
+        // New layout: <root>/_self/inbox/default/envelopes/2026/05/12/a.md
+        let nested = root
+            .path()
+            .join("_self/inbox/default/envelopes/2026/05/12");
+        std::fs::create_dir_all(&nested).unwrap();
         let env =
             EnvelopeBuilder::new(rafa_did(), self_recipient()).build();
         let body = "hello\n";
         let content = embed_stamp(body, Some(&env), None).unwrap();
-        std::fs::write(dir.path().join("a.md"), content).unwrap();
-        std::fs::write(dir.path().join("not-md.txt"), "skip me").unwrap();
+        std::fs::write(nested.join("a.md"), content).unwrap();
+        std::fs::write(nested.join("not-md.txt"), "skip me").unwrap();
 
-        let listed = list_inbox_files(dir.path()).unwrap();
+        let listed = list_inbox_files(root.path()).unwrap();
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].from.as_deref(), Some("did:web:rafa.equanimi.tech"));
         assert!(!listed[0].stamped);
         assert!(!listed[0].encrypted);
+    }
+
+    #[test]
+    fn list_inbox_skips_deferred_and_archived_siblings() {
+        let root = TempDir::new().unwrap();
+        let env =
+            EnvelopeBuilder::new(rafa_did(), self_recipient()).build();
+        let body = "active\n";
+        let active_dir = root
+            .path()
+            .join("_self/inbox/default/envelopes/2026/05/12");
+        let deferred_dir = root.path().join("_self/inbox/default/deferred");
+        let archived_dir = root.path().join("_self/inbox/default/archived");
+        for dir in [&active_dir, &deferred_dir, &archived_dir] {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+        let content = embed_stamp(body, Some(&env), None).unwrap();
+        std::fs::write(active_dir.join("a.md"), &content).unwrap();
+        std::fs::write(deferred_dir.join("b.md"), &content).unwrap();
+        std::fs::write(archived_dir.join("c.md"), &content).unwrap();
+
+        let listed = list_inbox_files(root.path()).unwrap();
+        // Only the active envelope appears; deferred/archived are
+        // intentionally out-of-view per their semantics.
+        assert_eq!(listed.len(), 1);
     }
 
     #[test]

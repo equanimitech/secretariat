@@ -2,13 +2,14 @@
 
 use anyhow::{Context, Result};
 use clap::Parser;
+use secretariat_core::application::{list_inbox_files, list_outbox_files};
 use std::fs;
 
 use super::paths::key_paths;
 
 #[derive(Parser, Debug)]
 pub struct Args {
-    /// Which directory to list.
+    /// Which slice of the substrate to list.
     #[arg(value_enum, default_value_t = Target::Outbox)]
     target: Target,
 }
@@ -22,15 +23,33 @@ enum Target {
 
 pub fn run(args: Args) -> Result<()> {
     let paths = key_paths()?;
-    let dir = match args.target {
-        Target::Inbox => paths.inbox,
-        Target::Outbox => paths.outbox,
-        Target::Peers => paths.peers_cache,
-    };
-    if !dir.exists() {
-        return Ok(());
+    match args.target {
+        Target::Inbox => {
+            let listed = list_inbox_files(&paths.root)
+                .with_context(|| format!("listing inbox under {}", paths.root.display()))?;
+            for e in listed {
+                println!("{}", e.file_path);
+            }
+        }
+        Target::Outbox => {
+            let listed = list_outbox_files(&paths.root)
+                .with_context(|| format!("listing outbox under {}", paths.root.display()))?;
+            for e in listed {
+                println!("{}", e.file_path);
+            }
+        }
+        Target::Peers => {
+            // Peers cache is still a flat directory of `did.json`
+            // files keyed by `paths.peers_cache`. Walk it raw — this
+            // is the diagnostic browse path, not the envelope surface.
+            let dir = paths.peers_cache;
+            if !dir.exists() {
+                return Ok(());
+            }
+            walk(&dir, &dir).with_context(|| format!("listing {}", dir.display()))?;
+        }
     }
-    walk(&dir, &dir).with_context(|| format!("listing {}", dir.display()))
+    Ok(())
 }
 
 fn walk(root: &std::path::Path, dir: &std::path::Path) -> Result<()> {
