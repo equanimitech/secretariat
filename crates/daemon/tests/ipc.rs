@@ -73,3 +73,73 @@ async fn is_running_false_when_no_daemon() {
     let (_tmp, paths, _did, _key) = fixture(0x44);
     assert!(!is_running(&paths).await);
 }
+
+/// Two concurrent `tick` requests must serialize cleanly. Without the
+/// `tick_lock` in `serve.rs`, two calls would interleave their
+/// `RelayState` load/mutate/save and risk clobbering the cursor; with
+/// it, they run back-to-back and both return a valid `SyncOutcome`.
+/// This test verifies no deadlock + both succeed; it doesn't try to
+/// observe the race itself, which is non-deterministic anyway.
+#[tokio::test]
+async fn concurrent_ticks_serialize() {
+    let (_tmp, paths, did, key) = fixture(0x55);
+    let _handle = spawn_server(paths.clone(), did, key);
+    wait_for_socket(&paths).await;
+
+    let p1 = paths.clone();
+    let p2 = paths.clone();
+    let p3 = paths.clone();
+    let p4 = paths.clone();
+    let (a, b, c, d) = tokio::join!(
+        async move { call(&p1, "tick", None).await },
+        async move { call(&p2, "tick", None).await },
+        async move { call(&p3, "tick", None).await },
+        async move { call(&p4, "tick", None).await },
+    );
+    for r in [a, b, c, d] {
+        let v = r.expect("tick call should succeed");
+        assert!(v.get("per_relay").is_some(), "unexpected outcome: {v}");
+    }
+}
+
+/// `tick_via_ipc_or_inproc` with no daemon running must fall back to
+/// running the cycle in-proc. Tauri's `sync_now` and `sec daemon tick`
+/// both rely on this fallback when the LaunchAgent isn't installed.
+#[tokio::test]
+async fn fallback_runs_in_proc_when_no_daemon() {
+    let (_tmp, paths, did, key) = fixture(0x66);
+    assert!(!is_running(&paths).await);
+    secretariat_daemon::ipc::tick_via_ipc_or_inproc(&paths, &did, &key)
+        .await
+        .expect("in-proc fallback should succeed against an empty install");
+}
+
+/// Malformed JSON on the wire must produce a structured `-32700` error
+/// response, not a closed connection. Protects the parse-error handling
+/// path that the accept loop otherwise only surfaces via `warn!`.
+#[tokio::test]
+async fn malformed_request_yields_parse_error() {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    use tokio::net::UnixStream;
+
+    let (_tmp, paths, did, key) = fixture(0x77);
+    let _handle = spawn_server(paths.clone(), did, key);
+    wait_for_socket(&paths).await;
+
+    let mut stream = UnixStream::connect(socket_path(&paths)).await.unwrap();
+    stream.write_all(b"this is not json\n").await.unwrap();
+    stream.flush().await.unwrap();
+
+    let (rd, _wr) = stream.into_split();
+    let mut rd = BufReader::new(rd);
+    let mut line = String::new();
+    rd.read_line(&mut line).await.unwrap();
+
+    let v: serde_json::Value = serde_json::from_str(line.trim()).unwrap();
+    let code = v
+        .get("error")
+        .and_then(|e| e.get("code"))
+        .and_then(|c| c.as_i64())
+        .expect("error.code");
+    assert_eq!(code, -32700, "expected PARSE_ERROR, got: {v}");
+}

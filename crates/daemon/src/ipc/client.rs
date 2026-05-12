@@ -46,8 +46,13 @@ pub async fn call(
     line.push('\n');
     writer.write_all(line.as_bytes()).await?;
     writer.flush().await?;
-    // Half-close so the server knows the request is complete even if
-    // it's reading more than one line in a future protocol revision.
+    // Not needed today: `read_line` on the server side is satisfied by
+    // the trailing `\n` and the server writes its single-line response
+    // before this drop fires. Kept for now because dropping the write
+    // half costs nothing on a one-shot request, but if push subscriptions
+    // (Slice 5) reuse this client path with a streaming response, this
+    // half-close MUST be removed — it would close the server's read
+    // half mid-conversation.
     drop(writer);
 
     let mut response_line = String::new();

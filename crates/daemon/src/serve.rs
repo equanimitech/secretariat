@@ -29,7 +29,29 @@ use secretariat_core::application::{
 };
 use secretariat_core::infrastructure::keys::KeyPaths;
 use secretariat_core::Did;
+use std::sync::OnceLock;
+use tokio::sync::Mutex;
 use tracing::{info, warn};
+
+/// Process-wide serializer for `sync_now` execution.
+///
+/// `sync_now` does a `RelayState::load` → mutate → `RelayState::save`
+/// sequence that is *not* an atomic transaction. Two concurrent callers
+/// — the daemon's poll loop on its cadence + an IPC `tick` request
+/// arriving over the socket — would both load the same state, mutate
+/// independently, and the last writer would clobber the other's cursor
+/// advancement. The IPC socket was meant to eliminate this race, but
+/// merely moved one caller inside the daemon boundary; serializing
+/// here is what actually closes it.
+///
+/// Global rather than per-instance because the contended resource is
+/// a file on disk owned by the process. Multiple daemons in the same
+/// process is not a configuration we support (and `spawn_server`'s
+/// stale-socket logic would refuse it anyway).
+fn tick_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
 
 pub async fn serve(paths: &KeyPaths, did: &Did, key: &SigningKey) -> Result<()> {
     paths.ensure_dirs()?;
@@ -106,6 +128,7 @@ pub async fn run_tick(
     did: &Did,
     key: &SigningKey,
 ) -> Result<SyncOutcome> {
+    let _guard = tick_lock().lock().await;
     sync_now(paths, did, key).await.context("sync_now")
 }
 

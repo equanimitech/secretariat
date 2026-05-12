@@ -50,6 +50,12 @@ async fn run(
     // the file, bind will fail with EADDRINUSE — even though nothing is
     // listening. Try connecting first: if a connection succeeds, another
     // daemon owns it and we step aside. If it doesn't, the file is dead.
+    //
+    // TOCTOU note: between the `remove_file` and the `bind` below, a
+    // second daemon racing to start could theoretically bind the same
+    // path first. Acceptable for v0.3's single-user / single-machine
+    // deployment — `KeepAlive` doesn't race against manual starts under
+    // normal use. Revisit if multi-instance ever becomes a real config.
     if path.exists() {
         match UnixStream::connect(&path).await {
             Ok(_) => {
