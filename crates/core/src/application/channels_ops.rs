@@ -526,7 +526,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert!(loaded.is_empty(), "stub frontmatter should contribute nothing");
-        assert!(body.contains("Channel contract"));
+        assert!(body.contains("consumption contract"));
     }
 
     #[test]

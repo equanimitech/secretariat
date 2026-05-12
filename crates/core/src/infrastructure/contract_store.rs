@@ -1,5 +1,11 @@
-//! Per-level contract storage at `<channel-dir>/contract.md` (and the
-//! org-root variant at `<org-dir>/contract.md`).
+//! Per-level **consumption** contract storage at
+//! `<channel-dir>/contract.md` (and the org-root variant at
+//! `<org-dir>/contract.md`).
+//!
+//! These files are **private to the subscriber**: how *they* approach
+//! the channel/org, not what the channel demands of its members. Never
+//! sent on wire. See [`crate::domain::ChannelContract`] for the
+//! consumption-vs-governance split.
 //!
 //! On-disk shape: markdown file with YAML frontmatter:
 //!
@@ -7,19 +13,16 @@
 //! ---
 //! $type: tech.equanimi.secretariat.channelContract
 //! cadence_floor_minutes: 15
-//! trust_gate: signed-only
-//! roster:
-//!   - did:web:rafa.equanimi.tech
-//! preferred_transports:
-//!   - relay:themia.pro
+//! min_trust: signed-only
 //! ---
 //!
-//! # Free-form prose explaining the contract.
+//! # Free-form prose explaining my preferences.
 //! ```
 //!
 //! v0.3 slice 1a: read/write a single contract file. The accumulate
-//! resolver (walking org-root → leaf and merging) lives in a later slice
-//! per `docs/pitches/2026-05-12-channel-contracts-mcp.md`.
+//! resolver (walking my org-root → ancestor channels → leaf and merging
+//! within my own chain) lives in a later slice per
+//! `docs/pitches/2026-05-12-channel-contracts-mcp.md`.
 //!
 //! An empty-frontmatter file (`---\n---\n` + prose) round-trips as
 //! `ChannelContract::empty()` — the auto-scaffold stub.
@@ -29,7 +32,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::domain::{ChannelContract, Did, DidParseError, QueueHandle, TrustGate};
+use crate::domain::{ChannelContract, QueueHandle, TrustGate};
 
 use super::channel_def_store::channel_dir;
 
@@ -39,12 +42,18 @@ pub const CONTRACT_FILENAME: &str = "contract.md";
 /// v0.3 does not yet drive runtime validation against the schema.
 const CONTRACT_TYPE: &str = "tech.equanimi.secretariat.channelContract";
 
-const DEFAULT_STUB_BODY: &str = "\n# Channel contract\n\n\
-This file declares this channel's governance overrides. Empty frontmatter \
-above means \"contribute nothing to the accumulated contract\" — inherited \
-fields from org-root and ancestor channels apply as-is.\n\n\
-Edit via `sec channels contract set` (CLI) or `set_channel_contract` (MCP) \
-once those verbs ship; in the meantime, edit by hand and re-resolve.\n";
+const DEFAULT_STUB_BODY: &str = "\n# My consumption contract\n\n\
+This file declares **my** consumption overrides for this channel — how \
+I poll, filter, and surface its traffic. It is private to my device and \
+never sent on wire.\n\n\
+Empty frontmatter above means \"contribute nothing to my accumulated \
+view\" — fields from my org-root and ancestor-channel contracts apply \
+as-is. Channel governance (roster, who can post, channel-wide artifact \
+policy) lives elsewhere — in `.channelDef` or signed governance \
+envelopes, not here.\n\n\
+Edit via `sec channels contract set` (CLI) or `set_channel_contract` \
+(MCP) once those verbs ship; in the meantime, edit by hand and \
+re-resolve.\n";
 
 #[derive(Debug, Error)]
 pub enum ContractStoreError {
@@ -58,14 +67,7 @@ pub enum ContractStoreError {
     AlreadyExists(PathBuf),
     #[error("malformed frontmatter at {path}: {message}")]
     MalformedFrontmatter { path: PathBuf, message: String },
-    #[error("invalid did `{value}` in roster at {path}: {source}")]
-    InvalidDid {
-        value: String,
-        path: PathBuf,
-        #[source]
-        source: DidParseError,
-    },
-    #[error("unknown trust_gate `{value}` at {path} (want `signed-only` or `stamp-required`)")]
+    #[error("unknown min_trust `{value}` at {path} (want `signed-only` or `stamp-required`)")]
     UnknownTrustGate { value: String, path: PathBuf },
 }
 
@@ -153,24 +155,14 @@ struct ContractFile {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     cadence_floor_minutes: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    trust_gate: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    roster: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    preferred_transports: Vec<String>,
+    min_trust: Option<String>,
 }
 
 fn emit_frontmatter(contract: &ChannelContract) -> Result<String, String> {
     let file = ContractFile {
         ty: CONTRACT_TYPE.to_string(),
         cadence_floor_minutes: contract.cadence_floor_minutes,
-        trust_gate: contract.trust_gate.map(|g| g.as_str().to_string()),
-        roster: contract
-            .roster
-            .iter()
-            .map(|d| d.as_str().to_string())
-            .collect(),
-        preferred_transports: contract.preferred_transports.clone(),
+        min_trust: contract.min_trust.map(|g| g.as_str().to_string()),
     };
     serde_yaml::to_string(&file).map_err(|e| e.to_string())
 }
@@ -185,7 +177,7 @@ fn parse_frontmatter(yaml: &str, path: &Path) -> Result<ChannelContract, Contrac
             message: e.to_string(),
         }
     })?;
-    let trust_gate = match file.trust_gate.as_deref() {
+    let min_trust = match file.min_trust.as_deref() {
         None | Some("") => None,
         Some(s) => Some(TrustGate::parse(s).ok_or_else(|| {
             ContractStoreError::UnknownTrustGate {
@@ -194,20 +186,9 @@ fn parse_frontmatter(yaml: &str, path: &Path) -> Result<ChannelContract, Contrac
             }
         })?),
     };
-    let mut roster = Vec::with_capacity(file.roster.len());
-    for raw in file.roster {
-        let did = Did::parse(&raw).map_err(|source| ContractStoreError::InvalidDid {
-            value: raw,
-            path: path.to_path_buf(),
-            source,
-        })?;
-        roster.push(did);
-    }
     Ok(ChannelContract {
         cadence_floor_minutes: file.cadence_floor_minutes,
-        trust_gate,
-        roster,
-        preferred_transports: file.preferred_transports,
+        min_trust,
     })
 }
 
@@ -242,14 +223,6 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    fn did_a() -> Did {
-        Did::from_ed25519_public_key(&[0xa1; 32])
-    }
-
-    fn did_b() -> Did {
-        Did::from_ed25519_public_key(&[0xb2; 32])
-    }
-
     #[test]
     fn stub_round_trips_as_empty_contract() {
         let dir = TempDir::new().unwrap();
@@ -258,7 +231,7 @@ mod tests {
         assert!(written);
         let (loaded, body) = load_contract(&path).unwrap().unwrap();
         assert!(loaded.is_empty());
-        assert!(body.contains("Channel contract"));
+        assert!(body.contains("consumption contract"));
     }
 
     #[test]
@@ -281,14 +254,12 @@ mod tests {
         let path = dir.path().join("contract.md");
         let c = ChannelContract {
             cadence_floor_minutes: Some(15),
-            trust_gate: Some(TrustGate::StampRequired),
-            roster: vec![did_a(), did_b()],
-            preferred_transports: vec!["relay:themia.pro".into()],
+            min_trust: Some(TrustGate::StampRequired),
         };
-        save_contract(&path, &c, "\n# Org-root\n", false).unwrap();
+        save_contract(&path, &c, "\n# My overrides\n", false).unwrap();
         let (loaded, body) = load_contract(&path).unwrap().unwrap();
         assert_eq!(loaded, c);
-        assert!(body.contains("Org-root"));
+        assert!(body.contains("My overrides"));
     }
 
     #[test]
@@ -303,25 +274,30 @@ mod tests {
     }
 
     #[test]
-    fn unknown_trust_gate_errors() {
+    fn unknown_min_trust_errors() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("contract.md");
-        std::fs::write(&path, "---\ntrust_gate: wide-open\n---\n").unwrap();
+        std::fs::write(&path, "---\nmin_trust: wide-open\n---\n").unwrap();
         let r = load_contract(&path);
         assert!(matches!(r, Err(ContractStoreError::UnknownTrustGate { .. })));
     }
 
     #[test]
-    fn malformed_did_errors() {
+    fn unknown_frontmatter_fields_ignored() {
+        // Hand-scaffolded contracts may carry fields not in the v1
+        // consumption shape (e.g. legacy `roster`, `preferred_transports`,
+        // `inherit_from_parent`). These belong to governance, not
+        // consumption — we just ignore them rather than failing the load.
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("contract.md");
         std::fs::write(
             &path,
-            "---\nroster:\n  - not-a-did\n---\n",
+            "---\nroster:\n  - did:web:rafa.equanimi.tech\ninherit_from_parent: true\ncadence_floor_minutes: 30\n---\n",
         )
         .unwrap();
-        let r = load_contract(&path);
-        assert!(matches!(r, Err(ContractStoreError::InvalidDid { .. })));
+        let (loaded, _) = load_contract(&path).unwrap().unwrap();
+        assert_eq!(loaded.cadence_floor_minutes, Some(30));
+        assert!(loaded.min_trust.is_none());
     }
 
     #[test]

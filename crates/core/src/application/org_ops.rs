@@ -18,18 +18,25 @@ use chrono::{DateTime, Utc};
 use thiserror::Error;
 
 use crate::domain::{Did, Org, OrgAlias};
+use crate::infrastructure::contract_store::{
+    org_contract_path, save_stub_if_absent, ContractStoreError,
+};
 use crate::infrastructure::org_store::{
-    delete_org as delete_org_tree, list_org_dirs, load_org, save_org, OrgStoreError,
+    delete_org as delete_org_tree, list_org_dirs, load_org, org_dir, save_org, OrgStoreError,
 };
 
 #[derive(Debug, Error)]
 pub enum OrgOpsError {
     #[error("org store: {0}")]
     Store(#[from] OrgStoreError),
+    #[error("contract store: {0}")]
+    ContractStore(#[from] ContractStoreError),
 }
 
 /// Create an org with the given metadata. Errors if an org with the
-/// same alias already exists at `orgs_root`.
+/// same alias already exists at `orgs_root`. Auto-scaffolds a stub
+/// `<org-dir>/contract.md` at the org root (idempotent — hand-edits
+/// survive a re-run).
 pub fn create_org(
     orgs_root: &Path,
     alias: OrgAlias,
@@ -40,6 +47,8 @@ pub fn create_org(
 ) -> Result<Org, OrgOpsError> {
     let org = Org::new(alias, did, name, description, created_at);
     save_org(orgs_root, &org, false)?;
+    let contract_path = org_contract_path(&org_dir(orgs_root, &org.alias));
+    save_stub_if_absent(&contract_path)?;
     Ok(org)
 }
 
@@ -130,6 +139,45 @@ mod tests {
         let root = dir.path().join("orgs");
         let r = show_org(&root, &alias("missing.tld")).unwrap();
         assert!(r.is_none());
+    }
+
+    #[test]
+    fn create_org_writes_stub_contract_md() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path().join("orgs");
+        let a = alias("themia.pro");
+        create_org(&root, a.clone(), None, "Themia", "", when()).unwrap();
+        let contract_path = crate::infrastructure::contract_store::org_contract_path(
+            &crate::infrastructure::org_store::org_dir(&root, &a),
+        );
+        assert!(contract_path.is_file(), "stub org contract.md should be written");
+        let (loaded, body) = crate::infrastructure::contract_store::load_contract(&contract_path)
+            .unwrap()
+            .unwrap();
+        assert!(loaded.is_empty(), "stub frontmatter contributes nothing");
+        assert!(body.contains("consumption contract"));
+    }
+
+    #[test]
+    fn create_org_does_not_clobber_hand_edited_contract() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path().join("orgs");
+        let a = alias("themia.pro");
+        let contract_path = crate::infrastructure::contract_store::org_contract_path(
+            &crate::infrastructure::org_store::org_dir(&root, &a),
+        );
+        std::fs::create_dir_all(contract_path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &contract_path,
+            "---\ncadence_floor_minutes: 60\n---\nmy-overrides\n",
+        )
+        .unwrap();
+        create_org(&root, a, None, "Themia", "", when()).unwrap();
+        let (loaded, body) = crate::infrastructure::contract_store::load_contract(&contract_path)
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded.cadence_floor_minutes, Some(60));
+        assert!(body.contains("my-overrides"));
     }
 
     #[test]
