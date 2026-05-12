@@ -12,7 +12,11 @@
 //! On-disk layout depends on the queue handle's top namespace:
 //!
 //! - **flat handles** (`inbox:triage`, `area:health`, `project:foo`) land
-//!   at `<flat_queues>/<ns>/<slug>/<timestamp>.md` (v0.2 layout).
+//!   at `<flat_queues>/<ns>/<slug>/envelopes/YYYY/MM/DD/<timestamp>.md`.
+//!   The `envelopes/` subdir is required: `list_inbox_files` walks the
+//!   substrate tree collecting `.md` leaves only from inside
+//!   `envelopes/` directories. Captures written outside that convention
+//!   are invisible to the review surface.
 //! - **`channel:` handles** (`channel:secretariat:dev`,
 //!   `channel:dommage-corporel:paris-cohort`) land at
 //!   `<channel_tree>/<segments-after-channel>/envelopes/YYYY/MM/DD/<timestamp>.md`
@@ -134,10 +138,19 @@ fn resolve_target_dir(
         dir.push(format!("{:02}", now.day()));
         Ok(dir)
     } else {
-        Ok(roots
-            .flat_queues
-            .join(queue.top_namespace())
-            .join(queue.slug().replace(':', "/")))
+        // Flat handles share the channel-branch's `envelopes/YYYY/MM/DD/`
+        // convention so `list_inbox_files` finds them — its walker only
+        // collects `.md` leaves from inside an `envelopes/` directory.
+        let mut dir = roots.flat_queues.to_path_buf();
+        dir.push(queue.top_namespace());
+        for seg in queue.slug().split(':') {
+            dir.push(seg);
+        }
+        dir.push("envelopes");
+        dir.push(format!("{:04}", now.year()));
+        dir.push(format!("{:02}", now.month()));
+        dir.push(format!("{:02}", now.day()));
+        Ok(dir)
     }
 }
 
@@ -200,9 +213,13 @@ mod tests {
         )
         .unwrap();
 
-        // <queues>/inbox/triage/<timestamp>.md
+        // <queues>/inbox/triage/envelopes/2026/05/05/<timestamp>.md
         let parent = path.parent().unwrap();
-        assert!(parent.ends_with("inbox/triage"));
+        assert!(
+            parent.ends_with("inbox/triage/envelopes/2026/05/05"),
+            "expected time-sharded envelopes/ path, got {}",
+            parent.display()
+        );
         assert!(path
             .file_name()
             .unwrap()
@@ -241,7 +258,48 @@ mod tests {
             now,
         )
         .unwrap();
-        assert!(path.parent().unwrap().ends_with("area/health"));
+        assert!(
+            path.parent()
+                .unwrap()
+                .ends_with("area/health/envelopes/2026/05/05"),
+            "expected time-sharded envelopes/ path, got {}",
+            path.parent().unwrap().display()
+        );
+    }
+
+    #[test]
+    fn captures_with_deep_flat_handle_split_slug_into_segments() {
+        // `area:articles:equanimitech` is a legal handle whose slug is
+        // `articles:equanimitech` — colon-depth becomes tree-depth so
+        // the reader can browse nested areas the same way it browses
+        // nested channels.
+        let dir = TempDir::new().unwrap();
+        let (queues, channel_tree) = roots_under(dir.path());
+
+        let req = CaptureRequest {
+            from: rafa(),
+            queue: QueueHandle::parse("area:articles:equanimitech").unwrap(),
+            body: "UI navigates; MCP CRUDs".into(),
+            source: "test".into(),
+        };
+        let now = Utc.with_ymd_and_hms(2026, 5, 12, 3, 25, 37).unwrap();
+        let path = capture_to_queue(
+            req,
+            CaptureRoots {
+                flat_queues: &queues,
+                channel_tree: &channel_tree,
+            },
+            now,
+        )
+        .unwrap();
+
+        assert!(
+            path.parent()
+                .unwrap()
+                .ends_with("area/articles/equanimitech/envelopes/2026/05/12"),
+            "expected nested area path with envelopes shard, got {}",
+            path.parent().unwrap().display()
+        );
     }
 
     #[test]
