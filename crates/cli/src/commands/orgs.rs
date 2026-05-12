@@ -8,8 +8,12 @@ use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
 use clap::{Parser, Subcommand};
 
-use secretariat_core::application::{create_org, delete_org, list_orgs, show_org};
+use secretariat_core::application::{
+    create_org, delete_org, get_org_contract, list_orgs, set_org_contract, show_org,
+};
 use secretariat_core::domain::{Did, OrgAlias};
+
+use super::channels::build_patch;
 
 use super::paths::key_paths;
 
@@ -32,6 +36,37 @@ enum Cmd {
 
     /// Hard-delete an org's directory tree (destructive — requires --yes).
     Delete(DeleteArgs),
+
+    /// Read or edit this principal's private consumption contract for
+    /// an org (`<org-dir>/contract.local.md`). Org-root overrides
+    /// accumulate down the channel tree per
+    /// [[project-consumption-vs-governance]].
+    #[command(subcommand)]
+    Contract(ContractCmd),
+}
+
+#[derive(Subcommand, Debug)]
+enum ContractCmd {
+    Get(ContractGetArgs),
+    Set(ContractSetArgs),
+}
+
+#[derive(Parser, Debug)]
+pub struct ContractGetArgs {
+    alias: String,
+}
+
+#[derive(Parser, Debug)]
+pub struct ContractSetArgs {
+    alias: String,
+    #[arg(long, conflicts_with = "clear_cadence")]
+    cadence_floor_minutes: Option<u32>,
+    #[arg(long)]
+    clear_cadence: bool,
+    #[arg(long, value_parser = ["signed-only", "stamp-required"], conflicts_with = "clear_min_trust")]
+    min_trust: Option<String>,
+    #[arg(long)]
+    clear_min_trust: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -70,7 +105,67 @@ pub fn run(args: Args) -> Result<()> {
         Cmd::List => run_list(&paths.orgs_root),
         Cmd::Show(s) => run_show(&paths.orgs_root, s),
         Cmd::Delete(d) => run_delete(&paths.orgs_root, d),
+        Cmd::Contract(ContractCmd::Get(g)) => run_contract_get(&paths.orgs_root, g),
+        Cmd::Contract(ContractCmd::Set(s)) => run_contract_set(&paths.orgs_root, s),
     }
+}
+
+fn run_contract_get(orgs_root: &std::path::Path, args: ContractGetArgs) -> Result<()> {
+    let alias = OrgAlias::parse(&args.alias)
+        .map_err(|e| anyhow!("invalid alias `{}`: {e}", args.alias))?;
+    let view = get_org_contract(orgs_root, &alias)
+        .with_context(|| format!("reading contract for org `{}`", alias.as_str()))?;
+    println!("org: {}", alias.as_str());
+    println!("path: {}", view.path.display());
+    println!(
+        "cadence_floor_minutes: {}",
+        view.contract
+            .cadence_floor_minutes
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| "(inherit)".to_string())
+    );
+    println!(
+        "min_trust: {}",
+        view.contract
+            .min_trust
+            .map(|g| g.as_str().to_string())
+            .unwrap_or_else(|| "(inherit)".to_string())
+    );
+    Ok(())
+}
+
+fn run_contract_set(orgs_root: &std::path::Path, args: ContractSetArgs) -> Result<()> {
+    let alias = OrgAlias::parse(&args.alias)
+        .map_err(|e| anyhow!("invalid alias `{}`: {e}", args.alias))?;
+    let patch = build_patch(
+        args.cadence_floor_minutes,
+        args.clear_cadence,
+        args.min_trust.as_deref(),
+        args.clear_min_trust,
+    )?;
+    if patch.is_noop() {
+        return Err(anyhow!(
+            "no fields to set — pass at least one of --cadence-floor-minutes/--clear-cadence/--min-trust/--clear-min-trust"
+        ));
+    }
+    let view = set_org_contract(orgs_root, &alias, patch)
+        .with_context(|| format!("updating contract for org `{}`", alias.as_str()))?;
+    println!("updated: {}", view.path.display());
+    println!(
+        "cadence_floor_minutes: {}",
+        view.contract
+            .cadence_floor_minutes
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| "(inherit)".to_string())
+    );
+    println!(
+        "min_trust: {}",
+        view.contract
+            .min_trust
+            .map(|g| g.as_str().to_string())
+            .unwrap_or_else(|| "(inherit)".to_string())
+    );
+    Ok(())
 }
 
 fn run_create(orgs_root: &std::path::Path, args: CreateArgs) -> Result<()> {

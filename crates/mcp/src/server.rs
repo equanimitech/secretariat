@@ -54,12 +54,15 @@ use secretariat_core::application::{
     add_contact, archive_envelope, capture_to_queue, claim_invite, compose_envelope,
     create_channel as app_create_channel, create_invite, create_org as app_create_org,
     delete_channel as app_delete_channel, delete_org as app_delete_org, find_by_slug,
-    list_channels, list_contacts, list_inbox_files, list_orgs as app_list_orgs,
-    list_outbox_files, read_channel, read_envelope, show_org as app_show_org, stamp_document,
-    try_contextify_after_capture, verify_document, view_invite, CaptureRequest, CaptureRoots,
-    ComposeRequest, ListedEnvelope, StampError, VerifyOutcome,
+    get_channel_contract as app_get_channel_contract,
+    get_org_contract as app_get_org_contract, list_channels, list_contacts, list_inbox_files,
+    list_orgs as app_list_orgs, list_outbox_files, read_channel, read_envelope,
+    set_channel_contract as app_set_channel_contract, set_org_contract as app_set_org_contract,
+    show_org as app_show_org, stamp_document, try_contextify_after_capture, verify_document,
+    view_invite, CaptureRequest, CaptureRoots, ComposeRequest, ContractPatch, ContractView,
+    ListedEnvelope, PatchField, StampError, VerifyOutcome,
 };
-use secretariat_core::domain::{OrgAlias, QueueHandle, Recipient, StampAct};
+use secretariat_core::domain::{OrgAlias, QueueHandle, Recipient, StampAct, TrustGate};
 use secretariat_core::infrastructure::org_store::org_channels_root;
 use secretariat_core::infrastructure::biometric::build_signer;
 use secretariat_core::infrastructure::composite_did_resolver::CompositeDidResolver;
@@ -541,6 +544,75 @@ pub struct DeleteChannelOutput {
     pub org: Option<String>,
     pub deleted: bool,
     pub note: String,
+}
+
+// -- consumption contracts ----------------------------------------------------
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GetChannelContractParams {
+    pub handle: String,
+    #[serde(default)]
+    pub org: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SetChannelContractParams {
+    pub handle: String,
+    #[serde(default)]
+    pub org: Option<String>,
+    /// New poll-floor in minutes for this channel. Omit to leave the
+    /// current value; pair with `clear: ["cadence_floor_minutes"]` to
+    /// revert to inheriting from ancestors.
+    #[serde(default)]
+    pub cadence_floor_minutes: Option<u32>,
+    /// New receiver-side trust filter: `signed-only` or
+    /// `stamp-required`. Same Leave/Set/Clear semantics as cadence.
+    #[serde(default)]
+    pub min_trust: Option<String>,
+    /// Field names to revert to None (inherit). Allowed entries:
+    /// `cadence_floor_minutes`, `min_trust`. Listing a field here AND
+    /// passing a set-value for it is a conflict — caller must pick.
+    #[serde(default)]
+    pub clear: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GetOrgContractParams {
+    pub org: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SetOrgContractParams {
+    pub org: String,
+    #[serde(default)]
+    pub cadence_floor_minutes: Option<u32>,
+    #[serde(default)]
+    pub min_trust: Option<String>,
+    #[serde(default)]
+    pub clear: Vec<String>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct ContractDto {
+    /// `"channel:foo:bar"` for channel contracts; the org alias for
+    /// org-root contracts.
+    pub scope: String,
+    pub path: String,
+    pub cadence_floor_minutes: Option<u32>,
+    pub min_trust: Option<String>,
+    pub body: String,
+}
+
+impl ContractDto {
+    fn from_view(scope: String, view: ContractView) -> Self {
+        Self {
+            scope,
+            path: view.path.display().to_string(),
+            cadence_floor_minutes: view.contract.cadence_floor_minutes,
+            min_trust: view.contract.min_trust.map(|g| g.as_str().to_string()),
+            body: view.body,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1280,6 +1352,146 @@ impl SecretariatServer {
     }
 
     #[tool(
+        name = "get_channel_contract",
+        annotations(
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        ),
+        description = "Read this principal's private consumption contract for a channel — \
+        the `<channel-dir>/contract.local.md` file declaring how *I* poll, filter, and \
+        surface this channel's traffic. Auto-scaffolds an empty-contribution stub if the \
+        file is absent (which only happens for channels created before the contract \
+        primitive shipped). Returns the contract's frontmatter fields plus the body prose.
+
+        This file is **never sent on wire** and **never shared with other roster members**. \
+        Channel governance (roster, channel-wide artifact policy) lives separately in \
+        `.channelDef` or future signed governance envelopes — not surfaced by this tool."
+    )]
+    async fn get_channel_contract(
+        &self,
+        Parameters(params): Parameters<GetChannelContractParams>,
+    ) -> Result<Json<ContractDto>, ErrorData> {
+        let handle = QueueHandle::parse(&params.handle).map_err(|e| {
+            invalid_request(format!("invalid handle `{}`: {e}", params.handle))
+        })?;
+        let root = self.resolve_channels_root(params.org.as_deref())?;
+        let view = app_get_channel_contract(&root, &handle)
+            .map_err(|e| invalid_request(format!("get_channel_contract failed: {e}")))?;
+        Ok(Json(ContractDto::from_view(
+            handle.as_str().to_string(),
+            view,
+        )))
+    }
+
+    #[tool(
+        name = "set_channel_contract",
+        annotations(
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        ),
+        description = "Update this principal's private consumption contract for a channel. \
+        Partial-merge semantics: fields you don't mention are left untouched. To revert a \
+        field to inheriting from ancestors, include its name in `clear`. Listing a field \
+        in `clear` AND passing a value for it in the same call is rejected.
+
+        Allowed `clear` entries: `cadence_floor_minutes`, `min_trust`. \
+        Allowed `min_trust` values: `signed-only`, `stamp-required`.
+
+        Body prose is preserved across calls — only frontmatter mutates."
+    )]
+    async fn set_channel_contract(
+        &self,
+        Parameters(params): Parameters<SetChannelContractParams>,
+    ) -> Result<Json<ContractDto>, ErrorData> {
+        let handle = QueueHandle::parse(&params.handle).map_err(|e| {
+            invalid_request(format!("invalid handle `{}`: {e}", params.handle))
+        })?;
+        let root = self.resolve_channels_root(params.org.as_deref())?;
+        let patch = build_contract_patch(
+            params.cadence_floor_minutes,
+            params.min_trust.as_deref(),
+            &params.clear,
+        )?;
+        if patch.is_noop() {
+            return Err(invalid_request(
+                "no fields to set — pass at least one of cadence_floor_minutes / min_trust / clear"
+                    .to_string(),
+            ));
+        }
+        let view = app_set_channel_contract(&root, &handle, patch)
+            .map_err(|e| invalid_request(format!("set_channel_contract failed: {e}")))?;
+        info!(handle = %handle.as_str(), "channel contract updated via MCP");
+        Ok(Json(ContractDto::from_view(
+            handle.as_str().to_string(),
+            view,
+        )))
+    }
+
+    #[tool(
+        name = "get_org_contract",
+        annotations(
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        ),
+        description = "Read this principal's private consumption contract at the org root \
+        (`<org-dir>/contract.local.md`). Org-root overrides accumulate down to all channels \
+        in this org — set a value here once instead of repeating it on every channel."
+    )]
+    async fn get_org_contract(
+        &self,
+        Parameters(params): Parameters<GetOrgContractParams>,
+    ) -> Result<Json<ContractDto>, ErrorData> {
+        let alias = OrgAlias::parse(&params.org)
+            .map_err(|e| invalid_request(format!("invalid alias `{}`: {e}", params.org)))?;
+        let view = app_get_org_contract(&self.paths.orgs_root, &alias)
+            .map_err(|e| invalid_request(format!("get_org_contract failed: {e}")))?;
+        Ok(Json(ContractDto::from_view(
+            alias.as_str().to_string(),
+            view,
+        )))
+    }
+
+    #[tool(
+        name = "set_org_contract",
+        annotations(
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        ),
+        description = "Update this principal's private consumption contract at the org root. \
+        Same partial-merge + `clear` semantics as `set_channel_contract`. Org-root overrides \
+        accumulate down to descendant channels per [[project-contracts-accumulate]]."
+    )]
+    async fn set_org_contract(
+        &self,
+        Parameters(params): Parameters<SetOrgContractParams>,
+    ) -> Result<Json<ContractDto>, ErrorData> {
+        let alias = OrgAlias::parse(&params.org)
+            .map_err(|e| invalid_request(format!("invalid alias `{}`: {e}", params.org)))?;
+        let patch = build_contract_patch(
+            params.cadence_floor_minutes,
+            params.min_trust.as_deref(),
+            &params.clear,
+        )?;
+        if patch.is_noop() {
+            return Err(invalid_request(
+                "no fields to set — pass at least one of cadence_floor_minutes / min_trust / clear"
+                    .to_string(),
+            ));
+        }
+        let view = app_set_org_contract(&self.paths.orgs_root, &alias, patch)
+            .map_err(|e| invalid_request(format!("set_org_contract failed: {e}")))?;
+        info!(alias = %alias.as_str(), "org contract updated via MCP");
+        Ok(Json(ContractDto::from_view(
+            alias.as_str().to_string(),
+            view,
+        )))
+    }
+
+    #[tool(
         name = "daemon_tick",
         annotations(
             destructive_hint = false,
@@ -1589,6 +1801,54 @@ fn render_contacts(path: &std::path::Path) -> Result<String, ErrorData> {
 
 fn invalid_request(msg: String) -> ErrorData {
     ErrorData::new(ErrorCode::INVALID_REQUEST, msg, None)
+}
+
+fn build_contract_patch(
+    cadence_floor_minutes: Option<u32>,
+    min_trust: Option<&str>,
+    clear: &[String],
+) -> Result<ContractPatch, ErrorData> {
+    let clear_cadence = clear.iter().any(|f| f == "cadence_floor_minutes");
+    let clear_min_trust = clear.iter().any(|f| f == "min_trust");
+    for f in clear {
+        if f != "cadence_floor_minutes" && f != "min_trust" {
+            return Err(invalid_request(format!(
+                "unknown clear field `{f}` (allowed: cadence_floor_minutes, min_trust)"
+            )));
+        }
+    }
+    if clear_cadence && cadence_floor_minutes.is_some() {
+        return Err(invalid_request(
+            "conflict: cadence_floor_minutes set AND listed in `clear`".into(),
+        ));
+    }
+    if clear_min_trust && min_trust.is_some() {
+        return Err(invalid_request(
+            "conflict: min_trust set AND listed in `clear`".into(),
+        ));
+    }
+    let cadence = match (cadence_floor_minutes, clear_cadence) {
+        (Some(n), false) => PatchField::Set(n),
+        (None, true) => PatchField::Clear,
+        (None, false) => PatchField::Leave,
+        (Some(_), true) => unreachable!("guarded above"),
+    };
+    let trust = match (min_trust, clear_min_trust) {
+        (Some(s), false) => PatchField::Set(
+            TrustGate::parse(s).ok_or_else(|| {
+                invalid_request(format!(
+                    "invalid min_trust `{s}` (want signed-only or stamp-required)"
+                ))
+            })?,
+        ),
+        (None, true) => PatchField::Clear,
+        (None, false) => PatchField::Leave,
+        (Some(_), true) => unreachable!("guarded above"),
+    };
+    Ok(ContractPatch {
+        cadence_floor_minutes: cadence,
+        min_trust: trust,
+    })
 }
 
 fn resolve_to_did(paths: &KeyPaths, to: &str) -> Result<Did, ErrorData> {

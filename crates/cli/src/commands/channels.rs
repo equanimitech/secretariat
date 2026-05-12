@@ -14,9 +14,10 @@ use chrono::Utc;
 use clap::{Parser, Subcommand};
 
 use secretariat_core::application::{
-    create_channel, delete_channel, list_channels, read_channel, show_org,
+    create_channel, delete_channel, get_channel_contract, list_channels, read_channel,
+    set_channel_contract, show_org, ContractPatch, PatchField,
 };
-use secretariat_core::domain::{OrgAlias, QueueHandle};
+use secretariat_core::domain::{OrgAlias, QueueHandle, TrustGate};
 use secretariat_core::infrastructure::org_store::org_channels_root;
 
 use super::paths::key_paths;
@@ -40,6 +41,47 @@ enum Cmd {
 
     /// Hard-delete a channel's directory tree (destructive — requires --yes).
     Delete(DeleteArgs),
+
+    /// Read or edit this principal's private consumption contract for
+    /// a channel (`<channel-dir>/contract.local.md`).
+    #[command(subcommand)]
+    Contract(ContractCmd),
+}
+
+#[derive(Subcommand, Debug)]
+enum ContractCmd {
+    /// Print the consumption contract for a channel.
+    Get(ContractGetArgs),
+    /// Apply a partial update to a channel's consumption contract.
+    /// Fields not mentioned are left untouched; pass `--clear-*` to
+    /// revert a field to inheriting from ancestors.
+    Set(ContractSetArgs),
+}
+
+#[derive(Parser, Debug)]
+pub struct ContractGetArgs {
+    handle: String,
+    #[arg(long)]
+    org: Option<String>,
+}
+
+#[derive(Parser, Debug)]
+pub struct ContractSetArgs {
+    handle: String,
+    #[arg(long)]
+    org: Option<String>,
+    /// Set my poll-floor for this channel (minutes).
+    #[arg(long, conflicts_with = "clear_cadence")]
+    cadence_floor_minutes: Option<u32>,
+    /// Clear my poll-floor — fall back to inheriting from ancestors.
+    #[arg(long)]
+    clear_cadence: bool,
+    /// Set my receiver-side trust filter for this channel.
+    #[arg(long, value_parser = ["signed-only", "stamp-required"], conflicts_with = "clear_min_trust")]
+    min_trust: Option<String>,
+    /// Clear my trust filter — fall back to inheriting from ancestors.
+    #[arg(long)]
+    clear_min_trust: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -97,7 +139,101 @@ pub fn run(args: Args) -> Result<()> {
         Cmd::List(l) => run_list(&paths, l),
         Cmd::Read(r) => run_read(&paths, r),
         Cmd::Delete(d) => run_delete(&paths, d),
+        Cmd::Contract(ContractCmd::Get(g)) => run_contract_get(&paths, g),
+        Cmd::Contract(ContractCmd::Set(s)) => run_contract_set(&paths, s),
     }
+}
+
+fn run_contract_get(
+    paths: &secretariat_core::infrastructure::KeyPaths,
+    args: ContractGetArgs,
+) -> Result<()> {
+    let handle = QueueHandle::parse(&args.handle)
+        .map_err(|e| anyhow!("invalid handle `{}`: {e}", args.handle))?;
+    let root = resolve_channels_root(paths, args.org.as_deref())?;
+    let view = get_channel_contract(&root, &handle)
+        .with_context(|| format!("reading contract for `{}`", handle.as_str()))?;
+    println!("handle: {}", handle.as_str());
+    println!("path: {}", view.path.display());
+    println!(
+        "cadence_floor_minutes: {}",
+        view.contract
+            .cadence_floor_minutes
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| "(inherit)".to_string())
+    );
+    println!(
+        "min_trust: {}",
+        view.contract
+            .min_trust
+            .map(|g| g.as_str().to_string())
+            .unwrap_or_else(|| "(inherit)".to_string())
+    );
+    Ok(())
+}
+
+fn run_contract_set(
+    paths: &secretariat_core::infrastructure::KeyPaths,
+    args: ContractSetArgs,
+) -> Result<()> {
+    let handle = QueueHandle::parse(&args.handle)
+        .map_err(|e| anyhow!("invalid handle `{}`: {e}", args.handle))?;
+    let root = resolve_channels_root(paths, args.org.as_deref())?;
+    let patch = build_patch(
+        args.cadence_floor_minutes,
+        args.clear_cadence,
+        args.min_trust.as_deref(),
+        args.clear_min_trust,
+    )?;
+    if patch.is_noop() {
+        return Err(anyhow!(
+            "no fields to set — pass at least one of --cadence-floor-minutes/--clear-cadence/--min-trust/--clear-min-trust"
+        ));
+    }
+    let view = set_channel_contract(&root, &handle, patch)
+        .with_context(|| format!("updating contract for `{}`", handle.as_str()))?;
+    println!("updated: {}", view.path.display());
+    println!(
+        "cadence_floor_minutes: {}",
+        view.contract
+            .cadence_floor_minutes
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| "(inherit)".to_string())
+    );
+    println!(
+        "min_trust: {}",
+        view.contract
+            .min_trust
+            .map(|g| g.as_str().to_string())
+            .unwrap_or_else(|| "(inherit)".to_string())
+    );
+    Ok(())
+}
+
+pub(crate) fn build_patch(
+    cadence: Option<u32>,
+    clear_cadence: bool,
+    min_trust: Option<&str>,
+    clear_min_trust: bool,
+) -> Result<ContractPatch> {
+    let cadence_floor_minutes = match (cadence, clear_cadence) {
+        (Some(n), false) => PatchField::Set(n),
+        (None, true) => PatchField::Clear,
+        (None, false) => PatchField::Leave,
+        (Some(_), true) => unreachable!("clap conflicts_with"),
+    };
+    let min_trust = match (min_trust, clear_min_trust) {
+        (Some(s), false) => PatchField::Set(
+            TrustGate::parse(s).ok_or_else(|| anyhow!("invalid min_trust `{s}`"))?,
+        ),
+        (None, true) => PatchField::Clear,
+        (None, false) => PatchField::Leave,
+        (Some(_), true) => unreachable!("clap conflicts_with"),
+    };
+    Ok(ContractPatch {
+        cadence_floor_minutes,
+        min_trust,
+    })
 }
 
 fn resolve_channels_root(
