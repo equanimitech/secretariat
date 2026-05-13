@@ -1,13 +1,14 @@
 //! Settings-pane Tauri commands. Backs the v0.3 settings panes:
-//! Paths (reveal-in-finder), Relay (list / set), and Integrations (MCP
-//! wiring status). Profile + Identity stay in `commands::secretariat`,
-//! and the quick-pane shortcut stays in `commands::preferences` /
-//! `commands::quick_pane`.
+//! Paths, Composition, Cognition, Delivery, Relay, Integrations.
+//! Profile + Identity stay in `commands::secretariat`.
 
 use std::path::PathBuf;
 use std::process::Command;
 
 use secretariat_core::infrastructure::keys::KeyPaths;
+use secretariat_core::infrastructure::preferences::{
+    load_or_migrate as load_or_migrate_preferences, CognitionProvider, Preferences,
+};
 use secretariat_core::infrastructure::transport::RelayState;
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -235,6 +236,124 @@ fn claude_desktop_status() -> IntegrationStatus {
         config_location: config_path.map(|p| p.display().to_string()),
         client_detected,
     }
+}
+
+// ---------------------------------------------------------------------------
+// Preferences (composition + cognition + delivery)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct CompositionSettingsDto {
+    pub closing_line: String,
+    pub style_notes: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct CognitionSettingsDto {
+    pub provider: String, // "anthropic" | "openai-compat"
+    pub api_key: Option<String>,
+    pub api_base: Option<String>,
+    pub model: Option<String>,
+    pub route_threshold: Option<f32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct DeliverySettingsDto {
+    pub poll_interval_minutes: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct PreferencesDto {
+    pub composition: CompositionSettingsDto,
+    pub cognition: CognitionSettingsDto,
+    pub delivery: DeliverySettingsDto,
+}
+
+fn load_prefs(paths: &KeyPaths) -> Result<Preferences, String> {
+    load_or_migrate_preferences(
+        &paths.preferences,
+        &paths.legacy_cognition_config,
+        &paths.legacy_cadence,
+    )
+    .map_err(|e| format!("loading preferences: {e}"))
+}
+
+fn save_prefs(paths: &KeyPaths, prefs: &Preferences) -> Result<(), String> {
+    prefs
+        .save(&paths.preferences)
+        .map_err(|e| format!("saving preferences: {e}"))
+}
+
+fn prefs_to_dto(prefs: &Preferences) -> PreferencesDto {
+    PreferencesDto {
+        composition: CompositionSettingsDto {
+            closing_line: prefs.composition.closing_line.clone(),
+            style_notes: prefs.composition.style_notes.clone(),
+        },
+        cognition: CognitionSettingsDto {
+            provider: match prefs.cognition.provider {
+                CognitionProvider::Anthropic => "anthropic".to_string(),
+                CognitionProvider::OpenaiCompat => "openai-compat".to_string(),
+            },
+            api_key: prefs.cognition.api_key.clone(),
+            api_base: prefs.cognition.api_base.clone(),
+            model: prefs.cognition.model.clone(),
+            route_threshold: prefs.cognition.route_threshold,
+        },
+        delivery: DeliverySettingsDto {
+            poll_interval_minutes: prefs.delivery.poll_interval_minutes,
+        },
+    }
+}
+
+/// Read the full preferences. Triggers migration from legacy files if needed.
+#[tauri::command]
+#[specta::specta]
+pub async fn get_preferences() -> Result<PreferencesDto, String> {
+    let paths = key_paths()?;
+    let prefs = load_prefs(&paths)?;
+    Ok(prefs_to_dto(&prefs))
+}
+
+/// Patch composition settings (closing line + style notes).
+#[tauri::command]
+#[specta::specta]
+pub async fn set_composition_settings(dto: CompositionSettingsDto) -> Result<(), String> {
+    let paths = key_paths()?;
+    let mut prefs = load_prefs(&paths)?;
+    prefs.composition.closing_line = dto.closing_line;
+    prefs.composition.style_notes = dto.style_notes;
+    save_prefs(&paths, &prefs)
+}
+
+/// Patch cognition settings (provider, API key, model, etc.).
+#[tauri::command]
+#[specta::specta]
+pub async fn set_cognition_settings(dto: CognitionSettingsDto) -> Result<(), String> {
+    let paths = key_paths()?;
+    let mut prefs = load_prefs(&paths)?;
+    prefs.cognition.provider = match dto.provider.as_str() {
+        "openai-compat" | "openai-compatible" | "openai" => CognitionProvider::OpenaiCompat,
+        _ => CognitionProvider::Anthropic,
+    };
+    prefs.cognition.api_key = dto.api_key;
+    prefs.cognition.api_base = dto.api_base;
+    prefs.cognition.model = dto.model;
+    prefs.cognition.route_threshold = dto.route_threshold;
+    save_prefs(&paths, &prefs)
+}
+
+/// Patch delivery settings (poll interval).
+#[tauri::command]
+#[specta::specta]
+pub async fn set_delivery_settings(dto: DeliverySettingsDto) -> Result<(), String> {
+    let paths = key_paths()?;
+    let mut prefs = load_prefs(&paths)?;
+    if dto.poll_interval_minutes < 15 {
+        return Err("poll_interval_minutes must be ≥ 15".to_string());
+    }
+    prefs.delivery.poll_interval_minutes = dto.poll_interval_minutes;
+    save_prefs(&paths, &prefs)
 }
 
 fn which_or_known(name: &str) -> Option<PathBuf> {

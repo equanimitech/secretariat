@@ -1,8 +1,7 @@
 //! `sec init` — one-time setup.
 //!
 //! Generates an ed25519 signing key, derives the principal's DID, seeds the
-//! user-customizable AG template + attention envelope, and creates the
-//! inbox/outbox/peers directories.
+//! user-customizable AG template, and creates the inbox/outbox/peers directories.
 //!
 //! Default DID method: `did:key` (zero hosting). Pass `--did did:web:<host>`
 //! to use a domain-anchored identity that survives key rotation.
@@ -27,15 +26,13 @@ pub struct Args {
     #[arg(long)]
     did: Option<String>,
 
-    /// Re-seed the template + attention envelope even if they already exist.
+    /// Re-seed the template even if it already exists.
     /// Never overwrites an existing signing key.
     #[arg(long, default_value_t = false)]
     force_seed: bool,
 }
 
 const TEMPLATE_DEFAULT: &str = include_str!("../../assets/template_default.md");
-const ATTENTION_ENVELOPE_DEFAULT: &str =
-    include_str!("../../assets/attention_envelope_default.md");
 
 pub fn run(args: Args) -> Result<()> {
     let paths = key_paths()?;
@@ -76,10 +73,8 @@ pub fn run(args: Args) -> Result<()> {
             .with_context(|| format!("writing did.json to {}", paths.did_document.display()))?;
     }
 
-    // 6. Seed AG template + attention envelope.
+    // 6. Seed AG template.
     seed_file(&paths.template, TEMPLATE_DEFAULT, args.force_seed)?;
-    let attention = ATTENTION_ENVELOPE_DEFAULT.replace("{{SIGNER}}", did.as_str());
-    seed_file(&paths.attention_envelope, &attention, args.force_seed)?;
 
     // 7. Persist the principal's DID for compose / stamp to discover.
     fs::write(paths.root.join("did"), format!("{did}\n"))
@@ -98,10 +93,6 @@ pub fn run(args: Args) -> Result<()> {
     eprintln!("[sec]   did          → {did}");
     eprintln!("[sec]   signing key  → {}", paths.signing_key.display());
     eprintln!("[sec]   template     → {}", paths.template.display());
-    eprintln!(
-        "[sec]   attention    → {}",
-        paths.attention_envelope.display()
-    );
     match did.method() {
         DidMethod::Key => {
             eprintln!();

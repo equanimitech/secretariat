@@ -42,6 +42,10 @@ pub fn generate_bindings() -> Builder<tauri::Wry> {
         settings::add_relay,
         settings::mcp_integrations_status,
         settings::rewire_mcp_integrations,
+        settings::get_preferences,
+        settings::set_composition_settings,
+        settings::set_cognition_settings,
+        settings::set_delivery_settings,
     ])
 }
 

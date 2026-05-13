@@ -14,6 +14,7 @@ pub mod ed25519_signer;
 pub mod keys;
 pub mod markdown;
 pub mod org_store;
+pub mod preferences;
 pub mod profile_store;
 pub mod queue_dir;
 #[cfg(target_os = "macos")]
@@ -39,6 +40,10 @@ pub use markdown::{embed_stamp, parse_document, MarkdownError, ParsedDocument};
 pub use org_store::{
     delete_org as delete_org_tree, list_org_dirs, load_org, org_channels_root, org_dir,
     org_metadata_path, save_org, OrgStoreError, ORG_METADATA_FILENAME,
+};
+pub use preferences::{
+    load_or_migrate as load_or_migrate_preferences, CognitionPrefs, CognitionProvider,
+    CompositionPrefs, DeliveryPrefs, Preferences, PreferencesError,
 };
 pub use profile_store::{load_profile, save_profile, PrincipalProfile, ProfileStoreError};
 pub use queue_dir::{

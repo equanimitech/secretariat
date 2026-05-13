@@ -65,6 +65,7 @@ use secretariat_core::application::{
 };
 use secretariat_core::domain::{OrgAlias, QueueHandle, Recipient, StampAct, TrustGate};
 use secretariat_core::infrastructure::org_store::org_channels_root;
+use secretariat_core::infrastructure::preferences::load_or_migrate as load_or_migrate_preferences;
 use secretariat_core::infrastructure::biometric::build_signer;
 use secretariat_core::infrastructure::composite_did_resolver::CompositeDidResolver;
 use secretariat_core::infrastructure::did_web_resolver::DidWebResolver;
@@ -338,6 +339,34 @@ pub struct DaemonRelayStatus {
     pub endpoint: String,
     pub cursor: u64,
     pub registered: bool,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct CompositionSettingsOutput {
+    pub closing_line: String,
+    pub style_notes: String,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct CognitionSettingsOutput {
+    pub provider: String,
+    /// True when an API key is configured (value not exposed).
+    pub api_key_set: bool,
+    pub api_base: Option<String>,
+    pub model: Option<String>,
+    pub route_threshold: Option<f32>,
+    /// True when the minimum required fields for the chosen provider are present.
+    pub configured: bool,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct DeliverySettingsOutput {
+    pub poll_interval_minutes: u32,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct SetPrefsOutput {
+    pub ok: bool,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -792,13 +821,21 @@ impl SecretariatServer {
             let capture_path = path.clone();
             let queues_root = self.paths.queues.clone();
             let ledger_path = self.paths.contextification_log.clone();
-            let cognition_config = self.paths.cognition_config.clone();
+            let preferences_path = self.paths.preferences.clone();
+            let legacy_cognition = self.paths.legacy_cognition_config.clone();
+            let legacy_cadence = self.paths.legacy_cadence.clone();
             tokio::spawn(async move {
+                let prefs = load_or_migrate_preferences(
+                    &preferences_path,
+                    &legacy_cognition,
+                    &legacy_cadence,
+                )
+                .unwrap_or_default();
                 match try_contextify_after_capture(
                     &capture_path,
                     &queues_root,
                     &ledger_path,
-                    &cognition_config,
+                    &prefs.cognition,
                     Utc::now(),
                 )
                 .await
@@ -1652,19 +1689,101 @@ impl SecretariatServer {
             relays,
         }))
     }
+
+    /// Return the principal's composition preferences (closing line + style
+    /// notes). Call before composing an envelope so you can append the
+    /// configured closing line and apply style guidance.
+    async fn get_composition_settings(
+        &self,
+    ) -> Result<Json<CompositionSettingsOutput>, ErrorData> {
+        let prefs = load_or_migrate_preferences(
+            &self.paths.preferences,
+            &self.paths.legacy_cognition_config,
+            &self.paths.legacy_cadence,
+        )
+        .map_err(|e| internal_error(format!("load preferences: {e}")))?;
+        Ok(Json(CompositionSettingsOutput {
+            closing_line: prefs.composition.closing_line,
+            style_notes: prefs.composition.style_notes,
+        }))
+    }
+
+    /// Patch composition settings. Pass only the fields you want to change;
+    /// omitted fields keep their current value.
+    async fn set_composition_settings(
+        &self,
+        closing_line: Option<String>,
+        style_notes: Option<String>,
+    ) -> Result<Json<SetPrefsOutput>, ErrorData> {
+        let mut prefs = load_or_migrate_preferences(
+            &self.paths.preferences,
+            &self.paths.legacy_cognition_config,
+            &self.paths.legacy_cadence,
+        )
+        .map_err(|e| internal_error(format!("load preferences: {e}")))?;
+        if let Some(v) = closing_line {
+            prefs.composition.closing_line = v;
+        }
+        if let Some(v) = style_notes {
+            prefs.composition.style_notes = v;
+        }
+        prefs
+            .save(&self.paths.preferences)
+            .map_err(|e| internal_error(format!("save preferences: {e}")))?;
+        Ok(Json(SetPrefsOutput { ok: true }))
+    }
+
+    /// Return the principal's cognition settings (provider, key, model,
+    /// route threshold). Use to know which substrate is wired before
+    /// attempting contextification.
+    async fn get_cognition_settings(
+        &self,
+    ) -> Result<Json<CognitionSettingsOutput>, ErrorData> {
+        let prefs = load_or_migrate_preferences(
+            &self.paths.preferences,
+            &self.paths.legacy_cognition_config,
+            &self.paths.legacy_cadence,
+        )
+        .map_err(|e| internal_error(format!("load preferences: {e}")))?;
+        let provider = match prefs.cognition.provider {
+            secretariat_core::infrastructure::preferences::CognitionProvider::Anthropic => "anthropic",
+            secretariat_core::infrastructure::preferences::CognitionProvider::OpenaiCompat => "openai-compat",
+        };
+        let configured = prefs.cognition.is_configured();
+        Ok(Json(CognitionSettingsOutput {
+            provider: provider.to_string(),
+            api_key_set: prefs.cognition.api_key.is_some(),
+            api_base: prefs.cognition.api_base,
+            model: prefs.cognition.model,
+            route_threshold: prefs.cognition.route_threshold,
+            configured,
+        }))
+    }
+
+    /// Return the principal's delivery settings (poll interval).
+    async fn get_delivery_settings(
+        &self,
+    ) -> Result<Json<DeliverySettingsOutput>, ErrorData> {
+        let prefs = load_or_migrate_preferences(
+            &self.paths.preferences,
+            &self.paths.legacy_cognition_config,
+            &self.paths.legacy_cadence,
+        )
+        .map_err(|e| internal_error(format!("load preferences: {e}")))?;
+        Ok(Json(DeliverySettingsOutput {
+            poll_interval_minutes: prefs.delivery.poll_interval_minutes,
+        }))
+    }
 }
 
 // ---------------------------------------------------------------------------
 // Resource URIs — kept here so the prompt bodies and resource handlers
-// stay in sync. Anything that fetches `secretariat://template` (e.g.
-// `prompts/compose.md`) must match the uri string the handler advertises.
+// stay in sync.
 // ---------------------------------------------------------------------------
 
-const RESOURCE_TEMPLATE_URI: &str = "secretariat://template";
-const RESOURCE_ATTENTION_ENVELOPE_URI: &str = "secretariat://attention-envelope";
 const RESOURCE_CONTACTS_URI: &str = "secretariat://contacts";
-const RESOURCE_INBOX_URI: &str = "secretariat://inbox";
-const RESOURCE_OUTBOX_URI: &str = "secretariat://outbox";
+const RESOURCE_ORGS_URI: &str = "secretariat://orgs";
+const RESOURCE_COMPOSITIONS_URI: &str = "secretariat://compositions";
 
 fn build_resource(uri: &str, name: &str, description: &str) -> Resource {
     Annotated::new(
@@ -1691,57 +1810,37 @@ impl ServerHandler for SecretariatServer {
     ) -> Result<ListResourcesResult, ErrorData> {
         let mut resources = Vec::new();
 
-        if self.paths.template.exists() {
-            resources.push(build_resource(
-                RESOURCE_TEMPLATE_URI,
-                "Envelope template",
-                "The principal's customized attentional-granularity envelope \
-                 template at ~/.secretariat/template.md. Source of truth for \
-                 envelope shape (headline, context, substance, subtleties, \
-                 asks). Fetch this before drafting envelopes via /compose.",
-            ));
-        }
-
-        if self.paths.attention_envelope.exists() {
-            resources.push(build_resource(
-                RESOURCE_ATTENTION_ENVELOPE_URI,
-                "Attention envelope",
-                "The principal's declared bounds (depths, urgencies, cadence) \
-                 at ~/.secretariat/attention-envelope.md. Check before \
-                 outbound envelopes to avoid violating the principal's \
-                 stated cadence.",
-            ));
-        }
-
-        // Contacts always available (even if empty) — useful for the model
-        // to discover whether the principal already has the peer they
-        // want to compose to in their book.
+        // Contacts always available (even if empty) — needed before composing
+        // to resolve a name or slug to a DID.
         resources.push(build_resource(
             RESOURCE_CONTACTS_URI,
             "Contacts",
             "The principal's contact book — peers known to the substrate, \
-             with display names, DIDs, and (for did:key contacts) relay \
-             endpoints. Fetch before composing to a peer to confirm the \
-             slug or DID.",
+             with display names, DIDs, and relay endpoints. Fetch before \
+             composing to a peer to confirm the slug or DID.",
         ));
 
-        // Inbox / outbox are listings — fetched only when explicitly
-        // reviewing. The /review prompt instructs the model to fetch
-        // these on principal request, never proactively.
+        // Orgs — the channel tree directory. Fetch before routing a capture
+        // or composing to a channel so you know what orgs and channels exist.
+        if self.paths.orgs_root.exists() {
+            resources.push(build_resource(
+                RESOURCE_ORGS_URI,
+                "Orgs",
+                "All orgs the principal has set up, each with its channel tree. \
+                 Fetch before routing a capture to an org channel or composing \
+                 to an org context — tells you what orgs and channels exist.",
+            ));
+        }
+
+        // Compositions — pending drafts awaiting stamp. Fetch only when the
+        // principal explicitly asks to review pending work.
         resources.push(build_resource(
-            RESOURCE_INBOX_URI,
-            "Inbox",
-            "Verified inbound envelopes the principal has received but not \
-             yet acted on. Fetch ONLY when the principal explicitly asks to \
-             review their inbox — Secretariat is for low-cadence intentional \
-             review, not constant inbox-checking.",
-        ));
-        resources.push(build_resource(
-            RESOURCE_OUTBOX_URI,
-            "Outbox",
-            "Drafts in the principal's outbox (stamped + sent and unstamped \
-             pending review). Fetch when the principal asks 'what drafts do \
-             I have?' or wants to review pending stamps.",
+            RESOURCE_COMPOSITIONS_URI,
+            "Compositions",
+            "Pending drafts in the outbox awaiting the principal's stamp — \
+             rendered with subject, recipient, and age. Fetch ONLY when the \
+             principal asks 'what drafts do I have?' or initiates a stamp \
+             session.",
         ));
 
         Ok(ListResourcesResult {
@@ -1756,23 +1855,9 @@ impl ServerHandler for SecretariatServer {
         _context: RequestContext<RoleServer>,
     ) -> Result<ReadResourceResult, ErrorData> {
         let text = match request.uri.as_str() {
-            RESOURCE_TEMPLATE_URI => std::fs::read_to_string(&self.paths.template)
-                .map_err(|e| internal_error(format!("read template: {e}")))?,
-            RESOURCE_ATTENTION_ENVELOPE_URI => {
-                std::fs::read_to_string(&self.paths.attention_envelope)
-                    .map_err(|e| internal_error(format!("read attention-envelope: {e}")))?
-            }
             RESOURCE_CONTACTS_URI => render_contacts(&self.paths.contacts)?,
-            RESOURCE_INBOX_URI => render_envelope_listing(
-                "Inbox",
-                list_inbox_files(&self.paths.root)
-                    .map_err(|e| internal_error(format!("list_inbox: {e}")))?,
-            ),
-            RESOURCE_OUTBOX_URI => render_envelope_listing(
-                "Outbox",
-                list_outbox_files(&self.paths.root)
-                    .map_err(|e| internal_error(format!("list_outbox: {e}")))?,
-            ),
+            RESOURCE_ORGS_URI => render_orgs(&self.paths.orgs_root)?,
+            RESOURCE_COMPOSITIONS_URI => render_compositions(&self.paths.root)?,
             other => {
                 return Err(ErrorData::new(
                     ErrorCode::INVALID_REQUEST,
@@ -1828,12 +1913,12 @@ document's first-line headline + a short hash prefix; if it differs from what \
 you displayed, abort.
 
 Cadence: Secretariat is for low-cadence, intentional review. Do not fetch \
-`secretariat://inbox` / `secretariat://outbox` resources proactively or \
-between unrelated requests — only when the principal explicitly asks \
-(\"check my inbox\", \"any drafts pending?\"). Captures (`capture`) stay \
-local and CANNOT be stamped — use them for ideas/journal entries the \
-principal will revisit at the next review session. Always `verify` \
-inbound envelopes before trusting their content.";
+`secretariat://compositions` proactively — only when the principal asks \
+(\"any drafts pending?\", \"what's waiting for stamp?\"). Do not fetch \
+`secretariat://orgs` or `secretariat://contacts` between unrelated requests. \
+Captures (`capture`) stay local and CANNOT be stamped — use them for \
+ideas/journal entries the principal will revisit at the next review session. \
+Always `verify` inbound envelopes before trusting their content.";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1843,31 +1928,74 @@ fn internal_error(msg: String) -> ErrorData {
     ErrorData::new(ErrorCode::INTERNAL_ERROR, msg, None)
 }
 
-fn render_envelope_listing(title: &str, envelopes: Vec<ListedEnvelope>) -> String {
-    if envelopes.is_empty() {
-        return format!("# {title}\n\n_Empty._\n");
+fn render_orgs(orgs_root: &std::path::Path) -> Result<String, ErrorData> {
+    let orgs = app_list_orgs(orgs_root)
+        .map_err(|e| internal_error(format!("list_orgs: {e}")))?;
+    if orgs.is_empty() {
+        return Ok("# Orgs\n\nNo orgs yet. Use `create_org` to set one up.\n".to_string());
     }
-    let mut out = format!("# {title}\n\n");
-    for e in envelopes {
-        out.push_str(&format!("- `{}`", e.file_path));
-        if let Some(from) = &e.from {
-            out.push_str(&format!(" · from `{}`", from.as_str()));
+    let mut out = String::from("# Orgs\n\n");
+    for org in &orgs {
+        let name_part = if org.name.is_empty() {
+            String::new()
+        } else {
+            format!(" — {}", org.name)
+        };
+        let did_part = org
+            .did
+            .as_ref()
+            .map(|d| format!(" · `{}`", d.as_str()))
+            .unwrap_or_default();
+        out.push_str(&format!("## {}{}{}\n\n", org.alias.as_str(), name_part, did_part));
+
+        let org_channels_root = orgs_root
+            .join(org.alias.as_str())
+            .join("channels");
+        let channels = list_channels(&org_channels_root)
+            .unwrap_or_default();
+        if channels.is_empty() {
+            out.push_str("_No channels yet._\n\n");
+        } else {
+            for ch in &channels {
+                let label = if ch.name.is_empty() {
+                    ch.handle.clone()
+                } else {
+                    format!("{} ({})", ch.handle, ch.name)
+                };
+                let count = ch.envelope_count;
+                out.push_str(&format!("- `{label}` · {count} envelope{}\n",
+                    if count == 1 { "" } else { "s" }));
+            }
+            out.push('\n');
         }
-        if let Some(to) = &e.to {
-            out.push_str(&format!(" · to `{}`", to.as_str()));
+    }
+    Ok(out)
+}
+
+fn render_compositions(root: &std::path::Path) -> Result<String, ErrorData> {
+    let drafts = list_outbox_files(root)
+        .map_err(|e| internal_error(format!("list_outbox: {e}")))?;
+    if drafts.is_empty() {
+        return Ok("# Compositions\n\n_No pending drafts._\n".to_string());
+    }
+    let mut out = format!("# Compositions\n\n{} pending draft{}:\n\n",
+        drafts.len(), if drafts.len() == 1 { "" } else { "s" });
+    for d in &drafts {
+        out.push_str(&format!("- `{}`", d.file_path));
+        if let Some(handle) = &d.queue {
+            out.push_str(&format!(" → `{handle}`"));
         }
-        if let Some(handle) = &e.queue {
-            out.push_str(&format!(" · queue `{}`", handle.as_str()));
-        }
-        if e.stamped {
+        if d.stamped {
             out.push_str(" · stamped ✓");
+        } else {
+            out.push_str(" · awaiting stamp");
         }
-        if e.encrypted {
+        if d.encrypted {
             out.push_str(" · encrypted");
         }
         out.push('\n');
     }
-    out
+    Ok(out)
 }
 
 fn render_contacts(path: &std::path::Path) -> Result<String, ErrorData> {

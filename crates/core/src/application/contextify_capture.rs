@@ -3,8 +3,8 @@
 //!
 //! Background pass invoked after `capture_to_queue` writes a capture to
 //! `inbox:triage`. If the principal has wired a cognition adapter (by
-//! creating `~/.secretariat/cognition.json`), this routine asks the
-//! adapter for a queue suggestion using only the body. When the
+//! configuring `[cognition]` in `~/.secretariat/preferences.toml`), this
+//! routine asks the adapter for a queue suggestion using only the body. When the
 //! suggestion exceeds the configured threshold, the file moves; the
 //! envelope's `recipient.handle` is rewritten to match the new
 //! location. Every decision (moved or not) appends one line to the
@@ -33,6 +33,9 @@ use thiserror::Error;
 use crate::domain::{Envelope, QueueHandle, Recipient};
 use crate::infrastructure::cognition::{
     append_entry, AnyCognitionAdapter, LedgerEntry, LedgerError,
+};
+use crate::infrastructure::preferences::CognitionPrefs;
+use crate::infrastructure::cognition::{
 };
 use crate::infrastructure::markdown::{embed_stamp, parse_document, MarkdownError};
 use crate::ports::{CognitionError, CognitionPort, RouteSuggestion};
@@ -253,16 +256,11 @@ pub async fn try_contextify_after_capture(
     capture_path: &Path,
     queues_root: &Path,
     ledger_path: &Path,
-    cognition_config_path: &Path,
+    cognition_prefs: &CognitionPrefs,
     now: DateTime<Utc>,
 ) -> Result<Option<ContextifyOutcome>, ContextifyError> {
-    let Some(adapter) =
-        AnyCognitionAdapter::try_load(cognition_config_path).map_err(|e| ContextifyError::Io {
-            path: cognition_config_path.to_path_buf(),
-            source: std::io::Error::other(e.to_string()),
-        })?
-    else {
-        // No config (or required fields missing) = feature off.
+    let Some(adapter) = AnyCognitionAdapter::from_prefs(cognition_prefs) else {
+        // No adapter configured = feature off.
         return Ok(None);
     };
     let threshold = adapter.threshold();

@@ -29,6 +29,7 @@ pub use openai_compat::OpenAICompatibleAdapter;
 use std::path::Path;
 
 use crate::domain::QueueHandle;
+use crate::infrastructure::preferences::{CognitionPrefs, CognitionProvider};
 use crate::ports::{CognitionError, CognitionPort, RouteSuggestion};
 
 /// Enum-dispatched cognition adapter. Built by `try_load`, picks the
@@ -64,6 +65,23 @@ impl AnyCognitionAdapter {
             return Ok(None);
         };
         Ok(Self::from_config(config))
+    }
+
+    /// Build from the unified `CognitionPrefs` (the new `preferences.toml`
+    /// section). Returns `None` when the provider's required fields are
+    /// missing — caller treats as "feature off."
+    pub fn from_prefs(prefs: &CognitionPrefs) -> Option<Self> {
+        let config = CognitionConfig {
+            provider: match prefs.provider {
+                CognitionProvider::Anthropic => Provider::Anthropic,
+                CognitionProvider::OpenaiCompat => Provider::OpenAiCompat,
+            },
+            api_key: prefs.api_key.clone(),
+            api_base: prefs.api_base.clone(),
+            model: prefs.model.clone(),
+            route_threshold: prefs.route_threshold,
+        };
+        Self::from_config(config)
     }
 
     /// Threshold the use case applies to suggestions before re-filing.

@@ -7,8 +7,8 @@
 //! ├── key                          ed25519 PKCS#8 PEM, mode 0600
 //! ├── did.json                     DID document scaffold (user hosts)
 //! ├── contacts.json                known peers (Contact aggregate, mode 0600)
-//! ├── attention-envelope.md        principal's signed bounds
 //! ├── template.md                  user-customizable AG template
+//! ├── preferences.toml             composition, cognition, and delivery settings
 //! ├── inbox/                       incoming stamped envelopes
 //! ├── outbox/                      drafts awaiting principal stamp
 //! ├── peers/                       cached did:web docs
@@ -70,11 +70,16 @@ pub struct KeyPaths {
     pub orgs_root: PathBuf,
     pub bin: PathBuf,
     pub template: PathBuf,
-    pub attention_envelope: PathBuf,
     pub profile: PathBuf,
-    /// BYOK config for the cognition adapter. Default-off: missing file
-    /// = no contextification.
-    pub cognition_config: PathBuf,
+    /// Unified principal preferences (composition, cognition, delivery).
+    /// Supersedes the legacy `cognition.json` + `cadence.toml` files.
+    pub preferences: PathBuf,
+    /// Legacy cognition config — kept only for the one-time migration read
+    /// in `load_or_migrate_preferences`. Do not write here; write to
+    /// `preferences` instead.
+    pub legacy_cognition_config: PathBuf,
+    /// Legacy delivery cadence config — kept only for the one-time migration.
+    pub legacy_cadence: PathBuf,
     /// Append-only ledger of contextification decisions. Lives under
     /// `queues/` so a `tail` over the queues tree picks it up alongside
     /// captures.
@@ -99,9 +104,10 @@ impl KeyPaths {
             orgs_root: root.join("orgs"),
             bin: root.join("bin"),
             template: root.join("template.md"),
-            attention_envelope: root.join("attention-envelope.md"),
             profile: root.join("profile.json"),
-            cognition_config: root.join("cognition.json"),
+            preferences: root.join("preferences.toml"),
+            legacy_cognition_config: root.join("cognition.json"),
+            legacy_cadence: root.join("cadence.toml"),
             contextification_log: root.join("queues").join(".contextification.log"),
             root,
         }

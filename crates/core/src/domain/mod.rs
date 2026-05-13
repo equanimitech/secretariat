@@ -4,7 +4,6 @@
 //! Aggregates (`AttestedDocument`) enforce cross-entity invariants at construction.
 
 mod acts;
-mod attention_envelope;
 mod attested_document;
 mod channel_contract;
 mod channel_def;
@@ -18,7 +17,6 @@ mod recipient;
 mod stamp;
 
 pub use acts::{EnvelopeDepth, EnvelopeUrgency, StampAct};
-pub use attention_envelope::AttentionEnvelope;
 pub use attested_document::{canonical_body_hash, AttestedDocument, DocumentInvariantError};
 pub use channel_contract::{ChannelContract, TrustGate};
 pub use channel_def::ChannelDef;

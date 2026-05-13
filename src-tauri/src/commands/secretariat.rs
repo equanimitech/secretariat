@@ -670,7 +670,7 @@ impl CognitionConfigDto {
 pub async fn load_cognition_config() -> Result<Option<CognitionConfigDto>, String> {
     use secretariat_core::infrastructure::cognition::load_config;
     let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
-    let cfg = load_config(&paths.cognition_config)
+    let cfg = load_config(&paths.legacy_cognition_config)
         .map_err(|e| format!("load_cognition_config: {e}"))?;
     Ok(cfg.map(CognitionConfigDto::from))
 }
@@ -683,7 +683,7 @@ pub async fn save_cognition_config(config: CognitionConfigDto) -> Result<(), Str
     use secretariat_core::infrastructure::cognition::save_config;
     let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
     let core_cfg = config.into_core()?;
-    save_config(&paths.cognition_config, &core_cfg)
+    save_config(&paths.legacy_cognition_config, &core_cfg)
         .map_err(|e| format!("save_cognition_config: {e}"))?;
     Ok(())
 }
@@ -707,7 +707,7 @@ pub async fn list_cognition_models(
     let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
     let cfg = match override_config {
         Some(dto) => dto.into_core()?,
-        None => load_config(&paths.cognition_config)
+        None => load_config(&paths.legacy_cognition_config)
             .map_err(|e| format!("loading cognition config: {e}"))?
             .ok_or_else(|| "no cognition config saved yet".to_string())?,
     };

@@ -27,6 +27,7 @@ use ed25519_dalek::SigningKey;
 use secretariat_core::application::{
     decide_poll, sync_now, CadenceConfig, PollDecision, SyncOutcome,
 };
+use secretariat_core::infrastructure::preferences::load_or_migrate as load_or_migrate_preferences;
 use secretariat_core::infrastructure::keys::KeyPaths;
 use secretariat_core::Did;
 use std::sync::OnceLock;
@@ -56,8 +57,15 @@ pub(crate) fn tick_lock() -> &'static Mutex<()> {
 pub async fn serve(paths: &KeyPaths, did: &Did, key: &SigningKey) -> Result<()> {
     paths.ensure_dirs()?;
 
-    let cadence = CadenceConfig::load_or_default(&paths.root.join("cadence.toml"))
-        .context("loading cadence config")?;
+    let prefs = load_or_migrate_preferences(
+        &paths.preferences,
+        &paths.legacy_cognition_config,
+        &paths.legacy_cadence,
+    )
+    .context("loading preferences")?;
+    let cadence = CadenceConfig {
+        poll_interval_minutes: prefs.delivery.poll_interval_minutes as i64,
+    };
     info!(
         poll_interval_minutes = cadence.poll_interval_minutes,
         did = %did,
