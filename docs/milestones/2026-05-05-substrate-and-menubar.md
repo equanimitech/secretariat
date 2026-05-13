@@ -1,5 +1,13 @@
 # Project — v0.3 simplification (substrate + tray + MCP-primary)
 
+> **SUPERSEDED 2026-05-12.** The "simplification / net-subtraction" framing
+> was correct for v0.2.x chrome but did not survive the v0.3 pivot to an
+> additive orgs + channels direction. Current v0.3 direction:
+> `docs/ideas/2026-05-12-secretariat-as-autonomous-enterprise-substrate.md`.
+> Substrate layout decision: `docs/decisions/2026-05-12-substrate-layout-v03.md`.
+> The "MCP-primary" and "no main-window compose UI" conclusions carry forward;
+> the "net-subtractive" constraint does not.
+
 **This is a simplification project, not a feature push.** Every slice
 is evaluated by net delta — lines of code + surfaces added vs removed.
 Net direction must be neutral or subtractive. See

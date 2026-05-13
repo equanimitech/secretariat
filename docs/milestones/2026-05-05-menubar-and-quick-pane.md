@@ -1,5 +1,9 @@
 # Project — Menubar + quick-pane (v0.3)
 
+> **SUPERSEDED 2026-05-05** by `docs/milestones/2026-05-05-substrate-and-menubar.md`
+> (MCP-primary, no main-window compose UI), then again **2026-05-12** by the
+> orgs + channels pivot. Historical record only.
+
 Pairs with `docs/pitches/2026-05-05-menubar-only.md`. The pitch sets the
 JBTD + boundaries; this doc sequences the work into vertical slices.
 
