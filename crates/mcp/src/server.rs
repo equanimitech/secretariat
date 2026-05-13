@@ -55,13 +55,13 @@ use secretariat_core::application::{
     create_channel as app_create_channel, create_invite, create_org as app_create_org,
     delete_channel as app_delete_channel, delete_org as app_delete_org, find_by_slug,
     get_channel_contract as app_get_channel_contract,
-    get_org_contract as app_get_org_contract, list_channels, list_contacts, list_inbox_files,
+    get_org_contract as app_get_org_contract, list_channels, list_contacts,
     list_orgs as app_list_orgs, list_outbox_files, read_channel, read_envelope,
     resolve_channel_contract as app_resolve_channel_contract,
     set_channel_contract as app_set_channel_contract, set_org_contract as app_set_org_contract,
     show_org as app_show_org, stamp_document, try_contextify_after_capture, verify_document,
     view_invite, CaptureRequest, CaptureRoots, ComposeRequest, ContractLevel, ContractPatch,
-    ContractView, ListedEnvelope, PatchField, ResolvedContract, StampError, VerifyOutcome,
+    ContractView, PatchField, ResolvedContract, StampError, VerifyOutcome,
 };
 use secretariat_core::domain::{OrgAlias, QueueHandle, Recipient, StampAct, TrustGate};
 use secretariat_core::infrastructure::org_store::org_channels_root;
@@ -339,34 +339,6 @@ pub struct DaemonRelayStatus {
     pub endpoint: String,
     pub cursor: u64,
     pub registered: bool,
-}
-
-#[derive(Debug, Serialize, JsonSchema)]
-pub struct CompositionSettingsOutput {
-    pub closing_line: String,
-    pub style_notes: String,
-}
-
-#[derive(Debug, Serialize, JsonSchema)]
-pub struct CognitionSettingsOutput {
-    pub provider: String,
-    /// True when an API key is configured (value not exposed).
-    pub api_key_set: bool,
-    pub api_base: Option<String>,
-    pub model: Option<String>,
-    pub route_threshold: Option<f32>,
-    /// True when the minimum required fields for the chosen provider are present.
-    pub configured: bool,
-}
-
-#[derive(Debug, Serialize, JsonSchema)]
-pub struct DeliverySettingsOutput {
-    pub poll_interval_minutes: u32,
-}
-
-#[derive(Debug, Serialize, JsonSchema)]
-pub struct SetPrefsOutput {
-    pub ok: bool,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -1690,90 +1662,6 @@ impl SecretariatServer {
         }))
     }
 
-    /// Return the principal's composition preferences (closing line + style
-    /// notes). Call before composing an envelope so you can append the
-    /// configured closing line and apply style guidance.
-    async fn get_composition_settings(
-        &self,
-    ) -> Result<Json<CompositionSettingsOutput>, ErrorData> {
-        let prefs = load_or_migrate_preferences(
-            &self.paths.preferences,
-            &self.paths.legacy_cognition_config,
-            &self.paths.legacy_cadence,
-        )
-        .map_err(|e| internal_error(format!("load preferences: {e}")))?;
-        Ok(Json(CompositionSettingsOutput {
-            closing_line: prefs.composition.closing_line,
-            style_notes: prefs.composition.style_notes,
-        }))
-    }
-
-    /// Patch composition settings. Pass only the fields you want to change;
-    /// omitted fields keep their current value.
-    async fn set_composition_settings(
-        &self,
-        closing_line: Option<String>,
-        style_notes: Option<String>,
-    ) -> Result<Json<SetPrefsOutput>, ErrorData> {
-        let mut prefs = load_or_migrate_preferences(
-            &self.paths.preferences,
-            &self.paths.legacy_cognition_config,
-            &self.paths.legacy_cadence,
-        )
-        .map_err(|e| internal_error(format!("load preferences: {e}")))?;
-        if let Some(v) = closing_line {
-            prefs.composition.closing_line = v;
-        }
-        if let Some(v) = style_notes {
-            prefs.composition.style_notes = v;
-        }
-        prefs
-            .save(&self.paths.preferences)
-            .map_err(|e| internal_error(format!("save preferences: {e}")))?;
-        Ok(Json(SetPrefsOutput { ok: true }))
-    }
-
-    /// Return the principal's cognition settings (provider, key, model,
-    /// route threshold). Use to know which substrate is wired before
-    /// attempting contextification.
-    async fn get_cognition_settings(
-        &self,
-    ) -> Result<Json<CognitionSettingsOutput>, ErrorData> {
-        let prefs = load_or_migrate_preferences(
-            &self.paths.preferences,
-            &self.paths.legacy_cognition_config,
-            &self.paths.legacy_cadence,
-        )
-        .map_err(|e| internal_error(format!("load preferences: {e}")))?;
-        let provider = match prefs.cognition.provider {
-            secretariat_core::infrastructure::preferences::CognitionProvider::Anthropic => "anthropic",
-            secretariat_core::infrastructure::preferences::CognitionProvider::OpenaiCompat => "openai-compat",
-        };
-        let configured = prefs.cognition.is_configured();
-        Ok(Json(CognitionSettingsOutput {
-            provider: provider.to_string(),
-            api_key_set: prefs.cognition.api_key.is_some(),
-            api_base: prefs.cognition.api_base,
-            model: prefs.cognition.model,
-            route_threshold: prefs.cognition.route_threshold,
-            configured,
-        }))
-    }
-
-    /// Return the principal's delivery settings (poll interval).
-    async fn get_delivery_settings(
-        &self,
-    ) -> Result<Json<DeliverySettingsOutput>, ErrorData> {
-        let prefs = load_or_migrate_preferences(
-            &self.paths.preferences,
-            &self.paths.legacy_cognition_config,
-            &self.paths.legacy_cadence,
-        )
-        .map_err(|e| internal_error(format!("load preferences: {e}")))?;
-        Ok(Json(DeliverySettingsOutput {
-            poll_interval_minutes: prefs.delivery.poll_interval_minutes,
-        }))
-    }
 }
 
 // ---------------------------------------------------------------------------

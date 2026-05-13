@@ -27,6 +27,14 @@ vi.mock('@tauri-apps/plugin-updater', () => ({
   check: vi.fn().mockResolvedValue(null),
 }))
 
+// Mock secretariat-specific bindings (tauri-specta generated)
+vi.mock('@/lib/bindings', () => ({
+  commands: {
+    getProfile: vi.fn().mockResolvedValue({ status: 'ok', data: null }),
+    currentIdentity: vi.fn().mockResolvedValue({ status: 'ok', data: null }),
+  },
+}))
+
 // Mock typed Tauri bindings (tauri-specta generated)
 vi.mock('@/lib/tauri-bindings', () => ({
   commands: {

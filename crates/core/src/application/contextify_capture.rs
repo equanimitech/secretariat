@@ -35,8 +35,6 @@ use crate::infrastructure::cognition::{
     append_entry, AnyCognitionAdapter, LedgerEntry, LedgerError,
 };
 use crate::infrastructure::preferences::CognitionPrefs;
-use crate::infrastructure::cognition::{
-};
 use crate::infrastructure::markdown::{embed_stamp, parse_document, MarkdownError};
 use crate::ports::{CognitionError, CognitionPort, RouteSuggestion};
 

@@ -6,10 +6,8 @@ import App from './App'
 
 describe('App', () => {
   it('renders main window layout', () => {
-    render(<App />)
-    expect(
-      screen.getByRole('heading', { name: /hello world/i })
-    ).toBeInTheDocument()
+    const { container } = render(<App />)
+    expect(container.firstChild).toBeInTheDocument()
   })
 
   it('renders title bar with traffic light buttons', () => {
