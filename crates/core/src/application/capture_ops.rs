@@ -37,6 +37,7 @@ use thiserror::Error;
 use crate::domain::{
     Did, Envelope, EnvelopeBuilder, EnvelopeDepth, EnvelopeUrgency, QueueHandle, Recipient,
 };
+use crate::infrastructure::channel_def_store::CHANNEL_DEF_FILENAME;
 use crate::infrastructure::markdown::{embed_stamp, MarkdownError};
 
 /// Top-namespace token that routes a capture into the channel-dir layout.
@@ -57,6 +58,13 @@ pub enum CaptureError {
         channel handles require at least `channel:<name>` (two segments)"
     )]
     ChannelHandleTooShallow { handle: String },
+    #[error(
+        "channel `{handle}` does not exist — search existing channels \
+        with `sec channels list` (or the `list_channels` MCP tool) for \
+        a relevant one, or create it with `sec channels create {handle}` \
+        (or the `create_channel` MCP tool)"
+    )]
+    ChannelNotFound { handle: String },
 }
 
 #[derive(Debug, Clone)]
@@ -132,6 +140,15 @@ fn resolve_target_dir(
         for seg in &segments[1..] {
             dir.push(seg);
         }
+        // Existence gate: refuse to capture into a channel whose
+        // `.channelDef` is absent. Auto-vivifying the directory tree on
+        // capture would let a typo silently spawn a phantom channel that
+        // never appears in `list_channels` and has no roster/governance.
+        if !dir.join(CHANNEL_DEF_FILENAME).is_file() {
+            return Err(CaptureError::ChannelNotFound {
+                handle: queue.as_str().to_string(),
+            });
+        }
         dir.push("envelopes");
         dir.push(format!("{:04}", now.year()));
         dir.push(format!("{:02}", now.month()));
@@ -188,6 +205,18 @@ mod tests {
 
     fn roots_under(dir: &Path) -> (PathBuf, PathBuf) {
         (dir.join("queues"), dir.join("channels"))
+    }
+
+    /// Plant a minimal `.channelDef` so capture_to_queue's existence
+    /// gate clears. Mirrors what `create_channel` would have written.
+    fn touch_channel(channel_tree: &Path, handle: &str) {
+        let h = QueueHandle::parse(handle).unwrap();
+        let mut dir = channel_tree.to_path_buf();
+        for seg in h.segments().iter().skip(1) {
+            dir.push(seg);
+        }
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join(".channelDef"), "{}").unwrap();
     }
 
     #[test]
@@ -306,6 +335,7 @@ mod tests {
     fn captures_with_channel_namespace_use_time_sharded_tree() {
         let dir = TempDir::new().unwrap();
         let (queues, channel_tree) = roots_under(dir.path());
+        touch_channel(&channel_tree, "channel:secretariat:dev");
 
         let req = CaptureRequest {
             from: rafa(),
@@ -350,6 +380,7 @@ mod tests {
     fn captures_with_nested_channel_handle() {
         let dir = TempDir::new().unwrap();
         let (queues, channel_tree) = roots_under(dir.path());
+        touch_channel(&channel_tree, "channel:dommage-corporel:paris-cohort");
 
         let req = CaptureRequest {
             from: rafa(),
@@ -382,6 +413,7 @@ mod tests {
         // (one segment after `channel` is enough).
         let dir = TempDir::new().unwrap();
         let (queues, channel_tree) = roots_under(dir.path());
+        touch_channel(&channel_tree, "channel:dev");
 
         let req = CaptureRequest {
             from: rafa(),
@@ -400,5 +432,38 @@ mod tests {
         )
         .unwrap();
         assert!(path.parent().unwrap().ends_with("dev/envelopes/2026/05/12"));
+    }
+
+    #[test]
+    fn capture_to_unknown_channel_errors() {
+        // No `.channelDef` planted → capture must refuse rather than
+        // silently vivify a phantom channel directory.
+        let dir = TempDir::new().unwrap();
+        let (queues, channel_tree) = roots_under(dir.path());
+
+        let req = CaptureRequest {
+            from: rafa(),
+            queue: QueueHandle::parse("channel:does-not:exist").unwrap(),
+            body: "should be rejected".into(),
+            source: "test".into(),
+        };
+        let now = Utc.with_ymd_and_hms(2026, 5, 14, 9, 0, 0).unwrap();
+        let err = capture_to_queue(
+            req,
+            CaptureRoots {
+                flat_queues: &queues,
+                channel_tree: &channel_tree,
+            },
+            now,
+        )
+        .unwrap_err();
+        match err {
+            CaptureError::ChannelNotFound { handle } => {
+                assert_eq!(handle, "channel:does-not:exist");
+            }
+            other => panic!("expected ChannelNotFound, got {other:?}"),
+        }
+        // No phantom directory left behind.
+        assert!(!channel_tree.join("does-not").exists());
     }
 }

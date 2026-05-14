@@ -350,9 +350,16 @@ mod tests {
     }
 
     fn capture(channels: &Path, queues: &Path, handle: &str, body: &str, now: DateTime<Utc>) {
+        let q = QueueHandle::parse(handle).unwrap();
+        // For channel handles, ensure the channel exists before capture —
+        // `capture_to_queue` refuses to write into an unknown channel
+        // (`ChannelNotFound`) so tests must vivify the `.channelDef` here.
+        if q.top_namespace() == "channel" {
+            let _ = create_channel(channels, q.clone(), "", "", now);
+        }
         let req = CaptureRequest {
             from: principal(),
-            queue: QueueHandle::parse(handle).unwrap(),
+            queue: q,
             body: body.to_string(),
             source: "test".to_string(),
         };
