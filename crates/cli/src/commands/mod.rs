@@ -6,7 +6,6 @@ pub mod capture;
 pub mod channels;
 pub mod compose;
 pub mod orgs;
-pub mod contact;
 pub mod daemon;
 pub mod init;
 pub mod invite;
@@ -19,5 +18,4 @@ pub mod stamp;
 pub mod verify;
 pub mod view;
 
-mod biometric;
 pub(crate) mod paths;

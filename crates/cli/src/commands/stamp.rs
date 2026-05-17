@@ -17,11 +17,11 @@ use secretariat_core::application::{
     send_stamped_envelope, stamp_document, SendError, StampError,
 };
 use secretariat_core::domain::StampAct;
+use secretariat_core::infrastructure::biometric::build_signer;
 use secretariat_core::infrastructure::contact_store::ContactBook;
 use secretariat_core::infrastructure::keys::{load_signing_key, KeyPaths};
 use secretariat_core::ports::SignerError;
 
-use super::biometric;
 use super::paths::{key_paths, load_did};
 
 #[derive(Parser, Debug)]
@@ -76,7 +76,7 @@ pub fn run(args: Args) -> Result<()> {
     let key = load_signing_key(&paths.signing_key)
         .with_context(|| format!("loading {} (run `sec init` first)", paths.signing_key.display()))?;
 
-    let signer = biometric::build_signer(did.clone(), key.clone(), args.allow_test_biometrics)?;
+    let signer = build_signer(did.clone(), key.clone(), args.allow_test_biometrics)?;
     let act: StampAct = args.act.into();
 
     let outcome = match stamp_document(&args.file, &signer, act, args.force, Utc::now()) {
