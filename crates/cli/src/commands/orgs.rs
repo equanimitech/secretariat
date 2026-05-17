@@ -101,7 +101,7 @@ pub fn run(args: Args) -> Result<()> {
     let paths = key_paths()?;
     paths.ensure_dirs()?;
     match args.cmd {
-        Cmd::Create(c) => run_create(&paths.orgs_root, c),
+        Cmd::Create(c) => run_create(&paths.orgs_root, c, Some(&paths.contract_stub)),
         Cmd::List => run_list(&paths.orgs_root),
         Cmd::Show(s) => run_show(&paths.orgs_root, s),
         Cmd::Delete(d) => run_delete(&paths.orgs_root, d),
@@ -168,7 +168,11 @@ fn run_contract_set(orgs_root: &std::path::Path, args: ContractSetArgs) -> Resul
     Ok(())
 }
 
-fn run_create(orgs_root: &std::path::Path, args: CreateArgs) -> Result<()> {
+fn run_create(
+    orgs_root: &std::path::Path,
+    args: CreateArgs,
+    stub_override: Option<&std::path::Path>,
+) -> Result<()> {
     let alias = OrgAlias::parse(&args.alias)
         .map_err(|e| anyhow!("invalid alias `{}`: {e}", args.alias))?;
     let did = match args.did.as_deref() {
@@ -176,8 +180,16 @@ fn run_create(orgs_root: &std::path::Path, args: CreateArgs) -> Result<()> {
         Some(s) => Some(Did::parse(s).map_err(|e| anyhow!("invalid did `{s}`: {e}"))?),
     };
     let name = args.name.unwrap_or_else(|| alias.as_str().to_string());
-    let org = create_org(orgs_root, alias, did, name, args.description, Utc::now())
-        .context("creating org")?;
+    let org = create_org(
+        orgs_root,
+        alias,
+        did,
+        name,
+        args.description,
+        Utc::now(),
+        stub_override,
+    )
+    .context("creating org")?;
     println!("created org: {}", org.alias);
     if let Some(d) = &org.did {
         println!("  did: {}", d);

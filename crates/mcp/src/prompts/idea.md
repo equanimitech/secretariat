@@ -14,20 +14,22 @@ Before calling `capture`, decide WHERE the idea lands. Sequence:
    org = "your-org-alias"
 
    [channels]
-   idea = "channel:your-channel"
-   pain = "channel:your-channel:pain"
+   idea = "your-channel"
+   pain = "your-channel:pain"
    # optional further routing
    ```
 
-2. **If `.secretariat` provides an `idea` channel that is NOT `inbox:triage`:** propose it as a one-line confirm prompt — *"Capture to `<org>` / `<channel:handle>`? (y · `inbox:triage` · other)"* — and WAIT for the principal's answer.
+   Channel handles are colon-pathed segments — colons mean tree depth.
 
-3. **If the inferred channel IS `inbox:triage` (or no inference at all):** skip the confirm prompt. Just capture silently to `inbox:triage`. Defaults stay quiet — only divergences from default need a confirmation.
+2. **If `.secretariat` provides an `idea` channel that is NOT `triage`:** propose it as a one-line confirm prompt — *"Capture to `<org>` / `<handle>`? (y · `triage` · other)"* — and WAIT for the principal's answer.
 
-4. **If the principal confirms (`y` / `ok`):** call `capture` with `org: <alias>`, `queue: <channel:handle>`.
+3. **If the inferred channel IS `triage` (or no inference at all):** skip the confirm prompt. Just capture silently to `triage`. Defaults stay quiet — only divergences from default need a confirmation.
 
-5. **If the principal overrides with another handle:** use that. If they say `inbox:triage` or decline: fall back to default.
+4. **If the principal confirms (`y` / `ok`):** call `capture` with `org: <alias>`, `queue: <handle>`.
 
-6. **Default (no `.secretariat`, no inference, or principal declines):** `capture` with `queue: "inbox:triage"`, no `org`. Lands in personal triage.
+5. **If the principal overrides with another handle:** use that. If they say `triage` or decline: fall back to default.
+
+6. **Default (no `.secretariat`, no inference, or principal declines):** `capture` with `queue: "triage"`, no `org`. Lands in personal triage.
 
 The confirm step only fires when a non-default route is proposed. Defaults are silent; divergences are intentional and need a beat of attention.
 
@@ -56,4 +58,4 @@ This body goes into the `body` param of the `capture` tool verbatim. The substra
 - If the user is clearly riffing on an already-captured topic, prefer a new capture (the review session collates) rather than trying to find + edit a prior one.
 - Confirm inferred routing BEFORE capturing **only when the route is non-default**. Defaults are silent; non-defaults need a beat. A wrong-channel capture is friction the principal pays for later.
 - After calling `capture`, briefly confirm to the user (one line) — file path the substrate returned is enough.
-- Do NOT create channels on the fly. If the inferred channel doesn't exist, fall back to `inbox:triage` and surface that mismatch ("`.secretariat` points at `channel:jurimetria` but that doesn't exist yet — captured to `inbox:triage` instead. Create the channel?").
+- Do NOT create channels on the fly. If the inferred channel doesn't exist, fall back to `triage` and surface that mismatch ("`.secretariat` points at `jurimetria` but that doesn't exist yet — captured to `triage` instead. Create the channel?").

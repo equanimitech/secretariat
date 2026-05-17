@@ -37,8 +37,6 @@ pub enum ContractOpsError {
     ChannelNotFound(String),
     #[error("org `{0}` does not exist — create it first")]
     OrgNotFound(String),
-    #[error("handle `{0}` is not a channel handle (must start with `channel:`)")]
-    NotAChannelHandle(String),
     #[error("contract store: {0}")]
     ContractStore(#[from] ContractStoreError),
     #[error("channel def store: {0}")]
@@ -107,8 +105,8 @@ pub struct ContractView {
 /// walk order (org-root first, leaf last).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContractLevel {
-    /// Human-readable label, e.g. `org:themia.pro`, `channel:dev`,
-    /// `channel:dev:leggia`.
+    /// Human-readable label, e.g. `org:themia.pro`, `dev`,
+    /// `dev:leggia`.
     pub scope: String,
     pub path: PathBuf,
     pub contract: ChannelContract,
@@ -127,11 +125,6 @@ pub fn get_channel_contract(
     channels_root: &Path,
     handle: &QueueHandle,
 ) -> Result<ContractView, ContractOpsError> {
-    if handle.top_namespace() != "channel" {
-        return Err(ContractOpsError::NotAChannelHandle(
-            handle.as_str().to_string(),
-        ));
-    }
     if !channel_def_path(channels_root, handle).is_file() {
         return Err(ContractOpsError::ChannelNotFound(handle.as_str().to_string()));
     }
@@ -143,7 +136,7 @@ pub fn get_channel_contract(
             // slice 1a shipped, or hand-deleted). Auto-scaffold the
             // stub so the principal isn't surprised by a missing file
             // when they go to read it.
-            save_stub_if_absent(&path)?;
+            save_stub_if_absent(&path, None)?;
             load_contract(&path)?.expect("stub just written")
         }
     };
@@ -183,7 +176,7 @@ pub fn get_org_contract(
     let (contract, body) = match load_contract(&path)? {
         Some((c, b)) => (c, b),
         None => {
-            save_stub_if_absent(&path)?;
+            save_stub_if_absent(&path, None)?;
             load_contract(&path)?.expect("stub just written")
         }
     };
@@ -217,7 +210,7 @@ pub fn set_org_contract(
 /// 1. Org-root `<orgs_root>/<alias>/contract.local.md` (if `org` is
 ///    `Some` and the file exists).
 /// 2. Each intermediate channel-segment directory in turn (e.g. for
-///    `channel:dev:leggia`, load `<channels_root>/dev/contract.local.md`
+///    `dev:leggia`, load `<channels_root>/dev/contract.local.md`
 ///    if present).
 /// 3. The leaf channel's `contract.local.md`.
 ///
@@ -231,21 +224,14 @@ pub fn set_org_contract(
 /// Personal channels (where `org` is `None`) skip step 1 and walk
 /// `<channels_root>/...` directly.
 ///
-/// Errors when `handle` is not a `channel:...` handle or when a
-/// loaded file fails to parse — those are bugs in the substrate, not
-/// inheritance edge-cases.
+/// Errors when a loaded file fails to parse — those are bugs in the
+/// substrate, not inheritance edge-cases.
 pub fn resolve_channel_contract(
     orgs_root: &Path,
     personal_channels_root: &Path,
     org: Option<&OrgAlias>,
     handle: &QueueHandle,
 ) -> Result<ResolvedContract, ContractOpsError> {
-    if handle.top_namespace() != "channel" {
-        return Err(ContractOpsError::NotAChannelHandle(
-            handle.as_str().to_string(),
-        ));
-    }
-
     let mut chain: Vec<ContractLevel> = Vec::new();
     let mut merged = ChannelContract::empty();
 
@@ -270,15 +256,18 @@ pub fn resolve_channel_contract(
         None => (personal_channels_root.to_path_buf(), None),
     };
 
-    // 2 + 3. Each prefix of the channel handle's segments contributes
-    //        if a `contract.local.md` exists at that directory.
-    //        `channel:dev:leggia` → segments after `channel:` = ["dev", "leggia"].
-    let segs: Vec<&str> = handle.segments().iter().skip(1).copied().collect();
+    // 2 + 3. Each prefix of the handle's segments contributes if a
+    //        `contract.local.md` exists at that directory. v0.5 handles
+    //        no longer carry a `channel:` token, so every segment is
+    //        directory depth.
+    let segs: Vec<&str> = handle.segments();
     let mut cursor = channels_root.clone();
-    let mut handle_so_far = String::from("channel");
+    let mut handle_so_far = String::new();
     for seg in &segs {
         cursor.push(seg);
-        handle_so_far.push(':');
+        if !handle_so_far.is_empty() {
+            handle_so_far.push(':');
+        }
         handle_so_far.push_str(seg);
         let path = cursor.join(crate::infrastructure::contract_store::CONTRACT_FILENAME);
         if let Some((c, _)) = load_contract(&path)? {
@@ -353,18 +342,18 @@ mod tests {
     fn get_channel_contract_returns_empty_stub_for_fresh_channel() {
         let dir = TempDir::new().unwrap();
         let channels = dir.path().join("channels");
-        let h = QueueHandle::parse("channel:dev:secretariat").unwrap();
-        create_channel(&channels, h.clone(), "", "", when()).unwrap();
+        let h = QueueHandle::parse("dev:secretariat").unwrap();
+        create_channel(&channels, h.clone(), "", "", when(), None).unwrap();
         let view = get_channel_contract(&channels, &h).unwrap();
         assert!(view.contract.is_empty());
-        assert!(view.body.contains("consumption contract"));
+        assert!(view.body.contains("# importance"));
     }
 
     #[test]
     fn get_channel_contract_errors_when_channel_missing() {
         let dir = TempDir::new().unwrap();
         let channels = dir.path().join("channels");
-        let h = QueueHandle::parse("channel:nothing").unwrap();
+        let h = QueueHandle::parse("nothing").unwrap();
         let r = get_channel_contract(&channels, &h);
         assert!(matches!(r, Err(ContractOpsError::ChannelNotFound(_))));
     }
@@ -373,8 +362,8 @@ mod tests {
     fn set_channel_contract_writes_fields_and_preserves_body() {
         let dir = TempDir::new().unwrap();
         let channels = dir.path().join("channels");
-        let h = QueueHandle::parse("channel:dev:secretariat").unwrap();
-        create_channel(&channels, h.clone(), "", "", when()).unwrap();
+        let h = QueueHandle::parse("dev:secretariat").unwrap();
+        create_channel(&channels, h.clone(), "", "", when(), None).unwrap();
         let patch = ContractPatch {
             cadence_floor_minutes: PatchField::Set(45),
             min_trust: PatchField::Set(TrustGate::StampRequired),
@@ -383,7 +372,7 @@ mod tests {
         assert_eq!(view.contract.cadence_floor_minutes, Some(45));
         assert_eq!(view.contract.min_trust, Some(TrustGate::StampRequired));
         // Body of the stub stays intact.
-        assert!(view.body.contains("consumption contract"));
+        assert!(view.body.contains("# importance"));
         // Re-reading yields the same state.
         let reread = get_channel_contract(&channels, &h).unwrap();
         assert_eq!(reread.contract, view.contract);
@@ -393,8 +382,8 @@ mod tests {
     fn set_channel_contract_leaves_unmentioned_fields_alone() {
         let dir = TempDir::new().unwrap();
         let channels = dir.path().join("channels");
-        let h = QueueHandle::parse("channel:dev:secretariat").unwrap();
-        create_channel(&channels, h.clone(), "", "", when()).unwrap();
+        let h = QueueHandle::parse("dev:secretariat").unwrap();
+        create_channel(&channels, h.clone(), "", "", when(), None).unwrap();
         // First set: cadence + min_trust.
         set_channel_contract(
             &channels,
@@ -423,8 +412,8 @@ mod tests {
     fn set_channel_contract_clear_reverts_to_inherit() {
         let dir = TempDir::new().unwrap();
         let channels = dir.path().join("channels");
-        let h = QueueHandle::parse("channel:dev:secretariat").unwrap();
-        create_channel(&channels, h.clone(), "", "", when()).unwrap();
+        let h = QueueHandle::parse("dev:secretariat").unwrap();
+        create_channel(&channels, h.clone(), "", "", when(), None).unwrap();
         set_channel_contract(
             &channels,
             &h,
@@ -452,10 +441,10 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let orgs = dir.path().join("orgs");
         let a = alias("themia.pro");
-        create_org(&orgs, a.clone(), None, "", "", when()).unwrap();
+        create_org(&orgs, a.clone(), None, "", "", when(), None).unwrap();
         let view = get_org_contract(&orgs, &a).unwrap();
         assert!(view.contract.is_empty());
-        assert!(view.body.contains("consumption contract"));
+        assert!(view.body.contains("# importance"));
     }
 
     #[test]
@@ -471,7 +460,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let orgs = dir.path().join("orgs");
         let a = alias("themia.pro");
-        create_org(&orgs, a.clone(), None, "", "", when()).unwrap();
+        create_org(&orgs, a.clone(), None, "", "", when(), None).unwrap();
         let view = set_org_contract(
             &orgs,
             &a,
@@ -516,11 +505,11 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let orgs = dir.path().join("orgs");
         let a = alias("themia.pro");
-        create_org(&orgs, a.clone(), None, "", "", when()).unwrap();
-        let h = QueueHandle::parse("channel:dev:leggia").unwrap();
+        create_org(&orgs, a.clone(), None, "", "", when(), None).unwrap();
+        let h = QueueHandle::parse("dev:leggia").unwrap();
         let channels_in_org =
             crate::infrastructure::org_store::org_channels_root(&orgs, &a);
-        create_channel(&channels_in_org, h.clone(), "", "", when()).unwrap();
+        create_channel(&channels_in_org, h.clone(), "", "", when(), None).unwrap();
         // create_org auto-writes a stub at org-root that is empty;
         // create_channel writes a stub at leaf that is empty.
         let r =
@@ -537,11 +526,11 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let orgs = dir.path().join("orgs");
         let a = alias("themia.pro");
-        create_org(&orgs, a.clone(), None, "", "", when()).unwrap();
+        create_org(&orgs, a.clone(), None, "", "", when(), None).unwrap();
         let channels_in_org =
             crate::infrastructure::org_store::org_channels_root(&orgs, &a);
-        let h = QueueHandle::parse("channel:dev:leggia").unwrap();
-        create_channel(&channels_in_org, h.clone(), "", "", when()).unwrap();
+        let h = QueueHandle::parse("dev:leggia").unwrap();
+        create_channel(&channels_in_org, h.clone(), "", "", when(), None).unwrap();
 
         // org=30, trunk=15, leaf=60 → MAX = 60
         write_org_contract(
@@ -575,8 +564,8 @@ mod tests {
         assert_eq!(r.merged.cadence_floor_minutes, Some(60));
         assert_eq!(r.chain.len(), 3);
         assert_eq!(r.chain[0].scope, "org:themia.pro");
-        assert_eq!(r.chain[1].scope, "channel:dev");
-        assert_eq!(r.chain[2].scope, "channel:dev:leggia");
+        assert_eq!(r.chain[1].scope, "dev");
+        assert_eq!(r.chain[2].scope, "dev:leggia");
     }
 
     #[test]
@@ -584,11 +573,11 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let orgs = dir.path().join("orgs");
         let a = alias("themia.pro");
-        create_org(&orgs, a.clone(), None, "", "", when()).unwrap();
+        create_org(&orgs, a.clone(), None, "", "", when(), None).unwrap();
         let channels_in_org =
             crate::infrastructure::org_store::org_channels_root(&orgs, &a);
-        let h = QueueHandle::parse("channel:assemblee_generale").unwrap();
-        create_channel(&channels_in_org, h.clone(), "", "", when()).unwrap();
+        let h = QueueHandle::parse("assemblee_generale").unwrap();
+        create_channel(&channels_in_org, h.clone(), "", "", when(), None).unwrap();
 
         // org = signed-only, leaf = stamp-required → MAX-RESTRICTIVE = stamp-required
         write_org_contract(
@@ -619,11 +608,11 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let orgs = dir.path().join("orgs");
         let a = alias("themia.pro");
-        create_org(&orgs, a.clone(), None, "", "", when()).unwrap();
+        create_org(&orgs, a.clone(), None, "", "", when(), None).unwrap();
         let channels_in_org =
             crate::infrastructure::org_store::org_channels_root(&orgs, &a);
-        let h = QueueHandle::parse("channel:clients").unwrap();
-        create_channel(&channels_in_org, h.clone(), "", "", when()).unwrap();
+        let h = QueueHandle::parse("clients").unwrap();
+        create_channel(&channels_in_org, h.clone(), "", "", when(), None).unwrap();
 
         write_org_contract(
             &orgs,
@@ -645,8 +634,8 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let orgs = dir.path().join("orgs");
         let a = alias("themia.pro");
-        create_org(&orgs, a.clone(), None, "", "", when()).unwrap();
-        let h = QueueHandle::parse("channel:never:existed").unwrap();
+        create_org(&orgs, a.clone(), None, "", "", when(), None).unwrap();
+        let h = QueueHandle::parse("never:existed").unwrap();
         let r = resolve_channel_contract(&orgs, &dir.path().join("ignored"), Some(&a), &h);
         assert!(matches!(r, Err(ContractOpsError::ChannelNotFound(_))));
     }
@@ -655,8 +644,8 @@ mod tests {
     fn resolve_works_for_personal_channel() {
         let dir = TempDir::new().unwrap();
         let channels = dir.path().join("channels");
-        let h = QueueHandle::parse("channel:inbox-rules").unwrap();
-        create_channel(&channels, h.clone(), "", "", when()).unwrap();
+        let h = QueueHandle::parse("inbox-rules").unwrap();
+        create_channel(&channels, h.clone(), "", "", when(), None).unwrap();
         set_channel_contract(
             &channels,
             &h,

@@ -2,7 +2,7 @@
 
 You are about to capture friction — a bug, an annoyance, something that could be better.
 
-**Default action:** call the Secretariat `capture` tool with `queue: "inbox:pain"` and the user's raw phrasing as `body`. If the user signaled severity (high / medium / low), prefix the body with `[severity: <level>]` on its own line. The capture lands in `~/.secretariat/queues/inbox/pain/<timestamp>.md` and surfaces in the principal's next review session.
+**Default action:** call the Secretariat `capture` tool with `queue: "pain"` and the user's raw phrasing as `body`. If the user signaled severity (high / medium / low), prefix the body with `[severity: <level>]` on its own line. The capture lands in `~/.secretariat/_self/channels/pain/envelopes/<YYYY>/<MM>/<DD>/<timestamp>.md` and surfaces in the principal's next review session.
 
 Do NOT fix on the spot unless the user explicitly asks. Capture and move on. The fix decision happens at review time, where it can be stamped (or not).
 

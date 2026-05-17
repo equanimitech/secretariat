@@ -57,18 +57,16 @@ pub const CONTRACT_FILENAME: &str = "contract.local.md";
 /// v0.3 does not yet drive runtime validation against the schema.
 const CONTRACT_TYPE: &str = "tech.equanimi.secretariat.channelContract";
 
-const DEFAULT_STUB_BODY: &str = "\n# My consumption contract\n\n\
-This file declares **my** consumption overrides for this channel — how \
-I poll, filter, and surface its traffic. It is private to my device and \
-never sent on wire.\n\n\
-Empty frontmatter above means \"contribute nothing to my accumulated \
-view\" — fields from my org-root and ancestor-channel contracts apply \
-as-is. Channel governance (roster, who can post, channel-wide artifact \
-policy) lives elsewhere — in `channel.md` or signed governance \
-envelopes, not here.\n\n\
-Edit via `sec channels contract set` (CLI) or `set_channel_contract` \
-(MCP) once those verbs ship; in the meantime, edit by hand and \
-re-resolve.\n";
+/// Built-in fallback when `~/.secretariat/_self/contract-stub.md`
+/// is absent. The principal can override this by writing their own
+/// stub there; `save_stub_if_absent` reads it.
+///
+/// Three soft dimensions the cognition agent reads at review time.
+/// Section bodies are free-form prose — defaults below the headers
+/// stand in until the principal rewrites them.
+const BUILTIN_STUB_BODY: &str = "\n# detail\n\ndefault: lede.\n\n\
+# importance\n\ndefault: normal.\n\n\
+# notes\n";
 
 #[derive(Debug, Error)]
 pub enum ContractStoreError {
@@ -128,16 +126,35 @@ pub fn save_contract(
 }
 
 /// Write the stub `contract.local.md` that ships with a freshly-created
-/// channel: empty frontmatter (no overrides) + a short explanatory
-/// body. No-op if the file already exists — auto-scaffold is
+/// channel: empty frontmatter (no overrides) + a short body. Body is
+/// the principal's own `contract-stub.md` (typically at
+/// `<self_root>/contract-stub.md`) when `override_stub` points at an
+/// existing file; otherwise falls back to [`BUILTIN_STUB_BODY`].
+///
+/// No-op if the contract file already exists — auto-scaffold is
 /// idempotent across repeated `create_channel` calls so we never
 /// silently overwrite hand-edited contracts.
-pub fn save_stub_if_absent(path: &Path) -> Result<bool, ContractStoreError> {
+pub fn save_stub_if_absent(
+    path: &Path,
+    override_stub: Option<&Path>,
+) -> Result<bool, ContractStoreError> {
     if path.exists() {
         return Ok(false);
     }
-    save_contract(path, &ChannelContract::empty(), DEFAULT_STUB_BODY, false)?;
+    let body = resolve_stub_body(override_stub)?;
+    save_contract(path, &ChannelContract::empty(), &body, false)?;
     Ok(true)
+}
+
+/// Read the principal's custom stub body, or fall back to the built-in.
+fn resolve_stub_body(override_stub: Option<&Path>) -> Result<String, ContractStoreError> {
+    match override_stub {
+        Some(p) if p.is_file() => std::fs::read_to_string(p).map_err(|e| ContractStoreError::Io {
+            path: p.to_path_buf(),
+            source: e,
+        }),
+        _ => Ok(BUILTIN_STUB_BODY.to_string()),
+    }
 }
 
 /// Load a contract. Returns `Ok(None)` if the file doesn't exist.
@@ -283,21 +300,21 @@ mod tests {
     fn stub_round_trips_as_empty_contract() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join(CONTRACT_FILENAME);
-        let written = save_stub_if_absent(&path).unwrap();
+        let written = save_stub_if_absent(&path, None).unwrap();
         assert!(written);
         let (loaded, body) = load_contract(&path).unwrap().unwrap();
         assert!(loaded.is_empty());
-        assert!(body.contains("consumption contract"));
+        assert!(body.contains("# importance"));
     }
 
     #[test]
     fn stub_is_idempotent_no_overwrite() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join(CONTRACT_FILENAME);
-        assert!(save_stub_if_absent(&path).unwrap());
+        assert!(save_stub_if_absent(&path, None).unwrap());
         // Hand-edit between calls — second save_stub must not clobber.
         std::fs::write(&path, "---\ncadence_floor_minutes: 30\n---\nhand-edited\n").unwrap();
-        let written_again = save_stub_if_absent(&path).unwrap();
+        let written_again = save_stub_if_absent(&path, None).unwrap();
         assert!(!written_again);
         let (loaded, body) = load_contract(&path).unwrap().unwrap();
         assert_eq!(loaded.cadence_floor_minutes, Some(30));

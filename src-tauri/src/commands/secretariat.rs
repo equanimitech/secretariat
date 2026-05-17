@@ -865,13 +865,14 @@ pub async fn list_launchable_channels() -> Result<Vec<LaunchableChannel>, String
     let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
     let mut out: Vec<LaunchableChannel> = Vec::new();
 
-    if paths.channels.is_dir() {
-        for ch in list_channels(&paths.channels).map_err(|e| format!("list_channels: {e}"))? {
+    let self_channels = paths.personal_channels_root();
+    if self_channels.is_dir() {
+        for ch in list_channels(&self_channels).map_err(|e| format!("list_channels: {e}"))? {
             let parsed = match QueueHandle::parse(&ch.handle) {
                 Ok(h) => h,
                 Err(_) => continue,
             };
-            let default = channel_dir(&paths.channels, &parsed);
+            let default = channel_dir(&self_channels, &parsed);
             let binding = load_channel_binding(&default).unwrap_or_default();
             let root = binding
                 .root_path
@@ -944,7 +945,7 @@ pub async fn launch_channel_from_pane(
     let parsed_handle =
         QueueHandle::parse(&handle).map_err(|e| format!("invalid handle `{handle}`: {e}"))?;
     let channels_root = match org.as_deref() {
-        None => paths.channels.clone(),
+        None => paths.personal_channels_root(),
         Some(s) => {
             let alias = OrgAlias::parse(s)
                 .map_err(|e| format!("invalid org alias `{s}`: {e}"))?;
@@ -980,13 +981,13 @@ pub async fn launch_channel_from_pane(
     launch_macos_in(target, &shell, Some(&plan.cwd))
 }
 
-/// Capture an arbitrary blob of text to `inbox:triage` from the quick-pane.
+/// Capture an arbitrary blob of text to the `triage` queue from the quick-pane.
 #[tauri::command]
 #[specta::specta]
 pub async fn quick_capture(text: String) -> Result<String, String> {
     use chrono::Utc;
-    use secretariat_core::application::{capture_to_queue, CaptureRequest, CaptureRoots};
-    use secretariat_core::domain::QueueHandle;
+    use secretariat_core::application::{capture_to_queue, CaptureRequest};
+    use secretariat_core::domain::{QueueHandle, Root};
 
     if text.trim().is_empty() {
         return Err("text is empty".to_string());
@@ -995,18 +996,14 @@ pub async fn quick_capture(text: String) -> Result<String, String> {
     paths.ensure_dirs().map_err(|e| format!("{e}"))?;
     let did = load_self_did(&paths)?;
     let queue =
-        QueueHandle::parse("inbox:triage").map_err(|e| format!("invalid queue: {e}"))?;
+        QueueHandle::parse("triage").map_err(|e| format!("invalid queue: {e}"))?;
     let req = CaptureRequest {
         from: did,
         queue,
         body: text,
         source: "quick-pane".to_string(),
     };
-    let roots = CaptureRoots {
-        flat_queues: &paths.queues,
-        channel_tree: &paths.channels,
-    };
-    let path = capture_to_queue(req, roots, Utc::now())
+    let path = capture_to_queue(req, &paths.root, &Root::Self_, Utc::now())
         .map_err(|e| format!("capture failed: {e}"))?;
     Ok(path.to_string_lossy().to_string())
 }

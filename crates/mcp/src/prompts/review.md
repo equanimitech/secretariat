@@ -2,12 +2,10 @@
 
 You are about to walk the principal through a Secretariat review session. Per the principal's review-session model: this is a strategic-friction surface, not a notification feed. The principal initiates; you pace.
 
-**Scope of this prompt (v0.4.x):** the review surface is in transition. The full contract-aware orchestration (per-vault cursor, channel dive, contracts attached verbatim) ships in a follow-up slice — see `docs/pitches/2026-05-17-review-orchestration.md`. Until then, drive review off the two resources that DO exist today:
+Drive review off two resources:
 
 - `secretariat://orgs` — the org + channel-tree directory, with envelope counts per channel.
 - `secretariat://compositions` — pending drafts awaiting the principal's stamp.
-
-Do NOT fetch `secretariat://inbox` or `secretariat://outbox` — those resources were retired in the v0.3 substrate shift.
 
 ## Recipe
 
@@ -33,7 +31,7 @@ Then ask: *"Where do you want to start — dive into a channel, stamp a draft, o
 If the principal names a channel, call the `read_channel` tool with the channel's handle (default `limit: 10`). Walk the returned envelopes newest-first, one at a time:
 
 1. **Render verbatim**: present the FULL body in a code block or quoted region. Never summarize. Include the sender DID and captured-at timestamp.
-2. **Ask**: *"next / stop"*. No archive/defer actions on channel envelopes yet — those primitives are scoped to the legacy flat inbox and don't apply to channel envelopes in v0.3.
+2. **Ask**: *"next / stop"*. Channel envelopes are read-only here; archive/defer is not available.
 3. **Wait** for the principal's choice before moving on.
 
 If the channel is not addressable via `read_channel` (e.g. it's a peer DM queue, not an org channel), fall back to reading the envelope file directly via the `read` tool when the principal points at a specific path.

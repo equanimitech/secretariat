@@ -50,7 +50,7 @@ Call the `compose` tool with:
 - `depth`: chosen depth
 - `urgency`: chosen urgency
 - `source`: `"mcp-compose-prompt"` (lets the substrate trace provenance)
-- `handle`: omit (defaults to `inbox:default`) unless the principal specified a non-default queue on the peer's machine.
+- `handle`: omit (defaults to `inbox`) unless the principal specified a non-default queue on the peer's machine.
 
 The tool returns the file_path of the draft in `~/.secretariat/outbox/<peer-did>/`.
 

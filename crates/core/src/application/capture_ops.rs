@@ -9,23 +9,16 @@
 //! Stamps are still allowed — a tamper-evident self-attestation on a
 //! journal entry is a valid use case — but never required.
 //!
-//! On-disk layout depends on the queue handle's top namespace:
+//! On-disk layout (v0.5 namespace-collapse —
+//! `docs/pitches/2026-05-17-collapse-namespaces.md`):
 //!
-//! - **flat handles** (`inbox:triage`, `area:health`, `project:foo`) land
-//!   at `<flat_queues>/<ns>/<slug>/envelopes/YYYY/MM/DD/<timestamp>.md`.
-//!   The `envelopes/` subdir is required: `list_inbox_files` walks the
-//!   substrate tree collecting `.md` leaves only from inside
-//!   `envelopes/` directories. Captures written outside that convention
-//!   are invisible to the review surface.
-//! - **`channel:` handles** (`channel:secretariat:dev`,
-//!   `channel:dommage-corporel:paris-cohort`) land at
-//!   `<channel_tree>/<segments-after-channel>/envelopes/YYYY/MM/DD/<timestamp>.md`
-//!   (v0.3 channel-dir substrate — time-sharded from day one so a
-//!   channel can carry years of correspondence without flat-directory
-//!   pathologies).
+//! - `Root::Self_` → `<vault>/_self/channels/<segs>/envelopes/YYYY/MM/DD/<ts>.md`
+//! - `Root::Org(alias)` → `<vault>/orgs/<alias>/channels/<segs>/envelopes/YYYY/MM/DD/<ts>.md`
 //!
-//! In both cases the envelope inside the file is identical — recipient is
-//! `(self_did, QueueHandle)`. Layout is a storage detail.
+//! Handle segments map 1:1 to directory depth — no namespace prefix
+//! token. The `envelopes/YYYY/MM/DD/` time-shard is required so a
+//! channel can carry years of correspondence without flat-directory
+//! pathologies.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -35,13 +28,10 @@ use rand::Rng;
 use thiserror::Error;
 
 use crate::domain::{
-    Did, Envelope, EnvelopeBuilder, EnvelopeDepth, EnvelopeUrgency, QueueHandle, Recipient,
+    Did, Envelope, EnvelopeBuilder, EnvelopeDepth, EnvelopeUrgency, QueueHandle, Recipient, Root,
 };
-use crate::infrastructure::channel_def_store::channel_def_exists_in_dir;
+use crate::infrastructure::channel_def_store::{channel_def_exists_in_dir, channel_dir};
 use crate::infrastructure::markdown::{embed_stamp, MarkdownError};
-
-/// Top-namespace token that routes a capture into the channel-dir layout.
-const CHANNEL_NS: &str = "channel";
 
 #[derive(Debug, Error)]
 pub enum CaptureError {
@@ -53,11 +43,6 @@ pub enum CaptureError {
     },
     #[error("markdown error: {0}")]
     Markdown(#[from] MarkdownError),
-    #[error(
-        "queue handle `{handle}` has top namespace `channel` but only one segment; \
-        channel handles require at least `channel:<name>` (two segments)"
-    )]
-    ChannelHandleTooShallow { handle: String },
     #[error(
         "channel `{handle}` does not exist — search existing channels \
         with `sec channels list` (or the `list_channels` MCP tool) for \
@@ -71,8 +56,8 @@ pub enum CaptureError {
 pub struct CaptureRequest {
     /// The principal's DID — captures always have `from = self`.
     pub from: Did,
-    /// Target queue (e.g. `inbox:triage`, `area:health`,
-    /// `channel:secretariat:dev`).
+    /// Target queue (a bare handle, e.g. `triage`, `articles`,
+    /// `dommage-corporel:paris-cohort`).
     pub queue: QueueHandle,
     /// Raw markdown body. Captures are unstructured by design — no AG
     /// template scaffold, no headline/lede shape obligation.
@@ -83,17 +68,17 @@ pub struct CaptureRequest {
     pub source: String,
 }
 
-/// Storage roots the capture writer chooses between based on the handle's
-/// top namespace.
-#[derive(Debug, Clone, Copy)]
-pub struct CaptureRoots<'a> {
-    /// Root for flat-handle captures. Layout:
-    /// `<flat_queues>/<namespace>/<slug>/<timestamp>.md`.
-    pub flat_queues: &'a Path,
-    /// Root for `channel:` handles. Layout:
-    /// `<channel_tree>/<segments>/envelopes/YYYY/MM/DD/<timestamp>.md`.
-    /// Slice 1: pass `KeyPaths::channel_root(&OrgAlias::me())`.
-    pub channel_tree: &'a Path,
+/// Compute the channels root for a queue-root under a vault.
+/// `_self` → `<vault>/_self/channels`; `Org(alias)` →
+/// `<vault>/orgs/<alias>/channels`.
+pub fn channels_root_for(vault_root: &Path, root: &Root) -> PathBuf {
+    match root {
+        Root::Self_ => vault_root.join("_self").join("channels"),
+        Root::Org(alias) => vault_root
+            .join("orgs")
+            .join(alias.as_str())
+            .join("channels"),
+    }
 }
 
 /// Capture a body into a local queue. Writes the file and returns the
@@ -101,11 +86,12 @@ pub struct CaptureRoots<'a> {
 /// two calls in the same second produce different files.
 pub fn capture_to_queue(
     request: CaptureRequest,
-    roots: CaptureRoots<'_>,
+    vault_root: &Path,
+    root: &Root,
     now: DateTime<Utc>,
 ) -> Result<PathBuf, CaptureError> {
     let envelope = build_envelope(&request);
-    let target_dir = resolve_target_dir(&request.queue, roots, now)?;
+    let target_dir = resolve_target_dir(&request.queue, vault_root, root, now)?;
 
     fs::create_dir_all(&target_dir).map_err(|e| CaptureError::Io {
         path: target_dir.clone(),
@@ -125,51 +111,28 @@ pub fn capture_to_queue(
 
 fn resolve_target_dir(
     queue: &QueueHandle,
-    roots: CaptureRoots<'_>,
+    vault_root: &Path,
+    root: &Root,
     now: DateTime<Utc>,
 ) -> Result<PathBuf, CaptureError> {
-    if queue.top_namespace() == CHANNEL_NS {
-        let segments = queue.segments();
-        if segments.len() < 2 {
-            return Err(CaptureError::ChannelHandleTooShallow {
-                handle: queue.as_str().to_string(),
-            });
-        }
-        let mut dir = roots.channel_tree.to_path_buf();
-        // Skip the leading `channel:` token — `channel_tree` already encodes it.
-        for seg in &segments[1..] {
-            dir.push(seg);
-        }
-        // Existence gate: refuse to capture into a channel whose manifest
-        // (`channel.md` or legacy `.channelDef`) is absent. Auto-vivifying
-        // the directory tree on capture would let a typo silently spawn a
-        // phantom channel that never appears in `list_channels` and has no
-        // roster/governance.
-        if !channel_def_exists_in_dir(&dir) {
-            return Err(CaptureError::ChannelNotFound {
-                handle: queue.as_str().to_string(),
-            });
-        }
-        dir.push("envelopes");
-        dir.push(format!("{:04}", now.year()));
-        dir.push(format!("{:02}", now.month()));
-        dir.push(format!("{:02}", now.day()));
-        Ok(dir)
-    } else {
-        // Flat handles share the channel-branch's `envelopes/YYYY/MM/DD/`
-        // convention so `list_inbox_files` finds them — its walker only
-        // collects `.md` leaves from inside an `envelopes/` directory.
-        let mut dir = roots.flat_queues.to_path_buf();
-        dir.push(queue.top_namespace());
-        for seg in queue.slug().split(':') {
-            dir.push(seg);
-        }
-        dir.push("envelopes");
-        dir.push(format!("{:04}", now.year()));
-        dir.push(format!("{:02}", now.month()));
-        dir.push(format!("{:02}", now.day()));
-        Ok(dir)
+    let channels_root = channels_root_for(vault_root, root);
+    let dir = channel_dir(&channels_root, queue);
+    // Existence gate: refuse to capture into a channel whose manifest
+    // (`channel.md` or legacy `.channelDef`) is absent. Auto-vivifying
+    // the directory tree on capture would let a typo silently spawn a
+    // phantom channel that never appears in `list_channels` and has no
+    // roster/governance.
+    if !channel_def_exists_in_dir(&dir) {
+        return Err(CaptureError::ChannelNotFound {
+            handle: queue.as_str().to_string(),
+        });
     }
+    let mut shard = dir;
+    shard.push("envelopes");
+    shard.push(format!("{:04}", now.year()));
+    shard.push(format!("{:02}", now.month()));
+    shard.push(format!("{:02}", now.day()));
+    Ok(shard)
 }
 
 fn build_envelope(req: &CaptureRequest) -> Envelope {
@@ -204,18 +167,12 @@ mod tests {
         Did::parse("did:web:rafa.equanimi.tech").unwrap()
     }
 
-    fn roots_under(dir: &Path) -> (PathBuf, PathBuf) {
-        (dir.join("queues"), dir.join("channels"))
-    }
-
     /// Plant a minimal `channel.md` so capture_to_queue's existence
     /// gate clears. Mirrors what `create_channel` would have written.
-    fn touch_channel(channel_tree: &Path, handle: &str) {
+    fn touch_channel(vault_root: &Path, root: &Root, handle: &str) {
         let h = QueueHandle::parse(handle).unwrap();
-        let mut dir = channel_tree.to_path_buf();
-        for seg in h.segments().iter().skip(1) {
-            dir.push(seg);
-        }
+        let channels_root = channels_root_for(vault_root, root);
+        let dir = channel_dir(&channels_root, &h);
         fs::create_dir_all(&dir).unwrap();
         fs::write(
             dir.join("channel.md"),
@@ -225,32 +182,24 @@ mod tests {
     }
 
     #[test]
-    fn captures_to_namespace_slug_subdir() {
+    fn captures_self_handle_under_self_channels() {
         let dir = TempDir::new().unwrap();
-        let (queues, channel_tree) = roots_under(dir.path());
+        let root = Root::Self_;
+        touch_channel(dir.path(), &root, "triage");
 
         let req = CaptureRequest {
             from: rafa(),
-            queue: QueueHandle::parse("inbox:triage").unwrap(),
+            queue: QueueHandle::parse("triage").unwrap(),
             body: "tell dad chapter 3 needs more pressure\n".to_string(),
             source: "idea-skill".to_string(),
         };
 
         let now = Utc.with_ymd_and_hms(2026, 5, 5, 10, 0, 0).unwrap();
-        let path = capture_to_queue(
-            req,
-            CaptureRoots {
-                flat_queues: &queues,
-                channel_tree: &channel_tree,
-            },
-            now,
-        )
-        .unwrap();
+        let path = capture_to_queue(req, dir.path(), &root, now).unwrap();
 
-        // <queues>/inbox/triage/envelopes/2026/05/05/<timestamp>.md
         let parent = path.parent().unwrap();
         assert!(
-            parent.ends_with("inbox/triage/envelopes/2026/05/05"),
+            parent.ends_with("_self/channels/triage/envelopes/2026/05/05"),
             "expected time-sharded envelopes/ path, got {}",
             parent.display()
         );
@@ -266,209 +215,80 @@ mod tests {
         assert!(parsed.body.contains("chapter 3"));
 
         let env = parsed.envelope.unwrap();
-        assert_eq!(env.recipient.handle.as_str(), "inbox:triage");
+        assert_eq!(env.recipient.handle.as_str(), "triage");
         assert!(env.recipient.is_local(&rafa()));
     }
 
     #[test]
-    fn captures_to_arbitrary_namespace() {
+    fn captures_deep_self_handle_splits_segments() {
         let dir = TempDir::new().unwrap();
-        let (queues, channel_tree) = roots_under(dir.path());
+        let root = Root::Self_;
+        touch_channel(dir.path(), &root, "articles:equanimitech");
 
         let req = CaptureRequest {
             from: rafa(),
-            queue: QueueHandle::parse("area:health").unwrap(),
-            body: "morning walk feels harder this week".into(),
-            source: "quick-pane".into(),
-        };
-
-        let now = Utc.with_ymd_and_hms(2026, 5, 5, 10, 0, 0).unwrap();
-        let path = capture_to_queue(
-            req,
-            CaptureRoots {
-                flat_queues: &queues,
-                channel_tree: &channel_tree,
-            },
-            now,
-        )
-        .unwrap();
-        assert!(
-            path.parent()
-                .unwrap()
-                .ends_with("area/health/envelopes/2026/05/05"),
-            "expected time-sharded envelopes/ path, got {}",
-            path.parent().unwrap().display()
-        );
-    }
-
-    #[test]
-    fn captures_with_deep_flat_handle_split_slug_into_segments() {
-        // `area:articles:equanimitech` is a legal handle whose slug is
-        // `articles:equanimitech` — colon-depth becomes tree-depth so
-        // the reader can browse nested areas the same way it browses
-        // nested channels.
-        let dir = TempDir::new().unwrap();
-        let (queues, channel_tree) = roots_under(dir.path());
-
-        let req = CaptureRequest {
-            from: rafa(),
-            queue: QueueHandle::parse("area:articles:equanimitech").unwrap(),
+            queue: QueueHandle::parse("articles:equanimitech").unwrap(),
             body: "UI navigates; MCP CRUDs".into(),
             source: "test".into(),
         };
         let now = Utc.with_ymd_and_hms(2026, 5, 12, 3, 25, 37).unwrap();
-        let path = capture_to_queue(
-            req,
-            CaptureRoots {
-                flat_queues: &queues,
-                channel_tree: &channel_tree,
-            },
-            now,
-        )
-        .unwrap();
+        let path = capture_to_queue(req, dir.path(), &root, now).unwrap();
 
         assert!(
             path.parent()
                 .unwrap()
-                .ends_with("area/articles/equanimitech/envelopes/2026/05/12"),
-            "expected nested area path with envelopes shard, got {}",
+                .ends_with("_self/channels/articles/equanimitech/envelopes/2026/05/12"),
+            "expected nested self-channel path with envelopes shard, got {}",
             path.parent().unwrap().display()
         );
     }
 
     #[test]
-    fn captures_with_channel_namespace_use_time_sharded_tree() {
+    fn captures_under_org_root() {
         let dir = TempDir::new().unwrap();
-        let (queues, channel_tree) = roots_under(dir.path());
-        touch_channel(&channel_tree, "channel:secretariat:dev");
+        let alias = crate::domain::OrgAlias::parse("themia.pro").unwrap();
+        let root = Root::Org(alias);
+        touch_channel(dir.path(), &root, "dommage-corporel:paris-cohort");
 
         let req = CaptureRequest {
             from: rafa(),
-            queue: QueueHandle::parse("channel:secretariat:dev").unwrap(),
-            body: "v0.3 substrate first run".into(),
-            source: "mcp-capture".into(),
-        };
-
-        let now = Utc.with_ymd_and_hms(2026, 5, 12, 14, 30, 55).unwrap();
-        let path = capture_to_queue(
-            req,
-            CaptureRoots {
-                flat_queues: &queues,
-                channel_tree: &channel_tree,
-            },
-            now,
-        )
-        .unwrap();
-
-        // <channel_tree>/secretariat/dev/envelopes/2026/05/12/<ts>.md
-        assert!(
-            path.parent()
-                .unwrap()
-                .ends_with("secretariat/dev/envelopes/2026/05/12"),
-            "expected time-sharded path, got {}",
-            path.display()
-        );
-        // Flat queues dir untouched.
-        assert!(
-            !queues.join("channel").exists(),
-            "flat queues tree must not be polluted by channel captures"
-        );
-
-        // Envelope still reads the handle verbatim.
-        let parsed = parse_document(&fs::read_to_string(&path).unwrap()).unwrap();
-        let env = parsed.envelope.unwrap();
-        assert_eq!(env.recipient.handle.as_str(), "channel:secretariat:dev");
-        assert!(env.recipient.is_local(&rafa()));
-    }
-
-    #[test]
-    fn captures_with_nested_channel_handle() {
-        let dir = TempDir::new().unwrap();
-        let (queues, channel_tree) = roots_under(dir.path());
-        touch_channel(&channel_tree, "channel:dommage-corporel:paris-cohort");
-
-        let req = CaptureRequest {
-            from: rafa(),
-            queue: QueueHandle::parse("channel:dommage-corporel:paris-cohort").unwrap(),
+            queue: QueueHandle::parse("dommage-corporel:paris-cohort").unwrap(),
             body: "first dossier review note".into(),
             source: "idea-skill".into(),
         };
 
         let now = Utc.with_ymd_and_hms(2026, 1, 9, 8, 5, 0).unwrap();
-        let path = capture_to_queue(
-            req,
-            CaptureRoots {
-                flat_queues: &queues,
-                channel_tree: &channel_tree,
-            },
-            now,
-        )
-        .unwrap();
-        assert!(path
-            .parent()
-            .unwrap()
-            .ends_with("dommage-corporel/paris-cohort/envelopes/2026/01/09"));
-    }
-
-    #[test]
-    fn channel_handle_with_only_top_token_errors() {
-        // Should be rejected at parse time normally (single-segment handle
-        // can't parse), but we sanity-check the routing branch independently.
-        // Construct a two-segment `channel:foo` to confirm it does NOT error
-        // (one segment after `channel` is enough).
-        let dir = TempDir::new().unwrap();
-        let (queues, channel_tree) = roots_under(dir.path());
-        touch_channel(&channel_tree, "channel:dev");
-
-        let req = CaptureRequest {
-            from: rafa(),
-            queue: QueueHandle::parse("channel:dev").unwrap(),
-            body: "ok".into(),
-            source: "test".into(),
-        };
-        let now = Utc.with_ymd_and_hms(2026, 5, 12, 0, 0, 0).unwrap();
-        let path = capture_to_queue(
-            req,
-            CaptureRoots {
-                flat_queues: &queues,
-                channel_tree: &channel_tree,
-            },
-            now,
-        )
-        .unwrap();
-        assert!(path.parent().unwrap().ends_with("dev/envelopes/2026/05/12"));
+        let path = capture_to_queue(req, dir.path(), &root, now).unwrap();
+        assert!(
+            path.parent().unwrap().ends_with(
+                "orgs/themia.pro/channels/dommage-corporel/paris-cohort/envelopes/2026/01/09"
+            ),
+            "got {}",
+            path.parent().unwrap().display(),
+        );
     }
 
     #[test]
     fn capture_to_unknown_channel_errors() {
+        let dir = TempDir::new().unwrap();
+        let root = Root::Self_;
         // No `channel.md` planted → capture must refuse rather than
         // silently vivify a phantom channel directory.
-        let dir = TempDir::new().unwrap();
-        let (queues, channel_tree) = roots_under(dir.path());
-
         let req = CaptureRequest {
             from: rafa(),
-            queue: QueueHandle::parse("channel:does-not:exist").unwrap(),
+            queue: QueueHandle::parse("does-not:exist").unwrap(),
             body: "should be rejected".into(),
             source: "test".into(),
         };
         let now = Utc.with_ymd_and_hms(2026, 5, 14, 9, 0, 0).unwrap();
-        let err = capture_to_queue(
-            req,
-            CaptureRoots {
-                flat_queues: &queues,
-                channel_tree: &channel_tree,
-            },
-            now,
-        )
-        .unwrap_err();
+        let err = capture_to_queue(req, dir.path(), &root, now).unwrap_err();
         match err {
             CaptureError::ChannelNotFound { handle } => {
-                assert_eq!(handle, "channel:does-not:exist");
+                assert_eq!(handle, "does-not:exist");
             }
             other => panic!("expected ChannelNotFound, got {other:?}"),
         }
         // No phantom directory left behind.
-        assert!(!channel_tree.join("does-not").exists());
+        assert!(!dir.path().join("_self/channels/does-not").exists());
     }
 }

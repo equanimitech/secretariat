@@ -5,7 +5,7 @@
 //! | Tool | Purpose |
 //! |---|---|
 //! | `compose` | Write a peer-addressed envelope to the outbox (principal stamps separately) |
-//! | `capture` | Drop a body into a local queue (substrate v0.3 — never sent, never stamped without consent) |
+//! | `capture` | Drop a body into a local queue (never sent, never stamped without consent) |
 //! | `stamp` | Trigger biometric stamp on a draft (Touch ID gates regardless of caller) |
 //! | `secretariat://orgs` | Org + channel-tree directory — resource |
 //! | `secretariat://compositions` | Pending drafts awaiting stamp — resource |
@@ -52,7 +52,8 @@ use rmcp::{
 };
 use schemars::JsonSchema;
 use secretariat_core::application::{
-    add_contact, archive_envelope, capture_to_queue, claim_invite, compose_envelope,
+    add_contact, archive_envelope, capture_to_queue, channels_root_for, claim_invite,
+    compose_envelope,
     create_channel as app_create_channel, create_invite, create_org as app_create_org,
     delete_channel as app_delete_channel, delete_org as app_delete_org, find_by_slug,
     get_channel_contract as app_get_channel_contract,
@@ -61,10 +62,10 @@ use secretariat_core::application::{
     resolve_channel_contract as app_resolve_channel_contract,
     set_channel_contract as app_set_channel_contract, set_org_contract as app_set_org_contract,
     show_org as app_show_org, stamp_document, try_contextify_after_capture, verify_document,
-    view_invite, CaptureRequest, CaptureRoots, ComposeRequest, ContractLevel, ContractPatch,
+    view_invite, CaptureRequest, ComposeRequest, ContractLevel, ContractPatch,
     ContractView, PatchField, ResolvedContract, StampError, VerifyOutcome,
 };
-use secretariat_core::domain::{OrgAlias, QueueHandle, Recipient, StampAct, TrustGate};
+use secretariat_core::domain::{OrgAlias, QueueHandle, Recipient, Root, StampAct, TrustGate};
 use secretariat_core::infrastructure::org_store::org_channels_root;
 use secretariat_core::infrastructure::preferences::load_or_migrate as load_or_migrate_preferences;
 use secretariat_core::infrastructure::biometric::build_signer;
@@ -101,7 +102,7 @@ impl SecretariatServer {
         org_alias: Option<&str>,
     ) -> Result<std::path::PathBuf, ErrorData> {
         match org_alias {
-            None => Ok(self.paths.channels.clone()),
+            None => Ok(self.paths.personal_channels_root()),
             Some(s) => {
                 let alias = OrgAlias::parse(s)
                     .map_err(|e| invalid_request(format!("invalid org alias `{s}`: {e}")))?;
@@ -113,6 +114,26 @@ impl SecretariatServer {
                     )));
                 }
                 Ok(org_channels_root(&self.paths.orgs_root, &alias))
+            }
+        }
+    }
+
+    /// Parse an optional org alias into a `Root` for use with
+    /// resolver-shaped APIs (capture, contextify).
+    fn resolve_root(&self, org_alias: Option<&str>) -> Result<Root, ErrorData> {
+        match org_alias {
+            None => Ok(Root::Self_),
+            Some(s) => {
+                let alias = OrgAlias::parse(s)
+                    .map_err(|e| invalid_request(format!("invalid org alias `{s}`: {e}")))?;
+                let dir = self.paths.orgs_root.join(alias.as_str());
+                if !dir.exists() {
+                    return Err(invalid_request(format!(
+                        "org `{}` does not exist — create it with `create_org` first",
+                        alias.as_str()
+                    )));
+                }
+                Ok(Root::Org(alias))
             }
         }
     }
@@ -149,7 +170,7 @@ impl SecretariatServer {
 impl SecretariatServer {
     /// Capture a raw idea — a product thought, a fleeting note, anything
     /// worth keeping. Routes through the `capture` tool with
-    /// `queue: inbox:triage`.
+    /// `queue: triage`.
     #[prompt(name = "idea")]
     pub async fn idea_prompt(&self) -> Result<Vec<PromptMessage>, ErrorData> {
         Ok(vec![PromptMessage::new_text(
@@ -159,7 +180,7 @@ impl SecretariatServer {
     }
 
     /// Capture a bug, friction, or improvement. Routes through the
-    /// `capture` tool with `queue: inbox:pain`.
+    /// `capture` tool with `queue: pain`.
     #[prompt(name = "pain")]
     pub async fn pain_prompt(&self) -> Result<Vec<PromptMessage>, ErrorData> {
         Ok(vec![PromptMessage::new_text(
@@ -240,7 +261,7 @@ pub struct ComposeParams {
     #[serde(default)]
     pub cadence_hint: Option<String>,
     /// Recipient queue handle on the peer's machine. Defaults to
-    /// `inbox:default` (the conventional handle for direct messages).
+    /// `inbox` (the conventional handle for direct messages).
     /// Specify a different handle to post to a non-default queue the
     /// peer owns — e.g. a channel they publish.
     #[serde(default)]
@@ -255,9 +276,9 @@ pub struct ComposeOutput {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct CaptureParams {
-    /// Target queue handle, of the form `<namespace>:<slug>[:<segment>...]`
-    /// — e.g. `inbox:triage`, `area:health`,
-    /// `channel:dommage-corporel:paris-cohort`. Namespaces are free-form.
+    /// Target queue handle — colon-separated path segments, e.g.
+    /// `triage`, `articles`, `dommage-corporel:paris-cohort`. Tree
+    /// depth = colon depth.
     pub queue: String,
     /// Body of the capture (markdown-friendly plain text).
     pub body: String,
@@ -265,9 +286,9 @@ pub struct CaptureParams {
     /// to `mcp-capture` when omitted.
     #[serde(default)]
     pub source: Option<String>,
-    /// Optional org alias (`themia.pro`, `equanimi.tech`). When set AND
-    /// the queue handle starts with `channel:`, the capture lands inside
-    /// that org's channel tree. Omit (or set null) for personal captures.
+    /// Optional org alias (`themia.pro`, `equanimi.tech`). When set the
+    /// capture lands inside that org's channel tree. Omit (or set null)
+    /// for personal captures (under `_self`).
     #[serde(default)]
     pub org: Option<String>,
 }
@@ -288,7 +309,7 @@ pub struct ReadParams {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct InboxActionParams {
     /// Absolute path to the inbox envelope `.md` file. Must live
-    /// directly under `~/.secretariat/inbox/` — not in a subdir.
+    /// under `~/.secretariat/_self/channels/inbox/envelopes/...`.
     pub file_path: String,
 }
 
@@ -411,7 +432,7 @@ pub struct ListChannelsOutput {
 
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct ChannelSummaryDto {
-    /// Canonical handle, e.g. `channel:secretariat:dev`.
+    /// Canonical handle, e.g. `secretariat:dev`.
     pub handle: String,
     /// Human-readable display name from `channel.md` (empty if unset).
     pub name: String,
@@ -434,8 +455,8 @@ pub struct ListChannelsParams {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ReadChannelParams {
-    /// Channel handle, e.g. `channel:secretariat:dev`. Must start with
-    /// the `channel:` top namespace.
+    /// Channel handle, e.g. `secretariat:dev`. Colon-pathed segments;
+    /// tree depth = colon depth.
     pub handle: String,
     /// Maximum number of envelopes to return (newest first). Defaults
     /// to 10 when omitted.
@@ -515,8 +536,8 @@ pub struct DeleteOrgOutput {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct CreateChannelParams {
-    /// Channel handle, e.g. `channel:product:data:baux-commerciaux`.
-    /// Must start with `channel:`.
+    /// Channel handle, e.g. `product:data:baux-commerciaux`.
+    /// Colon-pathed segments; tree depth = colon depth.
     pub handle: String,
     /// Optional org alias to create the channel inside. If omitted, the
     /// channel lives in the principal's personal channel tree.
@@ -602,8 +623,8 @@ pub struct SetOrgContractParams {
 
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct ContractDto {
-    /// `"channel:foo:bar"` for channel contracts; the org alias for
-    /// org-root contracts.
+    /// Bare handle (e.g. `"foo:bar"`) for channel contracts; the org
+    /// alias for org-root contracts.
     pub scope: String,
     pub path: String,
     pub cadence_floor_minutes: Option<u32>,
@@ -706,7 +727,7 @@ impl SecretariatServer {
             Some(params.body)
         };
 
-        let handle_str = params.handle.as_deref().unwrap_or("inbox:default");
+        let handle_str = params.handle.as_deref().unwrap_or("inbox");
         let handle = QueueHandle::parse(handle_str).map_err(|e| {
             invalid_request(format!("invalid `handle` `{handle_str}`: {e}"))
         })?;
@@ -760,9 +781,9 @@ impl SecretariatServer {
         next review session. Stamps are optional (tamper-evident self-attestation), \
         never required. \
         \
-        The `queue` parameter is a `<namespace>:<slug>` handle; namespaces are \
-        free-form (e.g. `inbox:triage`, `area:health`, `project:autonomous-enterprise`). \
-        If you don't know which to pick, default to `inbox:triage`."
+        The `queue` parameter is a colon-pathed handle (e.g. `triage`, \
+        `pain`, `articles`, `dommage-corporel:paris-cohort`). If you \
+        don't know which to pick, default to `triage`."
     )]
     async fn capture(
         &self,
@@ -780,24 +801,23 @@ impl SecretariatServer {
             source: params.source.unwrap_or_else(|| "mcp-capture".to_string()),
         };
 
-        let channel_tree = self.resolve_channels_root(params.org.as_deref())?;
-        let roots = CaptureRoots {
-            flat_queues: &self.paths.queues,
-            channel_tree: &channel_tree,
-        };
-        let path = capture_to_queue(req, roots, Utc::now())
+        let root = self.resolve_root(params.org.as_deref())?;
+        let path = capture_to_queue(req, &self.paths.root, &root, Utc::now())
             .map_err(|e| invalid_request(format!("capture failed: {e}")))?;
 
         info!(file = %path.display(), queue = %queue.as_str(), "captured to local queue via MCP");
 
-        // Fire-and-forget contextification pass on inbox:triage captures.
+        // Fire-and-forget contextification pass on triage captures.
         // No-op when no cognition adapter is configured (default state);
         // safe even if the file moves before the principal sees this
         // response because list_review_queue resolves paths on read,
         // never holds them in long-lived state.
         if queue.as_str() == secretariat_core::application::ROUTABLE_QUEUE {
             let capture_path = path.clone();
-            let queues_root = self.paths.queues.clone();
+            // Contextify discovery walks the principal's own channels root —
+            // the contextify pass routes between local queues, never across
+            // org boundaries.
+            let queues_root = channels_root_for(&self.paths.root, &root);
             let ledger_path = self.paths.contextification_log.clone();
             let preferences_path = self.paths.preferences.clone();
             let legacy_cognition = self.paths.legacy_cognition_config.clone();
@@ -854,9 +874,9 @@ impl SecretariatServer {
         envelope, sorted newest-activity-first. Use this for a top-level 'what's in \
         my channels?' view before descending into a specific one with `read_channel`. \
         \
-        Channels are addressed by colon-pathed handles like `channel:secretariat:dev` \
-        or `channel:dommage-corporel:paris-cohort`. The substrate creates a channel \
-        implicitly on the first capture into it — there is no explicit create step yet."
+        Channels are addressed by colon-pathed handles like `secretariat:dev` \
+        or `dommage-corporel:paris-cohort`. Use `create_channel` first; \
+        captures into an unknown channel are rejected."
     )]
     async fn list_channels(
         &self,
@@ -886,8 +906,8 @@ impl SecretariatServer {
             open_world_hint = false
         ),
         description = "Read the most-recent envelopes from a single channel, sorted \
-        newest-first. The `handle` must start with `channel:` (e.g. \
-        `channel:secretariat:dev`). `limit` defaults to 10. \
+        newest-first. The `handle` is a colon-pathed handle (e.g. \
+        `secretariat:dev`). `limit` defaults to 10. \
         \
         Returns each envelope's body, sender, captured-at timestamp, and metadata \
         flags (stamped/encrypted). Use this to descend into one channel after \
@@ -1219,8 +1239,8 @@ impl SecretariatServer {
         on the network. Use this to model logical groupings (a company, a project, a \
         team) the principal coordinates within. \
         \
-        Use `create_channel` to populate the org with channels. Each channel addressed \
-        as `channel:foo:bar` becomes a nested directory inside the org's `channels/`."
+        Use `create_channel` to populate the org with channels. A bare handle like \
+        `foo:bar` becomes a nested directory inside the org's `channels/`."
     )]
     async fn create_org(
         &self,
@@ -1246,6 +1266,7 @@ impl SecretariatServer {
             name,
             description,
             Utc::now(),
+            Some(&self.paths.contract_stub),
         )
         .map_err(|e| invalid_request(format!("create_org failed: {e}")))?;
         info!(alias = %org.alias.as_str(), "org created via MCP");
@@ -1350,9 +1371,8 @@ impl SecretariatServer {
         markdown body) and pre-creates the `envelopes/` directory so the channel is \
         visible in `list_channels` even before any captures land. \
         \
-        The `handle` must start with `channel:` and may have any number of colon-pathed \
-        segments (`channel:product:data:baux-commerciaux`). Use `name` and `description` \
-        to provide human-readable metadata."
+        The `handle` is a colon-pathed handle, e.g. `product:data:baux-commerciaux`. \
+        Use `name` and `description` to provide human-readable metadata."
     )]
     async fn create_channel(
         &self,
@@ -1366,8 +1386,15 @@ impl SecretariatServer {
             .name
             .unwrap_or_else(|| handle.slug().to_string());
         let description = params.description.unwrap_or_default();
-        let def = app_create_channel(&root, handle, name, description, Utc::now())
-            .map_err(|e| invalid_request(format!("create_channel failed: {e}")))?;
+        let def = app_create_channel(
+            &root,
+            handle,
+            name,
+            description,
+            Utc::now(),
+            Some(&self.paths.contract_stub),
+        )
+        .map_err(|e| invalid_request(format!("create_channel failed: {e}")))?;
         info!(handle = %def.handle.as_str(), "channel created via MCP");
         Ok(Json(ChannelDefDto {
             handle: def.handle.as_str().to_string(),
@@ -1529,7 +1556,7 @@ impl SecretariatServer {
         };
         let resolved = app_resolve_channel_contract(
             &self.paths.orgs_root,
-            &self.paths.channels,
+            &self.paths.personal_channels_root(),
             alias.as_ref(),
             &handle,
         )
