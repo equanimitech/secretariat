@@ -43,9 +43,6 @@ jobs:
       - name: Build sec + sec-mcp
         run: cargo build --release --target ${{ matrix.target }} --bin sec --bin sec-mcp
 
-      - name: Build touchid-prompt helper
-        run: bash tools/touchid-prompt/build.sh
-
       - name: Bundle
         env:
           ARCHIVE: ${{ matrix.archive }}
@@ -54,7 +51,6 @@ jobs:
           mkdir -p dist/secretariat
           cp "target/${TARGET}/release/sec" dist/secretariat/
           cp "target/${TARGET}/release/sec-mcp" dist/secretariat/
-          cp target/touchid-prompt dist/secretariat/
           [ -f scripts/install.sh ] && cp scripts/install.sh dist/secretariat/
           tar czf "${ARCHIVE}" -C dist secretariat
 
