@@ -52,7 +52,8 @@ use rmcp::{
 };
 use schemars::JsonSchema;
 use secretariat_core::application::{
-    add_contact, archive_envelope, capture_to_queue, claim_invite, compose_envelope,
+    add_contact, archive_envelope, capture_to_queue, channels_root_for, claim_invite,
+    compose_envelope,
     create_channel as app_create_channel, create_invite, create_org as app_create_org,
     delete_channel as app_delete_channel, delete_org as app_delete_org, find_by_slug,
     get_channel_contract as app_get_channel_contract,
@@ -61,10 +62,10 @@ use secretariat_core::application::{
     resolve_channel_contract as app_resolve_channel_contract,
     set_channel_contract as app_set_channel_contract, set_org_contract as app_set_org_contract,
     show_org as app_show_org, stamp_document, try_contextify_after_capture, verify_document,
-    view_invite, CaptureRequest, CaptureRoots, ComposeRequest, ContractLevel, ContractPatch,
+    view_invite, CaptureRequest, ComposeRequest, ContractLevel, ContractPatch,
     ContractView, PatchField, ResolvedContract, StampError, VerifyOutcome,
 };
-use secretariat_core::domain::{OrgAlias, QueueHandle, Recipient, StampAct, TrustGate};
+use secretariat_core::domain::{OrgAlias, QueueHandle, Recipient, Root, StampAct, TrustGate};
 use secretariat_core::infrastructure::org_store::org_channels_root;
 use secretariat_core::infrastructure::preferences::load_or_migrate as load_or_migrate_preferences;
 use secretariat_core::infrastructure::biometric::build_signer;
@@ -101,7 +102,7 @@ impl SecretariatServer {
         org_alias: Option<&str>,
     ) -> Result<std::path::PathBuf, ErrorData> {
         match org_alias {
-            None => Ok(self.paths.channels.clone()),
+            None => Ok(self.paths.personal_channels_root()),
             Some(s) => {
                 let alias = OrgAlias::parse(s)
                     .map_err(|e| invalid_request(format!("invalid org alias `{s}`: {e}")))?;
@@ -113,6 +114,26 @@ impl SecretariatServer {
                     )));
                 }
                 Ok(org_channels_root(&self.paths.orgs_root, &alias))
+            }
+        }
+    }
+
+    /// Parse an optional org alias into a `Root` for use with
+    /// resolver-shaped APIs (capture, contextify).
+    fn resolve_root(&self, org_alias: Option<&str>) -> Result<Root, ErrorData> {
+        match org_alias {
+            None => Ok(Root::Self_),
+            Some(s) => {
+                let alias = OrgAlias::parse(s)
+                    .map_err(|e| invalid_request(format!("invalid org alias `{s}`: {e}")))?;
+                let dir = self.paths.orgs_root.join(alias.as_str());
+                if !dir.exists() {
+                    return Err(invalid_request(format!(
+                        "org `{}` does not exist — create it with `create_org` first",
+                        alias.as_str()
+                    )));
+                }
+                Ok(Root::Org(alias))
             }
         }
     }
@@ -780,12 +801,8 @@ impl SecretariatServer {
             source: params.source.unwrap_or_else(|| "mcp-capture".to_string()),
         };
 
-        let channel_tree = self.resolve_channels_root(params.org.as_deref())?;
-        let roots = CaptureRoots {
-            flat_queues: &self.paths.queues,
-            channel_tree: &channel_tree,
-        };
-        let path = capture_to_queue(req, roots, Utc::now())
+        let root = self.resolve_root(params.org.as_deref())?;
+        let path = capture_to_queue(req, &self.paths.root, &root, Utc::now())
             .map_err(|e| invalid_request(format!("capture failed: {e}")))?;
 
         info!(file = %path.display(), queue = %queue.as_str(), "captured to local queue via MCP");
@@ -797,7 +814,10 @@ impl SecretariatServer {
         // never holds them in long-lived state.
         if queue.as_str() == secretariat_core::application::ROUTABLE_QUEUE {
             let capture_path = path.clone();
-            let queues_root = self.paths.queues.clone();
+            // Contextify discovery walks the principal's own channels root —
+            // the contextify pass routes between local queues, never across
+            // org boundaries.
+            let queues_root = channels_root_for(&self.paths.root, &root);
             let ledger_path = self.paths.contextification_log.clone();
             let preferences_path = self.paths.preferences.clone();
             let legacy_cognition = self.paths.legacy_cognition_config.clone();
@@ -1529,7 +1549,7 @@ impl SecretariatServer {
         };
         let resolved = app_resolve_channel_contract(
             &self.paths.orgs_root,
-            &self.paths.channels,
+            &self.paths.personal_channels_root(),
             alias.as_ref(),
             &handle,
         )

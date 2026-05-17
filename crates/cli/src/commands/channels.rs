@@ -7,7 +7,7 @@
 //! lives in the principal's personal tree at `~/.secretariat/channels/`.
 //! See `docs/decisions/2026-05-12-substrate-layout-v03.md`.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
@@ -169,7 +169,7 @@ fn run_contract_resolve(
         ),
     };
     let resolved =
-        resolve_channel_contract(&paths.orgs_root, &paths.channels, org_alias.as_ref(), &handle)
+        resolve_channel_contract(&paths.orgs_root, &paths.personal_channels_root(), org_alias.as_ref(), &handle)
             .with_context(|| format!("resolving contract for `{}`", handle.as_str()))?;
     println!("handle: {}", handle.as_str());
     println!(
@@ -298,7 +298,7 @@ fn resolve_channels_root(
     org: Option<&str>,
 ) -> Result<PathBuf> {
     match org {
-        None => Ok(paths.channels.clone()),
+        None => Ok(paths.personal_channels_root()),
         Some(s) => {
             let alias = OrgAlias::parse(s)
                 .map_err(|e| anyhow!("invalid org alias `{s}`: {e}"))?;
@@ -496,6 +496,6 @@ pub(crate) fn channels_root_for(
 }
 
 #[allow(dead_code)]
-pub(crate) fn channels_root_path(paths: &secretariat_core::infrastructure::KeyPaths) -> &Path {
-    &paths.channels
+pub(crate) fn channels_root_path(paths: &secretariat_core::infrastructure::KeyPaths) -> PathBuf {
+    paths.personal_channels_root()
 }

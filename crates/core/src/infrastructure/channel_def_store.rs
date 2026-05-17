@@ -92,10 +92,12 @@ struct LegacyChannelDefFile {
 }
 
 /// Resolve the on-disk directory for a channel under a given channels root.
-/// `channel:foo:bar` → `<channels_root>/foo/bar/`.
+/// `foo:bar` → `<channels_root>/foo/bar/`. Walks every segment — v0.5
+/// handles no longer carry a leading `channel:` / `inbox:` / `area:`
+/// namespace token.
 pub fn channel_dir(channels_root: &Path, handle: &QueueHandle) -> PathBuf {
     let mut dir = channels_root.to_path_buf();
-    for seg in handle.segments().iter().skip(1) {
+    for seg in handle.segments() {
         dir.push(seg);
     }
     dir
@@ -337,7 +339,7 @@ mod tests {
 
     fn def(when: DateTime<Utc>) -> ChannelDef {
         ChannelDef::new(
-            QueueHandle::parse("channel:product:data:baux-commerciaux").unwrap(),
+            QueueHandle::parse("product:data:baux-commerciaux").unwrap(),
             "Baux commerciaux",
             "Cohort tracking",
             when,
@@ -375,7 +377,7 @@ mod tests {
     #[test]
     fn channel_dir_maps_handle_segments() {
         let root = Path::new("/foo");
-        let h = QueueHandle::parse("channel:com:landing-page").unwrap();
+        let h = QueueHandle::parse("com:landing-page").unwrap();
         let d = channel_dir(root, &h);
         assert!(d.ends_with("com/landing-page"));
     }
@@ -384,7 +386,7 @@ mod tests {
     fn delete_is_idempotent_for_missing_channel() {
         let dir = TempDir::new().unwrap();
         let root = dir.path().join("channels");
-        let h = QueueHandle::parse("channel:does:not:exist").unwrap();
+        let h = QueueHandle::parse("does:not:exist").unwrap();
         delete_channel(&root, &h).unwrap();
     }
 
@@ -392,19 +394,19 @@ mod tests {
     fn loads_legacy_dotchanneldef_json() {
         let dir = TempDir::new().unwrap();
         let root = dir.path().join("channels");
-        let h = QueueHandle::parse("channel:legacy:one").unwrap();
+        let h = QueueHandle::parse("legacy:one").unwrap();
         let chdir = channel_dir(&root, &h);
         std::fs::create_dir_all(&chdir).unwrap();
         let legacy_json = r#"{
   "version": 1,
-  "handle": "channel:legacy:one",
+  "handle": "legacy:one",
   "name": "Legacy",
   "description": "",
   "created_at": "2026-05-12T00:00:00+00:00"
 }"#;
         std::fs::write(chdir.join(LEGACY_CHANNEL_DEF_FILENAME), legacy_json).unwrap();
         let loaded = load_channel_def(&root, &h).unwrap().unwrap();
-        assert_eq!(loaded.handle.as_str(), "channel:legacy:one");
+        assert_eq!(loaded.handle.as_str(), "legacy:one");
         assert_eq!(loaded.name, "Legacy");
     }
 
@@ -412,10 +414,10 @@ mod tests {
     fn save_removes_legacy_sidecar() {
         let dir = TempDir::new().unwrap();
         let root = dir.path().join("channels");
-        let h = QueueHandle::parse("channel:mig:rate").unwrap();
+        let h = QueueHandle::parse("mig:rate").unwrap();
         let chdir = channel_dir(&root, &h);
         std::fs::create_dir_all(&chdir).unwrap();
-        let legacy_json = r#"{"version":1,"handle":"channel:mig:rate","name":"Old","description":"","created_at":"2026-05-12T00:00:00+00:00"}"#;
+        let legacy_json = r#"{"version":1,"handle":"mig:rate","name":"Old","description":"","created_at":"2026-05-12T00:00:00+00:00"}"#;
         std::fs::write(chdir.join(LEGACY_CHANNEL_DEF_FILENAME), legacy_json).unwrap();
         let when = Utc.with_ymd_and_hms(2026, 5, 13, 0, 0, 0).unwrap();
         let d = ChannelDef::new(h.clone(), "New", "", when);
@@ -428,7 +430,7 @@ mod tests {
     fn channel_def_exists_sees_both_shapes() {
         let dir = TempDir::new().unwrap();
         let root = dir.path().join("channels");
-        let h = QueueHandle::parse("channel:exists:check").unwrap();
+        let h = QueueHandle::parse("exists:check").unwrap();
         assert!(!channel_def_exists(&root, &h));
         let chdir = channel_dir(&root, &h);
         std::fs::create_dir_all(&chdir).unwrap();

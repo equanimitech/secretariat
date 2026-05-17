@@ -1,6 +1,6 @@
-//! Use cases for browsing the channel tree (`~/.secretariat/channels/`).
+//! Use cases for browsing the channel tree.
 //!
-//! v0.3 channel-substrate primitives — surface what's in the tree
+//! v0.5 channel-substrate primitives — surface what's in the tree
 //! without callers re-implementing the directory walk.
 //!
 //! Two operations:
@@ -10,8 +10,9 @@
 //!   channel, sorted newest-first.
 //!
 //! Handle convention: a channel at `<channels_root>/foo/bar/` is
-//! addressable as `channel:foo:bar`. Nested handles compose; the
-//! top namespace token is always `channel`.
+//! addressable as the bare handle `foo:bar`. Nested handles compose
+//! via colon segments — no namespace prefix token (v0.5 namespace
+//! collapse).
 //!
 //! Substrate-private subdirs (leading underscore — `_meta`, `_ciphertext`)
 //! and the `envelopes/` directory itself are skipped during the channel
@@ -48,8 +49,6 @@ pub enum ChannelOpError {
         #[source]
         source: MarkdownError,
     },
-    #[error("handle `{0}` is not a channel handle (top namespace must be `channel`)")]
-    NotAChannelHandle(String),
     #[error("channel `{0}` has no envelopes directory on disk")]
     ChannelNotFound(String),
     #[error("channel def store: {0}")]
@@ -61,7 +60,7 @@ pub enum ChannelOpError {
 /// One row in `list_channels` output.
 #[derive(Debug, Clone, Serialize)]
 pub struct ChannelSummary {
-    /// Canonical handle, e.g. `channel:secretariat:dev`.
+    /// Canonical handle, e.g. `secretariat:dev`.
     pub handle: String,
     /// Human-readable display name from the channel manifest (empty if
     /// no manifest exists or name field is empty).
@@ -106,7 +105,7 @@ pub fn list_channels(channels_root: &Path) -> Result<Vec<ChannelSummary>, Channe
     if !channels_root.exists() {
         return Ok(out);
     }
-    walk(channels_root, "channel", &mut out)?;
+    walk(channels_root, "", &mut out)?;
     out.sort_by(|a, b| b.latest_at.cmp(&a.latest_at));
     Ok(out)
 }
@@ -131,7 +130,11 @@ fn walk(
         if seg_name.starts_with('_') || seg_name == "envelopes" {
             continue;
         }
-        let handle_str = format!("{handle_prefix}:{seg_name}");
+        let handle_str = if handle_prefix.is_empty() {
+            seg_name.to_string()
+        } else {
+            format!("{handle_prefix}:{seg_name}")
+        };
         let envelopes_dir = path.join("envelopes");
         let has_def = channel_def_exists_in_dir(&path);
         let (count, latest_at) = if envelopes_dir.is_dir() {
@@ -211,10 +214,8 @@ fn parse_timestamp_from_filename(path: &Path) -> Option<DateTime<Utc>> {
 
 /// Resolve the on-disk envelopes directory for a channel handle.
 fn channel_envelopes_dir(channels_root: &Path, handle: &QueueHandle) -> PathBuf {
-    let segments = handle.segments();
     let mut dir = channels_root.to_path_buf();
-    // Skip leading `channel:` token.
-    for seg in &segments[1..] {
+    for seg in handle.segments() {
         dir.push(seg);
     }
     dir.push("envelopes");
@@ -229,9 +230,6 @@ pub fn read_channel(
     handle: &QueueHandle,
     limit: usize,
 ) -> Result<Vec<ChannelEnvelope>, ChannelOpError> {
-    if handle.top_namespace() != "channel" {
-        return Err(ChannelOpError::NotAChannelHandle(handle.as_str().to_string()));
-    }
     let envelopes_dir = channel_envelopes_dir(channels_root, handle);
     if !envelopes_dir.exists() {
         return Err(ChannelOpError::ChannelNotFound(handle.as_str().to_string()));
@@ -294,9 +292,6 @@ pub fn create_channel(
     description: impl Into<String>,
     created_at: DateTime<Utc>,
 ) -> Result<ChannelDef, ChannelOpError> {
-    if handle.top_namespace() != "channel" {
-        return Err(ChannelOpError::NotAChannelHandle(handle.as_str().to_string()));
-    }
     let def = ChannelDef::new(handle, name, description, created_at);
     save_channel_def(channels_root, &def, false)?;
     let contract_path = channel_contract_path(channels_root, &def.handle);
@@ -311,9 +306,6 @@ pub fn delete_channel(
     channels_root: &Path,
     handle: &QueueHandle,
 ) -> Result<(), ChannelOpError> {
-    if handle.top_namespace() != "channel" {
-        return Err(ChannelOpError::NotAChannelHandle(handle.as_str().to_string()));
-    }
     delete_channel_tree(channels_root, handle)?;
     Ok(())
 }
@@ -321,8 +313,8 @@ pub fn delete_channel(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::application::{capture_to_queue, CaptureRequest, CaptureRoots};
-    use crate::domain::Did;
+    use crate::application::{capture_to_queue, CaptureRequest};
+    use crate::domain::{Did, Root};
     use chrono::TimeZone;
     use tempfile::TempDir;
 
@@ -330,61 +322,57 @@ mod tests {
         Did::from_ed25519_public_key(&[0xb1; 32])
     }
 
-    fn capture(channels: &Path, queues: &Path, handle: &str, body: &str, now: DateTime<Utc>) {
+    /// Capture helper for tests. `vault_root` is the temp vault root;
+    /// the resolver computes `<vault>/_self/channels/<segs>/...` for the
+    /// supplied handle. The caller passes `channels` only to vivify the
+    /// `channel.md` first (the existence gate refuses unknown channels).
+    fn capture(vault_root: &Path, channels: &Path, handle: &str, body: &str, now: DateTime<Utc>) {
         let q = QueueHandle::parse(handle).unwrap();
-        // For channel handles, ensure the channel exists before capture —
-        // `capture_to_queue` refuses to write into an unknown channel
-        // (`ChannelNotFound`) so tests must vivify the `channel.md` here.
-        if q.top_namespace() == "channel" {
-            let _ = create_channel(channels, q.clone(), "", "", now);
-        }
+        let _ = create_channel(channels, q.clone(), "", "", now);
         let req = CaptureRequest {
             from: principal(),
             queue: q,
             body: body.to_string(),
             source: "test".to_string(),
         };
-        capture_to_queue(
-            req,
-            CaptureRoots {
-                flat_queues: queues,
-                channel_tree: channels,
-            },
-            now,
-        )
-        .unwrap();
+        capture_to_queue(req, vault_root, &Root::Self_, now).unwrap();
+    }
+
+    /// Self-channels root under a temp vault, matching what `capture()`
+    /// would resolve via `channels_root_for(vault, Root::Self_)`.
+    fn self_channels(dir: &TempDir) -> PathBuf {
+        dir.path().join("_self").join("channels")
     }
 
     #[test]
     fn list_channels_empty_root_returns_empty() {
         let dir = TempDir::new().unwrap();
-        let out = list_channels(&dir.path().join("channels")).unwrap();
+        let out = list_channels(&self_channels(&dir)).unwrap();
         assert!(out.is_empty());
     }
 
     #[test]
     fn list_channels_enumerates_tree() {
         let dir = TempDir::new().unwrap();
-        let channels = dir.path().join("channels");
-        let queues = dir.path().join("queues");
+        let channels = self_channels(&dir);
         capture(
+            dir.path(),
             &channels,
-            &queues,
-            "channel:secretariat:dev",
+            "secretariat:dev",
             "one",
             Utc.with_ymd_and_hms(2026, 5, 12, 10, 0, 0).unwrap(),
         );
         capture(
+            dir.path(),
             &channels,
-            &queues,
-            "channel:secretariat:dev",
+            "secretariat:dev",
             "two",
             Utc.with_ymd_and_hms(2026, 5, 12, 14, 0, 0).unwrap(),
         );
         capture(
+            dir.path(),
             &channels,
-            &queues,
-            "channel:dommage-corporel:paris-cohort",
+            "dommage-corporel:paris-cohort",
             "three",
             Utc.with_ymd_and_hms(2026, 5, 12, 12, 0, 0).unwrap(),
         );
@@ -392,26 +380,25 @@ mod tests {
         let out = list_channels(&channels).unwrap();
         assert_eq!(out.len(), 2);
         // Sorted newest-first.
-        assert_eq!(out[0].handle, "channel:secretariat:dev");
+        assert_eq!(out[0].handle, "secretariat:dev");
         assert_eq!(out[0].envelope_count, 2);
         assert_eq!(
             out[0].latest_at,
             Some(Utc.with_ymd_and_hms(2026, 5, 12, 14, 0, 0).unwrap())
         );
-        assert_eq!(out[1].handle, "channel:dommage-corporel:paris-cohort");
+        assert_eq!(out[1].handle, "dommage-corporel:paris-cohort");
         assert_eq!(out[1].envelope_count, 1);
     }
 
     #[test]
     fn list_channels_skips_substrate_private_dirs() {
         let dir = TempDir::new().unwrap();
-        let channels = dir.path().join("channels");
-        let queues = dir.path().join("queues");
+        let channels = self_channels(&dir);
 
         capture(
+            dir.path(),
             &channels,
-            &queues,
-            "channel:secretariat:dev",
+            "secretariat:dev",
             "ok",
             Utc.with_ymd_and_hms(2026, 5, 12, 10, 0, 0).unwrap(),
         );
@@ -421,38 +408,37 @@ mod tests {
 
         let out = list_channels(&channels).unwrap();
         assert_eq!(out.len(), 1);
-        assert_eq!(out[0].handle, "channel:secretariat:dev");
+        assert_eq!(out[0].handle, "secretariat:dev");
     }
 
     #[test]
     fn read_channel_returns_newest_first() {
         let dir = TempDir::new().unwrap();
-        let channels = dir.path().join("channels");
-        let queues = dir.path().join("queues");
+        let channels = self_channels(&dir);
 
         capture(
+            dir.path(),
             &channels,
-            &queues,
-            "channel:secretariat:dev",
+            "secretariat:dev",
             "first",
             Utc.with_ymd_and_hms(2026, 5, 12, 10, 0, 0).unwrap(),
         );
         capture(
+            dir.path(),
             &channels,
-            &queues,
-            "channel:secretariat:dev",
+            "secretariat:dev",
             "second",
             Utc.with_ymd_and_hms(2026, 5, 12, 14, 0, 0).unwrap(),
         );
         capture(
+            dir.path(),
             &channels,
-            &queues,
-            "channel:secretariat:dev",
+            "secretariat:dev",
             "third",
             Utc.with_ymd_and_hms(2026, 5, 12, 12, 0, 0).unwrap(),
         );
 
-        let h = QueueHandle::parse("channel:secretariat:dev").unwrap();
+        let h = QueueHandle::parse("secretariat:dev").unwrap();
         let out = read_channel(&channels, &h, 10).unwrap();
         assert_eq!(out.len(), 3);
         // Newest-first: 14:00 → 12:00 → 10:00
@@ -464,38 +450,28 @@ mod tests {
     #[test]
     fn read_channel_respects_limit() {
         let dir = TempDir::new().unwrap();
-        let channels = dir.path().join("channels");
-        let queues = dir.path().join("queues");
+        let channels = self_channels(&dir);
 
         for h in 0..5 {
             capture(
+                dir.path(),
                 &channels,
-                &queues,
-                "channel:secretariat:dev",
+                "secretariat:dev",
                 &format!("body-{h}"),
                 Utc.with_ymd_and_hms(2026, 5, 12, 10 + h, 0, 0).unwrap(),
             );
         }
 
-        let handle = QueueHandle::parse("channel:secretariat:dev").unwrap();
+        let handle = QueueHandle::parse("secretariat:dev").unwrap();
         let out = read_channel(&channels, &handle, 2).unwrap();
         assert_eq!(out.len(), 2);
     }
 
     #[test]
-    fn read_channel_errors_on_non_channel_handle() {
-        let dir = TempDir::new().unwrap();
-        let channels = dir.path().join("channels");
-        let h = QueueHandle::parse("inbox:triage").unwrap();
-        let r = read_channel(&channels, &h, 10);
-        assert!(matches!(r, Err(ChannelOpError::NotAChannelHandle(_))));
-    }
-
-    #[test]
     fn read_channel_errors_when_dir_missing() {
         let dir = TempDir::new().unwrap();
-        let channels = dir.path().join("channels");
-        let h = QueueHandle::parse("channel:does:not:exist").unwrap();
+        let channels = self_channels(&dir);
+        let h = QueueHandle::parse("does:not:exist").unwrap();
         let r = read_channel(&channels, &h, 10);
         assert!(matches!(r, Err(ChannelOpError::ChannelNotFound(_))));
     }
@@ -503,8 +479,8 @@ mod tests {
     #[test]
     fn create_channel_writes_stub_contract_md() {
         let dir = TempDir::new().unwrap();
-        let channels = dir.path().join("channels");
-        let h = QueueHandle::parse("channel:dev:secretariat").unwrap();
+        let channels = self_channels(&dir);
+        let h = QueueHandle::parse("dev:secretariat").unwrap();
         let when = Utc.with_ymd_and_hms(2026, 5, 12, 0, 0, 0).unwrap();
         create_channel(&channels, h.clone(), "Dev — Secretariat", "", when).unwrap();
         let contract_path =
@@ -520,8 +496,8 @@ mod tests {
     #[test]
     fn create_channel_does_not_clobber_hand_edited_contract() {
         let dir = TempDir::new().unwrap();
-        let channels = dir.path().join("channels");
-        let h = QueueHandle::parse("channel:dev:secretariat").unwrap();
+        let channels = self_channels(&dir);
+        let h = QueueHandle::parse("dev:secretariat").unwrap();
         let when = Utc.with_ymd_and_hms(2026, 5, 12, 0, 0, 0).unwrap();
 
         // Pre-stage a hand-edited contract on disk.
@@ -546,8 +522,8 @@ mod tests {
     #[test]
     fn create_channel_makes_empty_channel_visible_in_list() {
         let dir = TempDir::new().unwrap();
-        let channels = dir.path().join("channels");
-        let h = QueueHandle::parse("channel:product:data:baux-commerciaux").unwrap();
+        let channels = self_channels(&dir);
+        let h = QueueHandle::parse("product:data:baux-commerciaux").unwrap();
         let when = Utc.with_ymd_and_hms(2026, 5, 12, 0, 0, 0).unwrap();
         let def = create_channel(&channels, h, "Baux commerciaux", "Cohort tracking", when)
             .unwrap();
@@ -555,7 +531,7 @@ mod tests {
         // Empty channel shows in list (no envelopes, name carried through).
         let out = list_channels(&channels).unwrap();
         assert_eq!(out.len(), 1);
-        assert_eq!(out[0].handle, "channel:product:data:baux-commerciaux");
+        assert_eq!(out[0].handle, "product:data:baux-commerciaux");
         assert_eq!(out[0].name, "Baux commerciaux");
         assert_eq!(out[0].envelope_count, 0);
     }
@@ -563,8 +539,8 @@ mod tests {
     #[test]
     fn create_channel_refuses_to_overwrite_existing() {
         let dir = TempDir::new().unwrap();
-        let channels = dir.path().join("channels");
-        let h = QueueHandle::parse("channel:secretariat:dev").unwrap();
+        let channels = self_channels(&dir);
+        let h = QueueHandle::parse("secretariat:dev").unwrap();
         let when = Utc.with_ymd_and_hms(2026, 5, 12, 0, 0, 0).unwrap();
         create_channel(&channels, h.clone(), "", "", when).unwrap();
         let r = create_channel(&channels, h, "", "", when);
@@ -577,26 +553,16 @@ mod tests {
     }
 
     #[test]
-    fn create_channel_rejects_non_channel_handle() {
-        let dir = TempDir::new().unwrap();
-        let channels = dir.path().join("channels");
-        let h = QueueHandle::parse("inbox:triage").unwrap();
-        let when = Utc.with_ymd_and_hms(2026, 5, 12, 0, 0, 0).unwrap();
-        let r = create_channel(&channels, h, "", "", when);
-        assert!(matches!(r, Err(ChannelOpError::NotAChannelHandle(_))));
-    }
-
-    #[test]
     fn delete_channel_removes_tree() {
         let dir = TempDir::new().unwrap();
-        let channels = dir.path().join("channels");
-        let h = QueueHandle::parse("channel:secretariat:dev").unwrap();
+        let channels = self_channels(&dir);
+        let h = QueueHandle::parse("secretariat:dev").unwrap();
         let when = Utc.with_ymd_and_hms(2026, 5, 12, 0, 0, 0).unwrap();
         create_channel(&channels, h.clone(), "", "", when).unwrap();
         capture(
+            dir.path(),
             &channels,
-            &dir.path().join("queues"),
-            "channel:secretariat:dev",
+            "secretariat:dev",
             "an envelope",
             when,
         );
@@ -608,8 +574,8 @@ mod tests {
     #[test]
     fn delete_channel_is_idempotent_for_missing() {
         let dir = TempDir::new().unwrap();
-        let channels = dir.path().join("channels");
-        let h = QueueHandle::parse("channel:nothing:here").unwrap();
+        let channels = self_channels(&dir);
+        let h = QueueHandle::parse("nothing:here").unwrap();
         delete_channel(&channels, &h).unwrap();
     }
 }

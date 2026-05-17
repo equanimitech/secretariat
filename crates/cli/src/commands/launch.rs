@@ -30,11 +30,11 @@ use super::paths::key_paths;
 
 #[derive(Parser, Debug)]
 pub struct Args {
-    /// Channel handle, e.g. `channel:dev:secretariat`.
+    /// Channel handle, e.g. `dev:secretariat`.
     pub handle: String,
 
     /// Org alias scoping the channel. Omit for personal channels under
-    /// `~/.secretariat/channels/`.
+    /// `~/.secretariat/_self/channels/`.
     #[arg(long)]
     pub org: Option<String>,
 
@@ -53,7 +53,7 @@ pub fn run(args: Args) -> Result<()> {
         .map_err(|e| anyhow!("invalid handle `{}`: {e}", args.handle))?;
 
     let channels_root = match args.org.as_deref() {
-        None => paths.channels.clone(),
+        None => paths.personal_channels_root(),
         Some(s) => {
             let alias = OrgAlias::parse(s)
                 .map_err(|e| anyhow!("invalid org alias `{s}`: {e}"))?;

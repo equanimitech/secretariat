@@ -391,10 +391,9 @@ fn relocate(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::application::{capture_to_queue, CaptureRequest, CaptureRoots};
-    use crate::domain::Did;
+    use crate::domain::{Did, EnvelopeBuilder, EnvelopeDepth, EnvelopeUrgency};
     use crate::infrastructure::cognition::read_entries;
-    use chrono::TimeZone;
+    use crate::infrastructure::markdown::embed_stamp;
     use tempfile::TempDir;
 
     /// Synthetic DID for tests. Per `feedback_no_real_dids_in_tests`,
@@ -425,24 +424,32 @@ mod tests {
         }
     }
 
+    /// Write a capture file with envelope frontmatter directly into the
+    /// `inbox/triage` queue under the given root. Bypasses
+    /// `capture_to_queue` (which requires a channel manifest) so the
+    /// contextify tests can isolate routing logic from capture-side
+    /// existence gates. Mirrors the on-disk shape capture_to_queue would
+    /// have produced.
     fn write_inbox_triage_capture(queues_root: &Path, body: &str) -> PathBuf {
-        let req = CaptureRequest {
-            from: rafa(),
-            queue: QueueHandle::parse("inbox:triage").unwrap(),
-            body: body.to_string(),
-            source: "test".to_string(),
-        };
-        let now = Utc.with_ymd_and_hms(2026, 5, 6, 12, 0, 0).unwrap();
-        let channel_tree = queues_root.parent().unwrap().join("channels");
-        capture_to_queue(
-            req,
-            CaptureRoots {
-                flat_queues: queues_root,
-                channel_tree: &channel_tree,
-            },
-            now,
-        )
-        .unwrap()
+        let me = rafa();
+        let handle = QueueHandle::parse("inbox:triage").unwrap();
+        let envelope = EnvelopeBuilder::new(me.clone(), Recipient::new(me, handle))
+            .depth(EnvelopeDepth::Subtle)
+            .urgency(EnvelopeUrgency::Whenever)
+            .source("test".to_string())
+            .build();
+        let dir = queues_root
+            .join("inbox")
+            .join("triage")
+            .join("envelopes")
+            .join("2026")
+            .join("05")
+            .join("06");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("20260506T120000Z-abcdef.md");
+        let content = embed_stamp(body, Some(&envelope), None).unwrap();
+        std::fs::write(&path, content).unwrap();
+        path
     }
 
     #[tokio::test]
@@ -540,22 +547,24 @@ mod tests {
         let ledger = queues.join(".contextification.log");
 
         // Capture goes to `area:health`, not `inbox:triage`.
-        let req = CaptureRequest {
-            from: rafa(),
-            queue: QueueHandle::parse("area:health").unwrap(),
-            body: "morning walk".into(),
-            source: "test".into(),
-        };
-        let channel_tree = dir.path().join("channels");
-        let capture_path = capture_to_queue(
-            req,
-            CaptureRoots {
-                flat_queues: &queues,
-                channel_tree: &channel_tree,
-            },
-            Utc::now(),
-        )
-        .unwrap();
+        let me = rafa();
+        let handle = QueueHandle::parse("area:health").unwrap();
+        let envelope = EnvelopeBuilder::new(me.clone(), Recipient::new(me, handle))
+            .depth(EnvelopeDepth::Subtle)
+            .urgency(EnvelopeUrgency::Whenever)
+            .source("test".to_string())
+            .build();
+        let target_dir = queues
+            .join("area")
+            .join("health")
+            .join("envelopes")
+            .join("2026")
+            .join("05")
+            .join("06");
+        std::fs::create_dir_all(&target_dir).unwrap();
+        let capture_path = target_dir.join("20260506T120000Z-abcdef.md");
+        let content = embed_stamp("morning walk", Some(&envelope), None).unwrap();
+        std::fs::write(&capture_path, content).unwrap();
 
         let adapter = ScriptedAdapter {
             answer: Ok(RouteSuggestion {

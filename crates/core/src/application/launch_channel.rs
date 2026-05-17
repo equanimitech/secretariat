@@ -23,8 +23,6 @@ use crate::ports::{CognitionLauncher, LaunchPlan, LauncherError};
 
 #[derive(Debug, Error)]
 pub enum LaunchChannelError {
-    #[error("handle `{0}` is not a channel handle (must start with `channel:`)")]
-    NotAChannelHandle(String),
     #[error(
         "channel `{0}` does not exist — create it with `sec channels create {0}` (or check --org)"
     )]
@@ -46,12 +44,12 @@ pub enum LaunchChannelError {
 /// [`crate::infrastructure::PrefsLauncher::from_prefs_with_binding`].
 ///
 /// `channels_root` is the principal's channels root for the relevant
-/// scope: `paths.channels` for personal channels, or
+/// scope: `paths.personal_channels_root()` for personal channels, or
 /// `org_channels_root(paths.orgs_root, alias)` for an org channel.
 ///
-/// Errors when `handle` isn't a `channel:...` handle or when the
-/// channel doesn't have a `channel.md` (or legacy `.channelDef`) at the
-/// resolved path — same existence gate as capture/contract verbs.
+/// Errors when the channel doesn't have a `channel.md` (or legacy
+/// `.channelDef`) at the resolved path — same existence gate as
+/// capture/contract verbs.
 pub fn launch_channel(
     channels_root: &Path,
     handle: &QueueHandle,
@@ -68,12 +66,6 @@ pub fn launch_channel_with_binding(
     handle: &QueueHandle,
     launcher: &dyn CognitionLauncher,
 ) -> Result<(LaunchPlan, ChannelBinding), LaunchChannelError> {
-    if handle.top_namespace() != "channel" {
-        return Err(LaunchChannelError::NotAChannelHandle(
-            handle.as_str().to_string(),
-        ));
-    }
-
     let default = channel_dir(channels_root, handle);
     let channel_def_file = channel_def_path(channels_root, handle);
     if !channel_def_file.is_file() {
@@ -125,7 +117,7 @@ mod tests {
     #[test]
     fn unbound_channel_plans_at_default_dir() {
         let tmp = TempDir::new().unwrap();
-        let handle = QueueHandle::parse("channel:dev:secretariat").unwrap();
+        let handle = QueueHandle::parse("dev:secretariat").unwrap();
         let default = make_channel(tmp.path(), &handle);
         let plan = launch_channel(tmp.path(), &handle, &launcher()).unwrap();
         assert_eq!(plan.cwd, default);
@@ -135,7 +127,7 @@ mod tests {
     #[test]
     fn root_path_redirects_cwd_to_bound_dir() {
         let tmp = TempDir::new().unwrap();
-        let handle = QueueHandle::parse("channel:dev:secretariat").unwrap();
+        let handle = QueueHandle::parse("dev:secretariat").unwrap();
         let default = make_channel(tmp.path(), &handle);
         let bound = tmp.path().join("repo");
         std::fs::create_dir_all(&bound).unwrap();
@@ -149,17 +141,9 @@ mod tests {
     }
 
     #[test]
-    fn non_channel_handle_errors() {
-        let tmp = TempDir::new().unwrap();
-        let handle = QueueHandle::parse("inbox:triage").unwrap();
-        let err = launch_channel(tmp.path(), &handle, &launcher()).unwrap_err();
-        assert!(matches!(err, LaunchChannelError::NotAChannelHandle(_)));
-    }
-
-    #[test]
     fn missing_channel_errors() {
         let tmp = TempDir::new().unwrap();
-        let handle = QueueHandle::parse("channel:never:existed").unwrap();
+        let handle = QueueHandle::parse("never:existed").unwrap();
         let err = launch_channel(tmp.path(), &handle, &launcher()).unwrap_err();
         assert!(matches!(err, LaunchChannelError::ChannelNotFound(_)));
     }

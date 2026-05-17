@@ -1,6 +1,7 @@
 //! Key + did:web document file management at `~/.secretariat/`.
 //!
-//! Filesystem layout (decision log #6, #9 and the plan):
+//! Filesystem layout (v0.5 namespace-collapse —
+//! `docs/pitches/2026-05-17-collapse-namespaces.md`):
 //!
 //! ```text
 //! ~/.secretariat/
@@ -9,8 +10,10 @@
 //! ├── contacts.json                known peers (Contact aggregate, mode 0600)
 //! ├── template.md                  user-customizable AG template
 //! ├── preferences.toml             composition, cognition, and delivery settings
-//! ├── inbox/                       incoming stamped envelopes
-//! ├── outbox/                      drafts awaiting principal stamp
+//! ├── _self/                       principal-as-queue-root
+//! │   └── channels/<segs>/envelopes/...
+//! ├── orgs/<alias>/                org-as-queue-root (same shape)
+//! │   └── channels/<segs>/envelopes/...
 //! ├── peers/                       cached did:web docs
 //! └── bin/                         user-local helper binaries (reserved; unused in v0.5)
 //! ```
@@ -51,22 +54,13 @@ pub struct KeyPaths {
     pub contacts: PathBuf,
     pub relay_state: PathBuf,
     pub peers_cache: PathBuf,
-    /// Legacy flat local-queue captures root (envelopes whose
-    /// `recipient.owner == self` whose handle's top namespace is
-    /// anything *other than* `channel`, e.g. `inbox:triage`,
-    /// `area:writing`). In v0.3 substrate, captures live under
-    /// `<root>/_self/<namespace>/<segments>/envelopes/...` — this
-    /// field is kept only for `capture_to_queue`, which has not yet
-    /// been migrated to the resolver. See follow-up after Slice 3.
-    pub queues: PathBuf,
-    /// Channel-tree captures (envelopes whose handle starts with `channel:`).
-    /// Time-sharded layout: `<channels>/<segments-after-channel>/envelopes/YYYY/MM/DD/<timestamp>.md`.
-    /// This is the **personal** (no-org) channel root. Org-scoped channels
-    /// live under `<orgs_root>/<alias>/channels/` instead.
-    pub channels: PathBuf,
-    /// Root for org-scoped state (v0.3 slice 1.5). Layout:
-    /// `<orgs_root>/<alias>/.org` (metadata) + `<orgs_root>/<alias>/channels/<segs>/...`
-    /// per `docs/decisions/2026-05-12-substrate-layout-v03.md`.
+    /// Principal-as-queue-root. Mirror of an org dir's shape, with
+    /// `<self_root>/channels/<segs>/envelopes/...` for the principal's own
+    /// channels. Reach the channels root via
+    /// [`KeyPaths::personal_channels_root`].
+    pub self_root: PathBuf,
+    /// Root for org-scoped state. Layout:
+    /// `<orgs_root>/<alias>/.org` (metadata) + `<orgs_root>/<alias>/channels/<segs>/...`.
     pub orgs_root: PathBuf,
     pub bin: PathBuf,
     pub template: PathBuf,
@@ -81,8 +75,8 @@ pub struct KeyPaths {
     /// Legacy delivery cadence config — kept only for the one-time migration.
     pub legacy_cadence: PathBuf,
     /// Append-only ledger of contextification decisions. Lives under
-    /// `queues/` so a `tail` over the queues tree picks it up alongside
-    /// captures.
+    /// `_self/` so a `tail` over the principal's own tree picks it up
+    /// alongside captures.
     pub contextification_log: PathBuf,
 }
 
@@ -98,14 +92,13 @@ impl KeyPaths {
     }
 
     pub fn under(root: PathBuf) -> Self {
+        let self_root = root.join("_self");
         Self {
             signing_key: root.join("key"),
             did_document: root.join("did.json"),
             contacts: root.join("contacts.json"),
             relay_state: root.join("relay-state.json"),
             peers_cache: root.join("peers"),
-            queues: root.join("queues"),
-            channels: root.join("channels"),
             orgs_root: root.join("orgs"),
             bin: root.join("bin"),
             template: root.join("template.md"),
@@ -113,17 +106,24 @@ impl KeyPaths {
             preferences: root.join("preferences.toml"),
             legacy_cognition_config: root.join("cognition.json"),
             legacy_cadence: root.join("cadence.toml"),
-            contextification_log: root.join("queues").join(".contextification.log"),
+            contextification_log: self_root.join(".contextification.log"),
+            self_root,
             root,
         }
+    }
+
+    /// `<self_root>/channels/` — the principal's own channels root.
+    /// Per the v0.5 namespace-collapse pitch.
+    pub fn personal_channels_root(&self) -> PathBuf {
+        self.self_root.join("channels")
     }
 
     pub fn ensure_dirs(&self) -> Result<(), KeyError> {
         for dir in [
             &self.root,
             &self.peers_cache,
-            &self.queues,
-            &self.channels,
+            &self.self_root,
+            &self.personal_channels_root(),
             &self.orgs_root,
             &self.bin,
         ] {
@@ -223,11 +223,12 @@ mod tests {
         paths.ensure_dirs().unwrap();
         assert!(paths.root.is_dir());
         assert!(paths.peers_cache.is_dir());
-        assert!(paths.queues.is_dir());
-        assert!(paths.channels.is_dir());
+        assert!(paths.self_root.is_dir());
+        assert!(paths.personal_channels_root().is_dir());
         assert!(paths.orgs_root.is_dir());
         assert!(paths.bin.is_dir());
-        assert!(paths.channels.ends_with("channels"));
+        assert!(paths.self_root.ends_with("_self"));
+        assert!(paths.personal_channels_root().ends_with("_self/channels"));
         assert!(paths.orgs_root.ends_with("orgs"));
     }
 

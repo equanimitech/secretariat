@@ -15,6 +15,7 @@ mod org;
 mod org_alias;
 mod queue_handle;
 mod recipient;
+mod root;
 mod stamp;
 
 pub use acts::{EnvelopeDepth, EnvelopeUrgency, StampAct};
@@ -31,4 +32,5 @@ pub use org::Org;
 pub use org_alias::{OrgAlias, OrgAliasError};
 pub use queue_handle::{QueueHandle, QueueHandleError};
 pub use recipient::Recipient;
+pub use root::Root;
 pub use stamp::Stamp;

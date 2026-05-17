@@ -19,7 +19,7 @@ pub mod sync;
 pub mod stamp_document;
 pub mod verify_document;
 
-pub use capture_ops::{capture_to_queue, CaptureError, CaptureRequest, CaptureRoots};
+pub use capture_ops::{capture_to_queue, channels_root_for, CaptureError, CaptureRequest};
 pub use channels_ops::{
     create_channel, delete_channel, list_channels, read_channel, ChannelEnvelope, ChannelOpError,
     ChannelSummary,

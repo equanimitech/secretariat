@@ -10,18 +10,17 @@ use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
 use clap::Parser;
 
-use secretariat_core::application::{capture_to_queue, show_org, CaptureRequest, CaptureRoots};
-use secretariat_core::domain::{OrgAlias, QueueHandle};
-use secretariat_core::infrastructure::org_store::org_channels_root;
+use secretariat_core::application::{capture_to_queue, show_org, CaptureRequest};
+use secretariat_core::domain::{OrgAlias, QueueHandle, Root};
 
 use super::paths::{key_paths, load_did};
 
 #[derive(Parser, Debug)]
 pub struct Args {
-    /// Target queue handle, of the form `<namespace>:<slug>`. Examples:
-    /// `inbox:triage`, `area:health`, `project:autonomous-enterprise`.
-    /// Namespaces are free-form lowercase letters; slugs are lowercase
-    /// letters / digits / hyphens.
+    /// Target queue handle — colon-separated path segments, e.g.
+    /// `triage`, `articles`, `dommage-corporel:paris-cohort`. Tree
+    /// depth = colon depth. v0.5+ handles no longer carry a
+    /// `channel:` / `inbox:` / `area:` namespace prefix.
     #[arg(long)]
     queue: String,
 
@@ -39,9 +38,9 @@ pub struct Args {
     #[arg(long, default_value_t = String::from("manual"))]
     source: String,
 
-    /// Optional org alias (`themia.pro`, `equanimi.tech`). When set AND
-    /// the queue handle starts with `channel:`, the capture lands in
-    /// that org's channel tree. Omit for personal captures.
+    /// Optional org alias (`themia.pro`, `equanimi.tech`). When set the
+    /// capture lands in that org's channel tree. Omit for personal
+    /// captures (under `_self`).
     #[arg(long)]
     org: Option<String>,
 }
@@ -79,8 +78,8 @@ pub fn run(args: Args) -> Result<()> {
         source: args.source,
     };
 
-    let channel_tree = match args.org.as_deref() {
-        None => paths.channels.clone(),
+    let root = match args.org.as_deref() {
+        None => Root::Self_,
         Some(s) => {
             let alias = OrgAlias::parse(s)
                 .map_err(|e| anyhow!("invalid --org `{s}`: {e}"))?;
@@ -94,14 +93,10 @@ pub fn run(args: Args) -> Result<()> {
                     alias.as_str()
                 ));
             }
-            org_channels_root(&paths.orgs_root, &alias)
+            Root::Org(alias)
         }
     };
-    let roots = CaptureRoots {
-        flat_queues: &paths.queues,
-        channel_tree: &channel_tree,
-    };
-    let path = capture_to_queue(req, roots, Utc::now())
+    let path = capture_to_queue(req, &paths.root, &root, Utc::now())
         .context("writing capture into local queue")?;
     println!("{}", path.display());
     Ok(())
