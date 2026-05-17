@@ -80,15 +80,7 @@ pub fn run(args: Args) -> Result<()> {
     fs::write(paths.root.join("did"), format!("{did}\n"))
         .with_context(|| format!("writing {}/did", paths.root.display()))?;
 
-    // 8. Best-effort: build the Touch ID Swift helper on macOS dev installs.
-    //    Release tarballs ship a prebuilt copy, but `cargo install --git` users
-    //    have a Swift toolchain handy and otherwise hit ENOENT at first stamp.
-    #[cfg(target_os = "macos")]
-    if let Some(out) = try_build_touchid_helper(&paths.bin) {
-        eprintln!("[sec]   touchid      → {}", out.display());
-    }
-
-    // 9. Report.
+    // 8. Report. (Biometric gate is in-process — no helper binary to install.)
     eprintln!("[sec] initialized at {}", paths.root.display());
     eprintln!("[sec]   did          → {did}");
     eprintln!("[sec]   signing key  → {}", paths.signing_key.display());
@@ -108,40 +100,6 @@ pub fn run(args: Args) -> Result<()> {
         }
     }
     Ok(())
-}
-
-/// Compile the Touch ID helper into `~/.secretariat/bin/touchid-prompt`. The
-/// Swift source is embedded into this binary at build time via `include_str!`
-/// so this works for both repo checkouts and `cargo install --git` (where the
-/// source tree is gone by the time `init` runs). Best-effort: returns `None`
-/// if `swiftc` is missing or the build fails.
-#[cfg(target_os = "macos")]
-const TOUCHID_PROMPT_SOURCE: &str = include_str!("../../../../tools/touchid-prompt/main.swift");
-
-#[cfg(target_os = "macos")]
-fn try_build_touchid_helper(bin_dir: &std::path::Path) -> Option<std::path::PathBuf> {
-    use std::process::Command;
-
-    if Command::new("swiftc").arg("-version").output().is_err() {
-        return None;
-    }
-
-    let source = std::env::temp_dir().join(format!("secretariat-touchid-{}.swift", std::process::id()));
-    fs::write(&source, TOUCHID_PROMPT_SOURCE).ok()?;
-
-    let out = bin_dir.join("touchid-prompt");
-    let status = Command::new("swiftc")
-        .arg("-O")
-        .arg(&source)
-        .arg("-o")
-        .arg(&out)
-        .status()
-        .ok()?;
-    let _ = fs::remove_file(&source);
-    if !status.success() {
-        return None;
-    }
-    Some(out)
 }
 
 fn seed_file(path: &std::path::Path, content: &str, overwrite: bool) -> Result<()> {

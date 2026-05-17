@@ -1,9 +1,9 @@
 //! Ed25519-based [`Signer`] implementation, gated by a [`BiometricGate`].
 //!
-//! Two gates ship in MVP:
-//! - [`AlwaysAllowGate`] — for unit tests; never prompts.
-//! - [`super::TouchIdGate`] — shells out to the Swift Touch ID helper. Lives
-//!   in `infrastructure/touchid.rs`.
+//! Gates that ship:
+//! - [`AlwaysAllowGate`] / [`AlwaysDenyGate`] — for unit tests; never prompts.
+//! - [`super::NativeBiometricGate`] — in-process: macOS LAContext / Windows
+//!   Hello. Lives in `infrastructure/native_biometric.rs`.
 
 use ed25519_dalek::{Signer as _, SigningKey};
 use thiserror::Error;

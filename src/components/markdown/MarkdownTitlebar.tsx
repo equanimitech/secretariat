@@ -1,17 +1,9 @@
-import { Button } from '@/components/ui/button'
-import { Stamp } from 'lucide-react'
-
 interface MarkdownTitlebarProps {
   title: string
   saving: boolean
-  onStampClick: () => void
 }
 
-export function MarkdownTitlebar({
-  title,
-  saving,
-  onStampClick,
-}: MarkdownTitlebarProps) {
+export function MarkdownTitlebar({ title, saving }: MarkdownTitlebarProps) {
   return (
     <header
       data-tauri-drag-region
@@ -28,10 +20,6 @@ export function MarkdownTitlebar({
           <span className="text-muted-foreground text-xs">Saving…</span>
         )}
       </div>
-      <Button size="sm" onClick={onStampClick}>
-        <Stamp size={14} className="mr-1.5" />
-        Stamp
-      </Button>
     </header>
   )
 }

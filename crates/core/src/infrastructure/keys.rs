@@ -12,7 +12,7 @@
 //! ├── inbox/                       incoming stamped envelopes
 //! ├── outbox/                      drafts awaiting principal stamp
 //! ├── peers/                       cached did:web docs
-//! └── bin/                         user-local helper binaries (e.g. touchid-prompt)
+//! └── bin/                         user-local helper binaries (reserved; unused in v0.5)
 //! ```
 
 use std::fs;

@@ -42,8 +42,7 @@
     "targets": "all",
     "externalBin": [
       "binaries/sec",
-      "binaries/sec-mcp",
-      "binaries/touchid-prompt"
+      "binaries/sec-mcp"
     ],
     "icon": [
       "icons/32x32.png",

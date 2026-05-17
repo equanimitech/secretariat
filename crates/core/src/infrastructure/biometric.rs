@@ -1,29 +1,25 @@
 //! Selects the biometric gate at runtime based on env + debug build flags.
 //!
 //! Lifted from the CLI so MCP and any future GUI shell can build the same
-//! signer without duplicating policy. CLI re-exports this module.
+//! signer without duplicating policy.
 //!
 //! Precedence:
 //! - `SECRETARIAT_BIOMETRIC=always_allow`  → AlwaysAllowGate (debug builds only, or with `allow_test_biometrics=true`)
 //! - `SECRETARIAT_BIOMETRIC=always_deny`   → AlwaysDenyGate (same constraint)
-//! - `SECRETARIAT_BIOMETRIC=touchid` (default on Mac) → TouchIdGate (shells out to Swift helper)
+//! - default → NativeBiometricGate (in-process: macOS LAContext / Windows Hello)
 
 use anyhow::{anyhow, Result};
-#[cfg(target_os = "macos")]
-use anyhow::Context;
 use ed25519_dalek::SigningKey;
 
 use crate::infrastructure::ed25519_signer::{
     AlwaysAllowGate, AlwaysDenyGate, BiometricGate, Ed25519Signer,
 };
-#[cfg(target_os = "macos")]
-use crate::infrastructure::touchid::TouchIdGate;
+use crate::infrastructure::native_biometric::NativeBiometricGate;
 use crate::ports::SignerError;
 use crate::Did;
 
 pub enum AnyGate {
-    #[cfg(target_os = "macos")]
-    TouchId(TouchIdGate),
+    Native(NativeBiometricGate),
     AlwaysAllow,
     AlwaysDeny,
 }
@@ -31,8 +27,7 @@ pub enum AnyGate {
 impl BiometricGate for AnyGate {
     fn prompt(&self, reason: &str) -> Result<(), SignerError> {
         match self {
-            #[cfg(target_os = "macos")]
-            AnyGate::TouchId(g) => g.prompt(reason),
+            AnyGate::Native(g) => g.prompt(reason),
             AnyGate::AlwaysAllow => AlwaysAllowGate.prompt(reason),
             AnyGate::AlwaysDeny => AlwaysDenyGate.prompt(reason),
         }
@@ -58,15 +53,7 @@ pub fn pick_gate(allow_test_biometrics: bool) -> Result<AnyGate> {
         Some("always_deny") => Err(anyhow!(
             "SECRETARIAT_BIOMETRIC=always_deny is only honored in debug builds or with --allow-test-biometrics"
         )),
-        #[cfg(target_os = "macos")]
-        Some("touchid") | None => Ok(AnyGate::TouchId(
-            TouchIdGate::discover().context("locating touchid-prompt helper")?,
-        )),
-        #[cfg(not(target_os = "macos"))]
-        Some("touchid") | None => Err(anyhow!(
-            "Touch ID gate is macOS-only. On non-mac builds, set \
-             SECRETARIAT_BIOMETRIC=always_allow with --allow-test-biometrics for tests."
-        )),
+        Some("native") | None => Ok(AnyGate::Native(NativeBiometricGate::new())),
         Some(other) => Err(anyhow!("unknown SECRETARIAT_BIOMETRIC value: {other}")),
     }
 }

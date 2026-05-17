@@ -18,8 +18,7 @@ pub mod org_store;
 pub mod preferences;
 pub mod profile_store;
 pub mod queue_dir;
-#[cfg(target_os = "macos")]
-pub mod touchid;
+pub mod native_biometric;
 pub mod transport;
 
 pub use biometric::{build_signer, pick_gate, AnyGate};
@@ -53,5 +52,4 @@ pub use profile_store::{load_profile, save_profile, PrincipalProfile, ProfileSto
 pub use queue_dir::{
     ciphertext_dir, envelopes_dir, outbox_dir, queue_dir, AliasMap, SELF_ALIAS,
 };
-#[cfg(target_os = "macos")]
-pub use touchid::TouchIdGate;
+pub use native_biometric::NativeBiometricGate;
