@@ -2,7 +2,7 @@
   "name": "secretariat",
   "description": "Cryptographically attested AI-mediated correspondence — stamp ceremony, embed-stamp markdown, did:web verification.",
   "private": true,
-  "version": "0.5.2",
+  "version": "0.5.3",
   "type": "module",
   "author": "Rafa Ballestiero",
   "copyright": "Copyright © 2026 Rafa Ballestiero. All rights reserved.",
