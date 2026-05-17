@@ -1,7 +1,8 @@
 # review orchestration — agent-driven, contract-aware, tree-shaped
 
 Pitch — 2026-05-17. Revised against principal feedback:
-> "Cadence_floor_minutes is misconfigured if I'm being honest. What
+
+> "Cadence\_floor\_minutes is misconfigured if I'm being honest. What
 > matters: use Claude to fetch all channels with envelopes to review
 > (unread OR since N days), fetch the contract.locals per channel,
 > leverage the contracts to know what to present when. Start with
@@ -42,7 +43,7 @@ contract-weight ranking code. Slices:
 
 1. **Review cursor** (vault floor + per-channel overrides)
 2. **`review_overview`** — tree response with contracts attached
-3. **`review_channel` + `advance_review_cursor`**
+3. **`review_channel`** **+** **`advance_review_cursor`**
 4. **Agent scaffold** auto-installed on `sec orgs create` / `sec init`
 
 Each ships independently. The order is the order of value: 1+2 alone
@@ -233,61 +234,70 @@ Anti-patterns to avoid:
 
 ### 🐇 Rabbit holes
 
-- **Contract bodies as free-form prose the agent has to interpret.**
+* **Contract bodies as free-form prose the agent has to interpret.**
   If the principal writes vague contracts, presentation degrades.
   Fine — that's the principal's surface to tune. The agent should
   *quote* the relevant contract line back when justifying its
   ordering, so the principal sees the cause.
-- **Tree depth.** Channels can nest arbitrarily. v1 walks the full
+
+* **Tree depth.** Channels can nest arbitrarily. v1 walks the full
   tree; if a vault has 50+ leaf nodes, the overview blows past
   Claude's attention budget. Cap at depth 3 in v1; flatten deeper
   trees with `<parent>:…:<leaf>` rendering and add a "show full
   tree" follow-up tool later.
-- **`received_at` recovery.** v1 reads frontmatter when present,
+
+* **`received_at`** **recovery.** v1 reads frontmatter when present,
   falls back to the `YYYY/MM/DD` path date. If neither is reliable,
   the cursor's effectiveness drops. Spike before slice 2 ships.
-- **Decrypted body previews leak ciphertext.** `body_preview = None`
-  when `encrypted = true`. Agent renders "[encrypted — read to
+
+* **Decrypted body previews leak ciphertext.** `body_preview = None`
+  when `encrypted = true`. Agent renders "\[encrypted — read to
   decrypt]". Same rule as existing UI surfaces.
-- **Cursor races with the daemon.** Background poll writes envelopes
+
+* **Cursor races with the daemon.** Background poll writes envelopes
   while the review session is open. The session is computed once
   at start; new arrivals show up next session. Freeze `generated_at`
   in the response so the agent can disclose the snapshot.
 
 ### 🏴 Off-sides called
 
-- Tag domain model. Captures already carry free-form bodies; the
+* Tag domain model. Captures already carry free-form bodies; the
   agent reads them. No `tags: [..]` field added to envelope
   frontmatter in this slice. Revisit only if the agent can't
   triage without machine-readable tags.
-- Filter VO. `since` is the only enum needed; `vault` is a thin
+
+* Filter VO. `since` is the only enum needed; `vault` is a thin
   selector. Everything else is the agent's call.
-- Cross-vault rollups. The tree is rooted per-vault. "Review
+
+* Cross-vault rollups. The tree is rooted per-vault. "Review
   everything" calls `review_overview(since, vault=All)` and the
   agent fans across vaults itself; nothing in Rust merges them.
-- Contract-weight ranking. Removed. `cadence_floor_minutes` keeps
+
+* Contract-weight ranking. Removed. `cadence_floor_minutes` keeps
   its existing job (delivery cadence) and doesn't moonlight.
 
 ### 🥩 Fat cut
 
-- Auto-scaffolding the agent on `sec init`. Could ship slice 4 with
+* Auto-scaffolding the agent on `sec init`. Could ship slice 4 with
   a `sec orgs scaffold-agents` verb the principal runs manually
   first. Saves migration code for existing orgs.
-- `body_preview`. v1 returns `None` always; the agent reads files
+
+* `body_preview`. v1 returns `None` always; the agent reads files
   by path when it needs the body. Less data in the overview, more
   tool calls during dive. Flip later if dives feel chatty.
-- `DaysAgo(u32)` parse-side. Agent can compute the absolute UTC
+
+* `DaysAgo(u32)` parse-side. Agent can compute the absolute UTC
   itself and pass `AbsoluteUtc`. Keeps the enum tighter.
 
 ### 🧪 Domain knowledge
 
-- Confirm whether agent files at `<vault>/.claude/agents/review.md`
+* Confirm whether agent files at `<vault>/.claude/agents/review.md`
   are picked up by Claude Code when `cwd = <vault>` and `--agent
   review` is passed. Per the upstream Claude Code docs the `agents/`
   tree walks up from cwd; the vault root *is* the walk root in our
   setup, so this should work — verify before slice 4.
-- Confirm `mcp__secretariat__*` is the namespace the agent's `tools:
-  []` frontmatter wants. Match the existing MCP tool naming
+
+* Confirm `mcp__secretariat__*` is the namespace the agent's `tools: []` frontmatter wants. Match the existing MCP tool naming
   convention.
 
 ## Pitch
@@ -314,31 +324,39 @@ No `ReviewFilter` VO, no contract-weight machinery, no tag domain
 model. The agent reads contract YAML AND prose verbatim and decides.
 
 The bet pays off when the principal opens the tray, clicks Review,
-and Claude says: *"You have 4 channels with new traffic. `channel:
-leggia` is the priority your contract calls out for client work; 6
-envelopes. `channel:journals` you marked weekly review, only 2 since
-last Friday — bundle for later? `channel:assemblee_generale` you
+and Claude says: *"You have 4 channels with new traffic.* *`channel:
+leggia`* *is the priority your contract calls out for client work; 6
+envelopes.* *`channel:journals`* *you marked weekly review, only 2 since
+last Friday — bundle for later?* *`channel:assemblee_generale`* *you
 marked stamp-required; 1 envelope waiting on your signature. The
 inbox has 3 randoms."* — then dives where the principal points.
 Contracts go from inert docs to load-bearing surfaces.
 
 ### No-gos
 
-- No machine-side weighting of contract fields. Contracts are
+* No machine-side weighting of contract fields. Contracts are
   presented; the agent decides. The principal can rewrite the
   contract body to change ordering without touching code.
-- No central index of reviewable envelopes. The tools walk the
-  substrate live ([[project_filesystem_authoritative]]).
-- No background pre-rendering. Review is a session, not a feed.
-- No stamp-during-review. Stamping stays its own ceremony with its
+
+* No central index of reviewable envelopes. The tools walk the
+  substrate live (\[\[project\_filesystem\_authoritative]]).
+
+* No background pre-rendering. Review is a session, not a feed.
+
+* No stamp-during-review. Stamping stays its own ceremony with its
   own body-display contract per AGENTS.md rule #4.
 
 ## Reference
 
-- v0.4.6 ship note (`review_org` button + OrgPicker UI)
-- v0.4.5 ship note (per-channel cognition overrides — same
+* v0.4.6 ship note (`review_org` button + OrgPicker UI)
+
+* v0.4.5 ship note (per-channel cognition overrides — same
   `contract.local.md` substrate the review tools read)
-- `docs/pitches/2026-05-13-launch-dispatch-root-path.md`
-- AGENTS.md rule #4 (three-layer trust model)
-- AGENTS.md rule #6 (every principal-facing primitive ships on the
+
+* `docs/pitches/2026-05-13-launch-dispatch-root-path.md`
+
+* AGENTS.md rule #4 (three-layer trust model)
+
+* AGENTS.md rule #6 (every principal-facing primitive ships on the
   four surfaces — applies to all three tools here)
+

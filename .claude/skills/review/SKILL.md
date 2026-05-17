@@ -119,11 +119,23 @@ For `project`-classified items, dispatch a fresh `Agent` with this prompt (self-
 
 Cap at **3 project items** dispatched in parallel. If >3, push back: "That's a lot. Cut to 3?"
 
+## Presentation cadence (walk-through review)
+
+When walking a cluster of envelopes one batch at a time (rather than the bulk "present outcomes" step):
+
+- **Batch size = max 3 envelopes per turn.** Larger batches saturate decision load.
+- **Pyramid principle per envelope: lead claim + exactly 3 supporting bullets.** Top-down. Lead with the conclusion as one sentence; back with three bullets. No more, no less unless the envelope is genuinely empty.
+- **Always propose a triage action per envelope.** Don't just describe — lean an opinion: `archive` / `route → <channel>` / `merge into <existing capture id>` / `capture as culture note in <channel>`. The principal yes/no/overrides.
+- **Save a run log per session** as captures in `channel:journals:reviews` (personal channel, created on first use). **Append a new envelope per batch or sub-cluster** — envelopes are immutable on disk, so don't rewrite the previous log envelope; add a new one with the cumulative or batch-scoped state. Schema per row: envelope id, title, action taken, destination (channel handle + new envelope id if routed). Lets the session be audited and resumed. Do NOT use external file paths like `~/.secretariat/run-logs/` — run logs are first-class captures, not loose files.
+
+When the user invokes the bulk "present outcomes" flow (step 3), the original Smart Brevity one-liner format applies — the Pyramid cadence is for envelope-by-envelope walks.
+
 ## Rules
 
 - Never re-classify without user input — first pass is a proposal.
 - Never delete capture files. Trash → archive/. Pain → wontfix status.
-- Do NOT create channels. Scope is resolved from existing channels only.
+- Do NOT create channels unprompted. If routing requires a channel that doesn't exist, propose creation and wait for go-ahead before calling `create_channel`.
 - Cross-scope dedupe: if two captures describe the same thing, flag and let user pick canonical.
 - Expand `~` before all filesystem ops.
 - `inbox:waiting` and `inbox:tickler` live in Secretariat queues, not local files.
+- Queue archive lands in `<queue-dir>/archived/` (e.g. `~/.secretariat/queues/inbox/triage/archived/`), not in the `inbox/` flat dir.
