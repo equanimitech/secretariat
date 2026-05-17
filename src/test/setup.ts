@@ -51,6 +51,20 @@ vi.mock('@/lib/tauri-bindings', () => ({
     cleanupOldRecoveryFiles: vi
       .fn()
       .mockResolvedValue({ status: 'ok', data: 0 }),
+    takePendingOpens: vi.fn().mockResolvedValue([]),
+    openMarkdownWindow: vi
+      .fn()
+      .mockResolvedValue({ status: 'ok', data: 'md:test' }),
+    readMarkdown: vi
+      .fn()
+      .mockResolvedValue({
+        status: 'ok',
+        data: { content: '', sha256: '0'.repeat(64) },
+      }),
+    writeMarkdown: vi.fn().mockResolvedValue({
+      status: 'ok',
+      data: { kind: 'ok', sha256: '0'.repeat(64) },
+    }),
   },
   unwrapResult: vi.fn((result: { status: string; data?: unknown }) => {
     if (result.status === 'ok') return result.data
