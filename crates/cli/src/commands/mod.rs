@@ -17,6 +17,7 @@ pub mod profile;
 pub mod read;
 pub mod stamp;
 pub mod verify;
+pub mod view;
 
 mod biometric;
 pub(crate) mod paths;

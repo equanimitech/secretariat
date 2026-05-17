@@ -58,6 +58,9 @@ enum Cmd {
 
     /// Manage the principal's display name (presence, distinct from identity).
     Profile(commands::profile::Args),
+
+    /// Open a markdown file in the Secretariat desktop app.
+    View(commands::view::Args),
 }
 
 fn main() -> Result<()> {
@@ -78,5 +81,6 @@ fn main() -> Result<()> {
         Cmd::Launch(a) => commands::launch::run(a),
         Cmd::Mcp(a) => commands::mcp::run(a),
         Cmd::Profile(a) => commands::profile::run(a),
+        Cmd::View(a) => commands::view::run(a),
     }
 }
