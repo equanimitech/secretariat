@@ -1,6 +1,6 @@
 [package]
 name = "secretariat"
-version = "0.4.2"
+version = "0.4.3"
 description = "Cryptographically attested AI-mediated correspondence — Tauri shell."
 authors = ["Rafa Ballestiero"]
 edition = "2021"
@@ -21,7 +21,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 secretariat-core = { path = "../crates/core" }
 secretariat-daemon = { path = "../crates/daemon" }
-tauri = { version = "2", features = ["macos-private-api"] }
+tauri = { version = "2", features = ["macos-private-api", "tray-icon"] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

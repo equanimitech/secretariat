@@ -11,6 +11,8 @@ mod utils;
 
 #[cfg(target_os = "macos")]
 use tauri::ActivationPolicy;
+use tauri::menu::{Menu, MenuItem};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{Manager, RunEvent, WindowEvent};
 
 // Re-export only what's needed externally
@@ -33,14 +35,9 @@ pub fn run() {
     #[cfg(desktop)]
     {
         app_builder = app_builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            // In Accessory mode the app has no Dock icon, so re-launching the .app
-            // (or `open -a Secretariat`) is the canonical way for the principal
-            // to surface the window. Show + unminimize + focus, in that order.
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.show();
-                let _ = window.unminimize();
-                let _ = window.set_focus();
-            }
+            // Tray click is the primary surface gesture; `open -a Secretariat`
+            // (Finder/Spotlight/CLI) is the secondary. Either way, route here.
+            surface_main_window(app);
         }));
     }
 
@@ -49,9 +46,15 @@ pub fn run() {
     // See: https://github.com/tauri-apps/plugins-workspace/issues/1546
     #[cfg(desktop)]
     {
+        // Save/restore position, size, maximized, decorations, fullscreen — but
+        // NOT visibility. The principal opens the window deliberately (tray
+        // click, `open -a`); a previously-visible window must not auto-resurrect
+        // on next launch, or the docker-daemon contract breaks.
+        let state_flags = tauri_plugin_window_state::StateFlags::all()
+            - tauri_plugin_window_state::StateFlags::VISIBLE;
         app_builder = app_builder.plugin(
             tauri_plugin_window_state::Builder::new()
-                .with_state_flags(tauri_plugin_window_state::StateFlags::all())
+                .with_state_flags(state_flags)
                 .with_denylist(&["quick-pane"])
                 .build(),
         );
@@ -117,12 +120,60 @@ pub fn run() {
 
             // Run as a background "accessory" app on macOS — no Dock icon, no
             // Cmd+Tab entry. The principal opens the window deliberately
-            // (re-launch the .app, deep link, or quick-pane shortcut); the
-            // rest of the time Secretariat runs like a daemon. Mirrors the
+            // (tray click, deep link, or quick-pane shortcut); the rest of
+            // the time Secretariat runs like a daemon. Mirrors the
             // docker-daemon model the principal wants.
             #[cfg(target_os = "macos")]
             {
                 app.set_activation_policy(ActivationPolicy::Accessory);
+            }
+
+            // Tray icon — the canonical surface for opening the main window
+            // when the principal wants it. Cross-platform: macOS menubar,
+            // Windows system tray, Linux StatusNotifierItem (AppIndicator on
+            // GNOME). Left-click toggles the window; right-click reveals the
+            // menu (also accessible by click on platforms without click-event
+            // discrimination).
+            #[cfg(desktop)]
+            {
+                let show_item = MenuItem::with_id(
+                    app,
+                    "tray-show",
+                    "Show Secretariat",
+                    true,
+                    None::<&str>,
+                )?;
+                let quit_item = MenuItem::with_id(
+                    app,
+                    "tray-quit",
+                    "Quit Secretariat",
+                    true,
+                    None::<&str>,
+                )?;
+                let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
+
+                TrayIconBuilder::with_id("main-tray")
+                    .icon(app.default_window_icon().unwrap().clone())
+                    .icon_as_template(true) // macOS template tinting
+                    .tooltip("Secretariat")
+                    .menu(&menu)
+                    .show_menu_on_left_click(false)
+                    .on_menu_event(|app, event| match event.id().as_ref() {
+                        "tray-show" => surface_main_window(app),
+                        "tray-quit" => app.exit(0),
+                        _ => {}
+                    })
+                    .on_tray_icon_event(|tray, event| {
+                        if let TrayIconEvent::Click {
+                            button: MouseButton::Left,
+                            button_state: MouseButtonState::Up,
+                            ..
+                        } = event
+                        {
+                            toggle_main_window(tray.app_handle());
+                        }
+                    })
+                    .build(app)?;
             }
 
             // Set up global shortcut plugin (without any shortcuts - we register them separately)
@@ -310,6 +361,29 @@ pub fn run() {
 
             _ => {}
         });
+}
+
+/// Show + unminimize + focus the main window. On macOS in Accessory mode
+/// `set_focus()` invokes `NSApp.activate(ignoringOtherApps: true)` so the
+/// window comes to the front even though we have no Dock icon.
+fn surface_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+}
+
+/// Toggle main window visibility — the tray's left-click semantics.
+fn toggle_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    if let Some(window) = app.get_webview_window("main") {
+        match window.is_visible() {
+            Ok(true) => {
+                let _ = window.hide();
+            }
+            _ => surface_main_window(app),
+        }
+    }
 }
 
 /// Resolve the bundled `sec` and `sec-mcp` sidecars next to the running

@@ -4923,7 +4923,7 @@ checksum = "1c107b6f4780854c8b126e228ea8869f4d7b71260f962fefb57b996b8959ba6b"
 
 [[package]]
 name = "secretariat"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "anyhow",
  "chrono",
@@ -4959,7 +4959,7 @@ dependencies = [
 
 [[package]]
 name = "secretariat-cli"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -4981,7 +4981,7 @@ dependencies = [
 
 [[package]]
 name = "secretariat-core"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -5007,7 +5007,7 @@ dependencies = [
 
 [[package]]
 name = "secretariat-daemon"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "anyhow",
  "chrono",
@@ -5025,7 +5025,7 @@ dependencies = [
 
 [[package]]
 name = "secretariat-mcp"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "anyhow",
  "chrono",
@@ -5044,7 +5044,7 @@ dependencies = [
 
 [[package]]
 name = "secretariat-relay"
-version = "0.4.1"
+version = "0.4.3"
 dependencies = [
  "anyhow",
  "axum",

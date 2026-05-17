@@ -88,7 +88,7 @@
   "commandPalette.placeholder": "Type a command or search...",
   "commandPalette.noResults": "No results found.",
 
-  "titlebar.default": "Tauri App",
+  "titlebar.default": "Secretariat",
   "titlebar.showLeftSidebar": "Show Left Sidebar",
   "titlebar.hideLeftSidebar": "Hide Left Sidebar",
   "titlebar.showRightSidebar": "Show Right Sidebar",
