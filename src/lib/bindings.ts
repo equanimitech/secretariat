@@ -203,7 +203,9 @@ async claimInviteUrl(deepLinkOrUrl: string) : Promise<Result<InviteClaimReport, 
 }
 },
 /**
- * List received envelopes (`~/.secretariat/inbox/`).
+ * List received envelopes — walks the v0.3 substrate tree under
+ * `~/.secretariat/` for every `envelopes/` directory and collects
+ * the `.md` leaves.
  */
 async listInbox() : Promise<Result<EnvelopeListing[], string>> {
     try {
@@ -214,13 +216,13 @@ async listInbox() : Promise<Result<EnvelopeListing[], string>> {
 }
 },
 /**
- * List the principal's review queue — every unstamped envelope
- * addressed to a queue, peer or local. Substrate v0.3 (queues-as-
- * primitive) unions `outbox/<peer>/*.md` (peer letters waiting to be
- * stamped) with `queues/<ns>/<slug>/*.md` (local captures: ideas,
- * journal, future-self notes). Both `to` and `queue` are populated
- * on every entry — discriminate local vs peer by comparing `to` to
- * the principal's own DID.
+ * List the principal's review queue — unstamped outbox drafts plus
+ * every envelope on disk. Substrate v0.3 (namespace-symmetric
+ * queues) unions per-queue `outbox/*.md` (drafts awaiting a stamp)
+ * with per-queue `envelopes/*.md` (received letters + local
+ * captures) under one substrate root. Both `to` and `queue` are
+ * populated on every entry — discriminate local vs peer by
+ * comparing `to` to the principal's own DID.
  */
 async listReviewQueue() : Promise<Result<EnvelopeListing[], string>> {
     try {
@@ -358,42 +360,28 @@ async launchAssistant(terminal: string | null, command: string | null) : Promise
 }
 },
 /**
- * Read the cognition config. Returns `None` when the file does not
- * exist — pane shows "feature off."
+ * List every vault the principal can review — orgs + Private.
+ * Backs the simplified main-window org picker.
  */
-async loadCognitionConfig() : Promise<Result<CognitionConfigDto | null, string>> {
+async listReviewableOrgs() : Promise<Result<ReviewableOrg[], string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("load_cognition_config") };
+    return { status: "ok", data: await TAURI_INVOKE("list_reviewable_orgs") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
 /**
- * Persist the cognition config. Pane uses this when the principal
- * changes provider / model / threshold / api key.
- */
-async saveCognitionConfig(config: CognitionConfigDto) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("save_cognition_config", { config }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Fetch the available model identifiers for the currently configured
- * provider. For Anthropic that's a curated hand-list; for OpenAI-
- * compat it's a `GET /models` against the configured `api_base`. The
- * pane uses this to populate the model dropdown.
+ * Launch a review session in the principal's chosen terminal, with
+ * cwd set to the org's substrate root (or `~/.secretariat` for
+ * Private). Passes `--agent review` to surface the org-local review
+ * agent if one exists under `<org-root>/.claude/agents/review.md`.
  * 
- * Optional `override_config` lets the pane preview models for a
- * configuration the principal hasn't saved yet (e.g. typing a new
- * `api_base` and clicking Refresh before Save).
+ * `alias` is `_self` for Private, or the org's DNS-label alias.
  */
-async listCognitionModels(overrideConfig: CognitionConfigDto | null) : Promise<Result<string[], string>> {
+async reviewOrg(alias: string, terminal: string | null, command: string | null) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("list_cognition_models", { overrideConfig }) };
+    return { status: "ok", data: await TAURI_INVOKE("review_org", { alias, terminal, command }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -460,6 +448,50 @@ async rewireMcpIntegrations() : Promise<Result<null, string>> {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * Read the full preferences. Triggers migration from legacy files if needed.
+ */
+async getPreferences() : Promise<Result<PreferencesDto, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_preferences") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Patch composition settings (closing line + style notes).
+ */
+async setCompositionSettings(dto: CompositionSettingsDto) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_composition_settings", { dto }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Patch cognition settings (provider, API key, model, etc.).
+ */
+async setCognitionSettings(dto: CognitionSettingsDto) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_cognition_settings", { dto }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Patch delivery settings (poll interval).
+ */
+async setDeliverySettings(dto: DeliverySettingsDto) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_delivery_settings", { dto }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -500,12 +532,10 @@ assistant_terminal?: string | null;
  * MCP-aware client (`gemini`, `aider`, a script, etc.).
  */
 assistant_command?: string | null }
-export type CognitionConfigDto = { 
-/**
- * `"anthropic"` or `"openai-compat"`.
- */
-provider: string; api_key: string | null; api_base: string | null; model: string | null; route_threshold: number | null }
+export type CognitionSettingsDto = { provider: string; api_key: string | null; api_base: string | null; model: string | null; route_threshold: number | null }
+export type CompositionSettingsDto = { closing_line: string; style_notes: string }
 export type ContactListing = { did: string; display_name: string }
+export type DeliverySettingsDto = { poll_interval_minutes: number }
 export type EnvelopeListing = { file_path: string; from: string | null; 
 /**
  * DID of the queue *owner* (recipient). Always set on well-formed
@@ -577,6 +607,7 @@ export type InviteClaimReport = { inviter_did: string; claimant_did: string; cla
  */
 registered: boolean }
 export type JsonValue = null | boolean | number | string | JsonValue[] | Partial<{ [key in string]: JsonValue }>
+export type PreferencesDto = { composition: CompositionSettingsDto; cognition: CognitionSettingsDto; delivery: DeliverySettingsDto }
 export type Profile = { display_name: string }
 /**
  * Error types for recovery operations (typed for frontend matching)
@@ -604,6 +635,22 @@ export type RecoveryError =
 { type: "ParseError"; message: string }
 export type RelayInfo = { endpoint: string; registered: boolean }
 export type RelaySyncReport = { endpoint: string; inbound_count: number; auto_added_contacts: number; warnings: string[] }
+/**
+ * A reviewable organization the principal can dispatch a review session into.
+ */
+export type ReviewableOrg = { 
+/**
+ * `_self` for the private vault, alias DNS-label for orgs.
+ */
+alias: string; 
+/**
+ * Human-readable label rendered on the button.
+ */
+display_name: string; 
+/**
+ * Resolved working directory the review session will cd into.
+ */
+root_path: string }
 /**
  * Stamp an outbox draft and (best-effort) deliver it immediately. Touch
  * ID fires from the app's window context. Returns the relay-assigned

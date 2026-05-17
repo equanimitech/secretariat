@@ -34,6 +34,8 @@ pub fn generate_bindings() -> Builder<tauri::Wry> {
         secretariat::archive_inbox_envelope,
         secretariat::list_contacts,
         secretariat::launch_assistant,
+        secretariat::list_reviewable_orgs,
+        secretariat::review_org,
         settings::reveal_in_finder,
         settings::list_relays,
         settings::add_relay,

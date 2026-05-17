@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { commands } from '@/lib/bindings'
-import { ReviewSurface } from '@/components/secretariat/ReviewSurface'
+import { OrgPicker } from '@/components/secretariat/OrgPicker'
 import { Onboarding } from '@/components/secretariat/Onboarding'
 
 interface MainWindowContentProps {
@@ -50,7 +50,7 @@ export function MainWindowContent({
         <>
           {state.kind === 'loading' && null}
           {state.kind === 'onboarding' && <Onboarding onComplete={refresh} />}
-          {state.kind === 'ready' && <ReviewSurface />}
+          {state.kind === 'ready' && <OrgPicker />}
         </>
       )}
     </div>

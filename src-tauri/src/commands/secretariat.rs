@@ -678,8 +678,17 @@ impl AssistantTarget {
 
 #[cfg(target_os = "macos")]
 fn launch_macos(target: AssistantTarget, command: &str) -> Result<(), String> {
+    launch_macos_in(target, command, None)
+}
+
+#[cfg(target_os = "macos")]
+fn launch_macos_in(
+    target: AssistantTarget,
+    command: &str,
+    cwd: Option<&std::path::Path>,
+) -> Result<(), String> {
     // ClaudeDesktop is a direct app open — no terminal, no command. The
-    // command pref is ignored for this target.
+    // command + cwd are ignored for this target.
     if matches!(target, AssistantTarget::ClaudeDesktop) {
         let status = std::process::Command::new("open")
             .args(["-a", "Claude"])
@@ -691,7 +700,17 @@ fn launch_macos(target: AssistantTarget, command: &str) -> Result<(), String> {
         return Ok(());
     }
 
-    let escaped = command.replace('"', "\\\"");
+    // Prepend a `cd "<cwd>" && ` when caller passed a working directory.
+    // Quote-escape the path so spaces are safe; the surrounding script
+    // already escapes the resulting `"` for osascript below.
+    let full_command = match cwd {
+        Some(dir) => {
+            let dir_str = dir.to_string_lossy().replace('"', "\\\"");
+            format!("cd \"{dir_str}\" && {command}")
+        }
+        None => command.to_string(),
+    };
+    let escaped = full_command.replace('"', "\\\"");
     let script = match target {
         AssistantTarget::Terminal => format!(
             "tell application \"Terminal\"\n    activate\n    do script \"{escaped}\"\nend tell"
@@ -722,6 +741,15 @@ fn launch_macos(_target: AssistantTarget, _command: &str) -> Result<(), String> 
     Err("assistant launcher: only macOS is supported in this build".to_string())
 }
 
+#[cfg(not(target_os = "macos"))]
+fn launch_macos_in(
+    _target: AssistantTarget,
+    _command: &str,
+    _cwd: Option<&std::path::Path>,
+) -> Result<(), String> {
+    Err("assistant launcher: only macOS is supported in this build".to_string())
+}
+
 /// Spawn the principal's assistant in their preferred environment. Reads
 /// `AppPreferences::assistant_terminal` + `assistant_command` from the
 /// caller; defaults to Terminal.app + `claude`.
@@ -734,6 +762,81 @@ pub async fn launch_assistant(
     let target = AssistantTarget::from_pref(terminal.as_deref());
     let cmd = command.as_deref().unwrap_or("claude");
     launch_macos(target, cmd)
+}
+
+/// A reviewable organization the principal can dispatch a review session into.
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
+pub struct ReviewableOrg {
+    /// `_self` for the private vault, alias DNS-label for orgs.
+    pub alias: String,
+    /// Human-readable label rendered on the button.
+    pub display_name: String,
+    /// Resolved working directory the review session will cd into.
+    pub root_path: String,
+}
+
+/// List every vault the principal can review — orgs + Private.
+/// Backs the simplified main-window org picker.
+#[tauri::command]
+#[specta::specta]
+pub async fn list_reviewable_orgs() -> Result<Vec<ReviewableOrg>, String> {
+    use secretariat_core::application::list_orgs;
+    use secretariat_core::infrastructure::org_store::org_dir;
+
+    let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
+    let mut out = vec![ReviewableOrg {
+        alias: "_self".to_string(),
+        display_name: "Private".to_string(),
+        root_path: paths.root.to_string_lossy().to_string(),
+    }];
+    let orgs = list_orgs(&paths.orgs_root).map_err(|e| format!("list_orgs: {e}"))?;
+    for o in orgs {
+        let dir = org_dir(&paths.orgs_root, &o.alias);
+        out.push(ReviewableOrg {
+            alias: o.alias.as_str().to_string(),
+            display_name: o.name.clone(),
+            root_path: dir.to_string_lossy().to_string(),
+        });
+    }
+    Ok(out)
+}
+
+/// Launch a review session in the principal's chosen terminal, with
+/// cwd set to the org's substrate root (or `~/.secretariat` for
+/// Private). Passes `--agent review` to surface the org-local review
+/// agent if one exists under `<org-root>/.claude/agents/review.md`.
+///
+/// `alias` is `_self` for Private, or the org's DNS-label alias.
+#[tauri::command]
+#[specta::specta]
+pub async fn review_org(
+    alias: String,
+    terminal: Option<String>,
+    command: Option<String>,
+) -> Result<(), String> {
+    use secretariat_core::domain::OrgAlias;
+    use secretariat_core::infrastructure::org_store::org_dir;
+
+    let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
+    let cwd = if alias == "_self" {
+        paths.root.clone()
+    } else {
+        let parsed = OrgAlias::parse(&alias).map_err(|e| format!("invalid alias `{alias}`: {e}"))?;
+        org_dir(&paths.orgs_root, &parsed)
+    };
+    if !cwd.is_dir() {
+        return Err(format!(
+            "vault `{alias}` has no directory at {} — has the org been initialised?",
+            cwd.display()
+        ));
+    }
+
+    let target = AssistantTarget::from_pref(terminal.as_deref());
+    let base_cmd = command.as_deref().unwrap_or("claude");
+    // `--agent review` selects a per-vault subagent if one exists; if not,
+    // Claude Code falls back gracefully to the default conversation.
+    let cmd = format!("{base_cmd} --agent review");
+    launch_macos_in(target, &cmd, Some(&cwd))
 }
 
 // Re-export for the bindings module so it can register these commands.

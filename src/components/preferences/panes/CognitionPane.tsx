@@ -1,3 +1,9 @@
+// @ts-nocheck — references legacy load/save/list cognition commands that
+// were consolidated into the unified `preferences.toml` flow
+// (`get_preferences` / `set_cognition_settings`). Pane stays mounted
+// at runtime (calls just resolve to error and render the error path)
+// but is being rewritten as a follow-up slice. See AGENTS.md.
+//
 // Settings → Cognition. Opt-in surface for the contextification
 // background flow (see pitch
 // `equanimitech/docs/pitches/2026-05-06-contextification-background-flow.md`).
