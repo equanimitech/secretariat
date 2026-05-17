@@ -22,6 +22,20 @@ pub use types::DEFAULT_QUICK_PANE_SHORTCUT;
 /// Application entry point. Sets up all plugins and initializes the app.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Dev builds default to `~/.secretariat-dev/` so live `tauri:dev`
+    // sessions don't scribble in the principal's prod home. Set
+    // `SECRETARIAT_HOME` explicitly to override (e.g. to point dev at
+    // prod for migration testing).
+    #[cfg(debug_assertions)]
+    {
+        if std::env::var_os("SECRETARIAT_HOME").is_none() {
+            if let Some(home) = dirs::home_dir() {
+                let dev_home = home.join(".secretariat-dev");
+                std::env::set_var("SECRETARIAT_HOME", &dev_home);
+            }
+        }
+    }
+
     let builder = bindings::generate_bindings();
 
     // Export TypeScript bindings in debug builds

@@ -10,6 +10,17 @@ import { CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react'
 import { commands } from '@/lib/bindings'
 import type { IntegrationsStatus, IntegrationStatus } from '@/lib/bindings'
 import { Label } from '@/components/ui/label'
+import { Input } from '@/components/ui/input'
+import { usePreferences, useSavePreferences } from '@/services/preferences'
+
+type TerminalChoice = 'terminal' | 'iterm' | 'ghostty' | 'claude-desktop'
+
+const TERMINAL_OPTIONS: { value: TerminalChoice; label: string; hint: string }[] = [
+  { value: 'terminal', label: 'Terminal.app', hint: 'macOS default' },
+  { value: 'iterm', label: 'iTerm2', hint: 'iTerm.app' },
+  { value: 'ghostty', label: 'Ghostty', hint: 'Ghostty.app' },
+  { value: 'claude-desktop', label: 'Claude Desktop', hint: 'no terminal — opens Claude.app directly' },
+]
 
 export function IntegrationsPane() {
   const [status, setStatus] = useState<IntegrationsStatus | null>(null)
@@ -57,6 +68,8 @@ export function IntegrationsPane() {
 
   return (
     <div className="space-y-6 p-2">
+      <AssistantLauncherSection />
+
       <section className="space-y-3">
         <div>
           <Label className="text-sm font-medium">MCP integrations</Label>
@@ -121,6 +134,75 @@ export function IntegrationsPane() {
         )}
       </section>
     </div>
+  )
+}
+
+function AssistantLauncherSection() {
+  const { data: preferences, isLoading } = usePreferences()
+  const savePreferences = useSavePreferences()
+
+  const current: TerminalChoice =
+    (preferences?.assistant_terminal as TerminalChoice | null | undefined) ?? 'terminal'
+  const command = preferences?.assistant_command ?? ''
+
+  const update = async (
+    patch: Partial<{ assistant_terminal: string | null; assistant_command: string | null }>
+  ) => {
+    if (!preferences) return
+    await savePreferences.mutateAsync({ ...preferences, ...patch })
+  }
+
+  return (
+    <section className="space-y-3 border-b pb-6">
+      <div>
+        <Label className="text-sm font-medium">Assistant launcher</Label>
+        <p className="text-xs text-muted-foreground">
+          Where Secretariat opens your CLI assistant (Claude Code, Gemini, aider).
+          Used by the home-screen launcher and <code>launch_assistant_in</code>.
+        </p>
+      </div>
+
+      <div className="space-y-1.5 max-w-md">
+        <Label htmlFor="terminal-select" className="text-xs">Terminal</Label>
+        <select
+          id="terminal-select"
+          value={current}
+          disabled={isLoading || savePreferences.isPending}
+          onChange={e =>
+            void update({
+              assistant_terminal:
+                e.target.value === 'terminal' ? null : e.target.value,
+            })
+          }
+          className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
+        >
+          {TERMINAL_OPTIONS.map(opt => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label} — {opt.hint}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="space-y-1.5 max-w-md">
+        <Label htmlFor="assistant-command" className="text-xs">Command</Label>
+        <Input
+          id="assistant-command"
+          type="text"
+          placeholder="claude (default)"
+          defaultValue={command}
+          disabled={isLoading || savePreferences.isPending}
+          onBlur={e => {
+            const v = e.target.value.trim()
+            if (v === (preferences?.assistant_command ?? '')) return
+            void update({ assistant_command: v === '' ? null : v })
+          }}
+        />
+        <p className="text-xs text-muted-foreground">
+          Ignored when target is Claude Desktop.
+        </p>
+      </div>
+    </section>
   )
 }
 

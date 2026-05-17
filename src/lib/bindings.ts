@@ -519,6 +519,30 @@ async openMarkdownWindow(path: string) : Promise<Result<string, string>> {
 },
 async takePendingOpens() : Promise<string[]> {
     return await TAURI_INVOKE("take_pending_opens");
+},
+/**
+ * Check the configured update endpoint. Returns `None` when the app is
+ * already on the latest version. Errors propagate as user-facing strings.
+ */
+async checkForUpdate() : Promise<Result<UpdateInfo | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("check_for_update") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Download + install the available update, then restart the app. No-op
+ * (errors) when no update is pending — call `check_for_update` first.
+ */
+async installUpdate() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("install_update") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -693,6 +717,23 @@ export type StampReport = { stamped_path: string; doc_hash: string; stamped_at: 
  */
 relay_assigned_id: string | null; delivery_warning: string | null }
 export type SyncReport = { per_relay: RelaySyncReport[]; sent_envelopes: number; outbox_warnings: string[] }
+export type UpdateInfo = { 
+/**
+ * Version available on the update server.
+ */
+version: string; 
+/**
+ * Version currently running.
+ */
+current_version: string; 
+/**
+ * Release notes (markdown), if the manifest carries them.
+ */
+notes: string | null; 
+/**
+ * Release date as RFC3339 string, if present.
+ */
+date: string | null }
 export type WriteMarkdownArgs = { path: string; content: string; expected_sha256: string }
 export type WriteMarkdownResult = { kind: "ok"; sha256: string } | { kind: "conflict"; current_sha256: string }
 

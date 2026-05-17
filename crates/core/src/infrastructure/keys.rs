@@ -88,6 +88,11 @@ pub struct KeyPaths {
 
 impl KeyPaths {
     pub fn discover() -> Result<Self, KeyError> {
+        if let Ok(p) = std::env::var("SECRETARIAT_HOME") {
+            if !p.is_empty() {
+                return Ok(Self::under(PathBuf::from(p)));
+            }
+        }
         let home = dirs::home_dir().ok_or(KeyError::NoHome)?;
         Ok(Self::under(home.join(".secretariat")))
     }

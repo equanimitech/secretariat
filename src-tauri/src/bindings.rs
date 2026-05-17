@@ -2,7 +2,7 @@ use tauri_specta::{collect_commands, Builder};
 
 pub fn generate_bindings() -> Builder<tauri::Wry> {
     use crate::commands::{
-        markdown, notifications, preferences, quick_pane, recovery, secretariat, settings,
+        markdown, notifications, preferences, quick_pane, recovery, secretariat, settings, updater,
     };
 
     Builder::<tauri::Wry>::new().commands(collect_commands![
@@ -49,6 +49,8 @@ pub fn generate_bindings() -> Builder<tauri::Wry> {
         markdown::write_markdown,
         markdown::open_markdown_window,
         markdown::take_pending_opens,
+        updater::check_for_update,
+        updater::install_update,
     ])
 }
 
