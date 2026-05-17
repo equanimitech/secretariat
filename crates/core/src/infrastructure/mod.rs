@@ -9,6 +9,7 @@ pub mod contract_store;
 pub mod composite_did_resolver;
 pub mod contact_store;
 pub mod crypto;
+pub mod identity_store;
 pub mod did_key_resolver;
 pub mod did_web_resolver;
 pub mod ed25519_signer;
@@ -16,7 +17,6 @@ pub mod keys;
 pub mod markdown;
 pub mod org_store;
 pub mod preferences;
-pub mod profile_store;
 pub mod queue_dir;
 pub mod native_biometric;
 pub mod transport;
@@ -48,7 +48,9 @@ pub use preferences::{
     load_or_migrate as load_or_migrate_preferences, CognitionPrefs, CognitionProvider,
     CompositionPrefs, DeliveryPrefs, Preferences, PreferencesError,
 };
-pub use profile_store::{load_profile, save_profile, PrincipalProfile, ProfileStoreError};
+pub use identity_store::{
+    load_identity, save_identity, IdentityStoreError, KeyRotation, PrincipalIdentity,
+};
 pub use queue_dir::{
     ciphertext_dir, envelopes_dir, outbox_dir, queue_dir, AliasMap, SELF_ALIAS,
 };

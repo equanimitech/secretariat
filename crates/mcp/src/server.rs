@@ -2035,14 +2035,15 @@ fn parse_urgency(s: Option<&str>) -> Result<EnvelopeUrgency, ErrorData> {
 }
 
 fn load_principal_did(paths: &KeyPaths) -> Result<Did, ErrorData> {
-    let did_file = paths.root.join("did");
-    let raw = std::fs::read_to_string(&did_file).map_err(|e| {
+    use secretariat_core::infrastructure::identity_store::load_identity;
+    let identity = load_identity(&paths.identity_md)
+        .map_err(|e| invalid_request(format!("loading identity: {e}")))?;
+    identity.map(|i| i.did).ok_or_else(|| {
         invalid_request(format!(
-            "could not read principal DID at {}: {e}",
-            did_file.display()
+            "no identity at {} — run `sec init` first",
+            paths.identity_md.display()
         ))
-    })?;
-    Did::parse(raw.trim()).map_err(|e| invalid_request(format!("malformed did file: {e}")))
+    })
 }
 
 fn first_registered_relay(path: &std::path::Path) -> Result<String, ErrorData> {
