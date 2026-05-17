@@ -14,6 +14,7 @@ import { MainWindow } from './components/layout/MainWindow'
 import { ThemeProvider } from './components/ThemeProvider'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { useSquareCornersEffect } from './hooks/useSquareCornersEffect'
+import { watchPendingOpens } from './lib/markdown/open'
 
 function App() {
   useSquareCornersEffect()
@@ -154,9 +155,14 @@ function App() {
         logger.warn('Failed to register deep link handler', { error: err })
       })
 
+    // Markdown reader/editor: drain PendingOpens and open windows for files
+    // that arrived via RunEvent::Opened / single-instance argv.
+    const unwatchPendingOpens = watchPendingOpens()
+
     return () => {
       clearTimeout(updateTimer)
       deepLinkUnsub?.()
+      unwatchPendingOpens()
     }
   }, [])
 
