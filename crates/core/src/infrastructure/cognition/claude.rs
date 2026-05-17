@@ -7,7 +7,7 @@
 //! Threat-model invariants enforced here, not at the use case:
 //!
 //! - The API call carries **only the capture body**. Adjacent captures,
-//!   contact identifiers, queue contents, attention envelope — none of
+//!   contact identifiers, queue contents, channel contracts — none of
 //!   it leaves the device.
 //! - The system prompt + queue list is logged via tracing at debug
 //!   level so the principal can audit what shape of context the model

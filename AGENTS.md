@@ -116,16 +116,14 @@ These are non-negotiable. They override the template's defaults where they confl
    to envelope composition what `CLAUDE.md` is to general Claude behavior.
    Channel-level override wins for envelopes addressed to that channel.
 
-6. **Respect attention envelopes and per-channel consumption contracts.**
-   `~/.secretariat/attention-envelope.md` declares the principal's global
-   bounds (depths, urgencies, cadence). Per-channel
-   `<channel-dir>/contract.local.md` files declare per-channel overrides
-   (cadence, depth, notify, filter); a parallel org-root file at
-   `<org-dir>/contract.local.md` carries org-wide overrides that
-   accumulate down the channel tree. Per-channel overrides win for
-   traffic in that channel. Queue to a local outbox rather than surfacing
-   inline if the bid would violate cadence. The protocol detects bound
-   violations; Claude pre-empts them.
+6. **Respect per-channel consumption contracts.** `<channel-dir>/contract.local.md`
+   files declare per-channel preferences (cadence, depth, notify,
+   filter); a parallel org-root file at `<org-dir>/contract.local.md`
+   carries org-wide preferences that accumulate down the channel tree.
+   Per-channel overrides win for traffic in that channel. Queue to a
+   local outbox rather than surfacing inline if the bid would violate
+   the channel's stated cadence. Claude reads contracts and pre-empts
+   bound violations — there is no separate global attention envelope.
 
    The `.local` suffix is load-bearing: these files are **private to
    the subscriber** — receiver-side preferences/filters, never sent on
@@ -370,7 +368,7 @@ Pruned 2026-05-12 against the v0.3 direction shift (see
 - Channel ownership transfer (`rosterUpdate.op = transfer_ownership` — defer until concrete driver)
 - SQLite read-cache for cross-channel queries (defer to v0.4+ when query latency demands it)
 - Shared-git skill iteration adapter (optional upstream pattern; not authoritative store)
-- Attention routing daemon + UI (composes from existing `depth`/`urgency`/`attentionEnvelope` — v0.4 wedge)
+- Attention routing daemon + UI (composes from existing `depth`/`urgency` envelope fields + per-channel `contract.local.md` cadence — v0.4 wedge)
 - Webhook adapter for external sources (DID-keyed external services or agent-proxied — v0.4 wedge)
 
 ## Reference paths

@@ -1,46 +1,60 @@
-# /review — paced walker through inbox / outbox
+# /review — paced walker over orgs + pending drafts
 
 You are about to walk the principal through a Secretariat review session. Per the principal's review-session model: this is a strategic-friction surface, not a notification feed. The principal initiates; you pace.
 
-## Argument
+**Scope of this prompt (v0.4.x):** the review surface is in transition. The full contract-aware orchestration (per-vault cursor, channel dive, contracts attached verbatim) ships in a follow-up slice — see `docs/pitches/2026-05-17-review-orchestration.md`. Until then, drive review off the two resources that DO exist today:
 
-- `target` (optional, default `"both"`): one of `"inbox"`, `"outbox"`, `"both"`.
+- `secretariat://orgs` — the org + channel-tree directory, with envelope counts per channel.
+- `secretariat://compositions` — pending drafts awaiting the principal's stamp.
+
+Do NOT fetch `secretariat://inbox` or `secretariat://outbox` — those resources were retired in the v0.3 substrate shift.
 
 ## Recipe
 
-### 1. Fetch the listings as resources
+### 1. Orient — fetch both resources
 
-If target is `inbox` or `both`: fetch the `secretariat://inbox` resource. If `outbox` or `both`: fetch the `secretariat://outbox` resource.
+Fetch `secretariat://orgs` and `secretariat://compositions`.
 
-The resources return markdown with one envelope per bullet — file path, sender / recipient DIDs, queue handle, and stamped/encrypted flags. Parse the file paths from the listing.
+If both are empty (no orgs with envelopes AND no pending drafts), tell the principal *"Nothing to review."* and stop. Do not synthesize busywork.
 
-If both listings are empty, tell the principal *"Nothing to review."* and stop. Do not synthesize busywork.
+### 2. Present the overview
 
-### 2. Walk one envelope at a time
+Render a tight, tree-shaped overview to the principal:
 
-For each envelope (inbox before outbox), in chronological order:
+- **Orgs section** — one line per org, then bullets for each channel with a non-zero envelope count. Include the channel handle and the count.
+- **Drafts section** — one line per pending composition, with recipient + age cue.
 
-1. **Verify** (inbox only): call `verify` on the file path. If outcome is anything other than `Verified`, surface the result and ask the principal whether to continue or skip — never silently render unverified content.
-2. **Read**: call `read` to decrypt the body.
-3. **Render verbatim**: present the FULL body in a code block or quoted region. Never summarize or paraphrase. Include the sender DID for inbox envelopes; the recipient DID for outbox drafts.
-4. **Ask**: prompt the principal with the action menu appropriate to the queue:
-   - **Inbox:** `archive` (move to `inbox/archived/` — "handled, done with this"), `skip` (next without acting), or initiate a reply via `/compose`.
-   - **Outbox draft (unstamped):** `stamp` (run stamp ceremony), `skip`.
-   - **Outbox sent (stamped):** read-only — `skip` only.
-5. **Wait** for the principal's choice. Do not act ahead. Do not batch decisions.
-6. **Act** based on the choice:
-   - `archive` → call `archive` tool with the file path.
-   - `stamp` → run the stamp ceremony per the `stamp` tool's pre-call checklist (the body has already been displayed; just confirm explicit consent in this turn before calling).
-   - `skip` → move on.
+One-line gist per item. No expansion until the principal asks.
 
-### 3. End naturally
+Then ask: *"Where do you want to start — dive into a channel, stamp a draft, or done?"*
 
-After the last envelope, summarize in one line: *"Reviewed N envelopes — A archived, S stamped, K skipped."* Then stop. Do not propose follow-ups, do not auto-launch /compose, do not nudge another review.
+### 3. Channel dive (read-only today)
+
+If the principal names a channel, call the `read_channel` tool with the channel's handle (default `limit: 10`). Walk the returned envelopes newest-first, one at a time:
+
+1. **Render verbatim**: present the FULL body in a code block or quoted region. Never summarize. Include the sender DID and captured-at timestamp.
+2. **Ask**: *"next / stop"*. No archive/defer actions on channel envelopes yet — those primitives are scoped to the legacy flat inbox and don't apply to channel envelopes in v0.3.
+3. **Wait** for the principal's choice before moving on.
+
+If the channel is not addressable via `read_channel` (e.g. it's a peer DM queue, not an org channel), fall back to reading the envelope file directly via the `read` tool when the principal points at a specific path.
+
+### 4. Stamp a pending draft
+
+If the principal names a draft to stamp:
+
+1. Call the `read` tool on the draft's file path.
+2. Render the FULL decrypted body verbatim — code block or quoted region, never a summary. Include the recipient DID.
+3. Wait for explicit consent in this turn (e.g. "stamp it"). Implicit consent from a prior turn does not count if the file changed.
+4. Only then call the `stamp` tool. Touch ID gates regardless.
+
+### 5. End naturally
+
+When the principal signals done, summarize in one line: *"Reviewed N items — S stamped, K skipped."* Then stop. Do not propose follow-ups, do not auto-launch /compose, do not nudge another review.
 
 ## Rules
 
 - **One envelope per turn.** The principal sets the cadence; do not unfurl multiple envelopes in one render.
-- **Never act without explicit per-envelope consent.** "Archive everything" is not a valid bulk action — each envelope gets its own decision.
-- **Verify before display.** Inbox envelopes that fail verification surface the failure first; the body is still rendered (the principal can choose) but the tampered/unsigned status is foregrounded.
+- **Never act without explicit per-envelope consent.** "Stamp everything" is not a valid bulk action — each envelope gets its own decision.
 - **No motivation language.** This is not "inbox zero." Do not congratulate the principal at the end. Quiet completion.
-- **Leaving an envelope in place is a valid outcome.** If the principal doesn't want to archive AND doesn't want to act now, `skip` is fine — the envelope stays in the active inbox and re-surfaces next review session. That's the lightweight "remind me later" today; an explicit `defer` tool (with bubble-up logic) will return when meaningful.
+- **Leaving items in place is a valid outcome.** A draft you don't stamp now stays in the outbox and re-surfaces next session. That's the lightweight "remind me later" today.
+- **No fabricated context.** If a resource returns nothing for a section, say so — don't invent traffic.

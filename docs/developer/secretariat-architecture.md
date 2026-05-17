@@ -102,7 +102,6 @@ file.
 │   ├── key                         # ed25519 PKCS#8, mode 0600 — THE proof
 │   ├── did                         # cross-checked against key on startup
 │   ├── profile.json
-│   ├── attention-envelope.md
 │   ├── template.md                 # global envelope template
 │   ├── contacts.json
 │   ├── cognition.json
@@ -174,9 +173,6 @@ only ever saw signed ciphertext.
   — one identity, many queues.
 - **`Recipient`** — `Peer { did }` | `LocalQueue { handle }`. Routing
   discriminator; doesn't travel on-wire (recovered from envelope).
-- **`AttentionEnvelope`** — principal's published bounds.
-  `admits(envelope) -> bool`. Lexicon
-  `tech.equanimi.secretariat.attentionEnvelope`.
 - **`Org`** — DID-rooted namespace; cached projection of the org's
   `did:web` DID document plus its advertised channels.
 - **`ChannelDef`** — per-channel governance (display name, description,

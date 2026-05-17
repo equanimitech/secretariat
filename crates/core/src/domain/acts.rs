@@ -49,8 +49,9 @@ pub enum EnvelopeDepth {
 
 /// Declared urgency of the bid.
 ///
-/// Inflationary by nature; the receiver-published `AttentionEnvelope`
-/// constrains what urgencies are accepted.
+/// Inflationary by nature; the recipient's per-channel
+/// `contract.local.md` cadence is what governs whether an urgency
+/// surfaces inline or queues for the next review session.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum EnvelopeUrgency {

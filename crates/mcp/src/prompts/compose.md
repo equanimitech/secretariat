@@ -26,27 +26,23 @@ If the template is empty or missing critical sections, fall back to the default 
 - **Subtleties** (the deepening pathway — caveats, second-order considerations, anything the recipient might want to push back on)
 - **Asks** (explicit ask + cadence: when do you need a reply, how detailed)
 
-### 3. Check the attention envelope
-
-Read the MCP resource `secretariat://attention-envelope` — the principal's declared bounds (depths, urgencies, cadence). If the draft would violate the principal's stated cadence (e.g. a "now" urgency when the principal said "no urgent envelopes outbound this week"), flag it before drafting.
-
-### 4. Draft the body
+### 3. Draft the body
 
 Apply the template. Default depth: `subtle` (most envelopes). Default urgency: `whenever`. Override only if the topic genuinely warrants `gross` depth or `now`/`soon` urgency, and surface the choice to the principal.
 
-Tone: match the principal's voice. If you want register cues for prior envelopes to this peer, fetch the `secretariat://outbox` resource and look at sent drafts — formality, salutation, sign-off.
+Tone: match the principal's voice. If the recipient channel has a `contract.local.md`, let its cadence / depth preferences shape the default urgency you propose (a "weekly review" channel rarely warrants `now`).
 
-### 5. Show the draft INLINE first
+### 4. Show the draft INLINE first
 
 Render the full draft body to the principal verbatim, in a code block. Do NOT call `compose` yet. Wait for one of:
 
-- *"looks good, send it"* / *"compose it"* → proceed to step 6.
+- *"looks good, send it"* / *"compose it"* → proceed to step 5.
 - *"change X"* → revise inline, re-render, re-ask.
 - *"never mind"* → abort. Do not write to disk.
 
 This is the pre-disk consent gate. Drafts written to outbox are visible to the substrate's queue; only write what the principal endorsed.
 
-### 6. Compose
+### 5. Compose
 
 Call the `compose` tool with:
 - `to`: the resolved DID or slug
@@ -58,7 +54,7 @@ Call the `compose` tool with:
 
 The tool returns the file_path of the draft in `~/.secretariat/outbox/<peer-did>/`.
 
-### 7. Stamp ceremony
+### 6. Stamp ceremony
 
 Immediately offer to walk the stamp ceremony. The principal will say *"yes, stamp it"* or *"not yet"*. If they confirm, run the stamp prompt's recipe (read → display verbatim → wait → call `stamp`). If "not yet," tell them the draft path so they can find it later.
 

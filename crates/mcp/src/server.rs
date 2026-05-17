@@ -7,10 +7,11 @@
 //! | `compose` | Write a peer-addressed envelope to the outbox (principal stamps separately) |
 //! | `capture` | Drop a body into a local queue (substrate v0.3 — never sent, never stamped without consent) |
 //! | `stamp` | Trigger biometric stamp on a draft (Touch ID gates regardless of caller) |
-//! | `secretariat://outbox` | Pending drafts (stamped + unstamped) — resource |
-//! | `secretariat://inbox`  | Verified inbound envelopes — resource |
-//! | `defer` | Move an inbox envelope to `inbox/deferred/` ('remind me later') |
-//! | `archive` | Move an inbox envelope to `inbox/archived/` ('handled') |
+//! | `secretariat://orgs` | Org + channel-tree directory — resource |
+//! | `secretariat://compositions` | Pending drafts awaiting stamp — resource |
+//! | `secretariat://contacts` | Known peers — resource |
+//! | `defer` | Move a capture envelope out of its active queue ('remind me later') |
+//! | `archive` | Move a capture envelope to its queue's `archived/` ('handled') |
 //! | `read` | Decrypt + return body of an envelope |
 //! | `verify` | Check a stamped artifact |
 //! | `list_contacts` | Known peers |
@@ -128,7 +129,11 @@ impl SecretariatServer {
 //   /idea, /pain                — wrap `capture` to a self-addressed queue.
 //
 // Native verbs (envelope-shaped):
-//   /review                     — paced walker over inbox / outbox.
+//   /review                     — paced walker over orgs + pending drafts
+//                                  (full contract-aware orchestration with a
+//                                  per-vault cursor + dive lands in a follow-up
+//                                  slice — see
+//                                  `docs/pitches/2026-05-17-review-orchestration.md`).
 //   /compose                    — AG-template-aware envelope draft.
 //   /onboard                    — init + invite_create / invite_claim ceremony.
 //   /stamp                      — explicit show-body → confirm → stamp ceremony.
@@ -163,8 +168,9 @@ impl SecretariatServer {
         )])
     }
 
-    /// Walk the principal through a paced review session — verify, read,
-    /// render, and act on inbox / outbox envelopes one at a time.
+    /// Walk the principal through a paced review session — orient via the
+    /// org / channel-tree, then walk pending drafts awaiting a stamp, one
+    /// envelope at a time.
     #[prompt(name = "review")]
     pub async fn review_prompt(&self) -> Result<Vec<PromptMessage>, ErrorData> {
         Ok(vec![PromptMessage::new_text(
@@ -1622,7 +1628,8 @@ impl SecretariatServer {
             .await
             .map_err(|e| invalid_request(format!("daemon tick: {e}")))?;
         Ok(Json(DaemonTickOutput {
-            note: "tick completed; check `secretariat://inbox` for newly-arrived envelopes"
+            note: "tick completed; new envelopes (if any) have landed under their \
+                   target queues — surface them via `/review` or `secretariat://orgs`"
                 .to_string(),
         }))
     }
@@ -1788,9 +1795,10 @@ const SERVER_INSTRUCTIONS: &str = "\
 Secretariat is ambient context for AI, stamped by humans. You live in the \
 context stream — read and draft continuously; the principal only enters to \
 stamp the moments that count. You are the scribe; the principal stamps, you \
-never do. Drafts live under `~/.secretariat/outbox/<recipient-did>/` and \
-become sent envelopes only after the principal authorizes the stamp via \
-Touch ID.
+never do. Drafts live under the recipient's queue tree (peer queues at \
+`<peer-alias>/<handle-path>/outbox/`; org channels at \
+`<orgs-root>/<org>/channels/<handle-path>/outbox/`) and become sent \
+envelopes only after the principal authorizes the stamp via Touch ID.
 
 Stamp ceremony (mandatory before calling `stamp`):
   1. Call `read` on the same `file_path`.
