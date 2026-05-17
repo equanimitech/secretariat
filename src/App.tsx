@@ -132,10 +132,27 @@ function App() {
     // relay's HTML landing page (or pastes a URL into a registered
     // handler). Fires the Tauri claim command, which auto-runs init for
     // first-time recipients.
+    //
+    // macOS delivers `file://` URLs through the same channel when the
+    // app is launched via `open -a Secretariat <path>` (e.g. `sec view`).
+    // Those route through `RunEvent::Opened` → `spawn_markdown_window`
+    // on the Rust side; we ignore them here so they don't hit the
+    // invite-claim path.
     let deepLinkUnsub: (() => void) | undefined
     onOpenUrl(async urls => {
       for (const url of urls) {
         logger.info(`Deep link received: ${url}`)
+        let parsed: URL
+        try {
+          parsed = new URL(url)
+        } catch {
+          logger.warn(`Ignoring unparseable URL: ${url}`)
+          continue
+        }
+        if (parsed.protocol !== 'secretariat:') {
+          logger.info(`Ignoring non-invite URL scheme: ${parsed.protocol}`)
+          continue
+        }
         const result = await commands.claimInviteUrl(url)
         if (result.status === 'ok') {
           logger.info('Invite claimed', { ...result.data })
