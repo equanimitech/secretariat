@@ -6,6 +6,7 @@
 
 mod bindings;
 mod commands;
+pub mod markdown;
 mod types;
 mod utils;
 
