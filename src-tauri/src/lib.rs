@@ -31,13 +31,34 @@ pub fn run() {
     // Build with common plugins
     let mut app_builder = tauri::Builder::default();
 
+    // Pending-opens buffer for RunEvent::Opened — populated before the
+    // frontend webview has registered its listener, drained on frontend ready
+    // (and on every single-instance reentry).
+    app_builder = app_builder.manage(crate::markdown::pending::PendingOpens::default());
+
     // Single instance plugin must be registered FIRST
     // When user tries to open a second instance, focus the existing window instead
     #[cfg(desktop)]
     {
-        app_builder = app_builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        app_builder = app_builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             // Tray click is the primary surface gesture; `open -a Secretariat`
             // (Finder/Spotlight/CLI) is the secondary. Either way, route here.
+            // When `open -a Secretariat path/to/file.md` reenters, argv[1..] are
+            // candidate file paths — funnel them into PendingOpens for the
+            // frontend to drain.
+            use tauri::Emitter;
+            let pending = app.state::<crate::markdown::pending::PendingOpens>();
+            let mut added_any = false;
+            for arg in args.iter().skip(1) {
+                let p = std::path::PathBuf::from(arg);
+                if p.exists() {
+                    pending.push(p);
+                    added_any = true;
+                }
+            }
+            if added_any {
+                let _ = app.emit("markdown://pending-opens-added", ());
+            }
             surface_main_window(app);
         }));
     }

@@ -492,6 +492,33 @@ async setDeliverySettings(dto: DeliverySettingsDto) : Promise<Result<null, strin
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+async readMarkdown(path: string) : Promise<Result<ReadMarkdownResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("read_markdown", { path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async writeMarkdown(args: WriteMarkdownArgs) : Promise<Result<WriteMarkdownResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("write_markdown", { args }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async openMarkdownWindow(path: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("open_markdown_window", { path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async takePendingOpens() : Promise<string[]> {
+    return await TAURI_INVOKE("take_pending_opens");
 }
 }
 
@@ -609,6 +636,7 @@ registered: boolean }
 export type JsonValue = null | boolean | number | string | JsonValue[] | Partial<{ [key in string]: JsonValue }>
 export type PreferencesDto = { composition: CompositionSettingsDto; cognition: CognitionSettingsDto; delivery: DeliverySettingsDto }
 export type Profile = { display_name: string }
+export type ReadMarkdownResult = { content: string; sha256: string }
 /**
  * Error types for recovery operations (typed for frontend matching)
  */
@@ -665,6 +693,8 @@ export type StampReport = { stamped_path: string; doc_hash: string; stamped_at: 
  */
 relay_assigned_id: string | null; delivery_warning: string | null }
 export type SyncReport = { per_relay: RelaySyncReport[]; sent_envelopes: number; outbox_warnings: string[] }
+export type WriteMarkdownArgs = { path: string; content: string; expected_sha256: string }
+export type WriteMarkdownResult = { kind: "ok"; sha256: string } | { kind: "conflict"; current_sha256: string }
 
 /** tauri-specta globals **/
 

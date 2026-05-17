@@ -2,7 +2,7 @@ use tauri_specta::{collect_commands, Builder};
 
 pub fn generate_bindings() -> Builder<tauri::Wry> {
     use crate::commands::{
-        notifications, preferences, quick_pane, recovery, secretariat, settings,
+        markdown, notifications, preferences, quick_pane, recovery, secretariat, settings,
     };
 
     Builder::<tauri::Wry>::new().commands(collect_commands![
@@ -45,6 +45,10 @@ pub fn generate_bindings() -> Builder<tauri::Wry> {
         settings::set_composition_settings,
         settings::set_cognition_settings,
         settings::set_delivery_settings,
+        markdown::read_markdown,
+        markdown::write_markdown,
+        markdown::open_markdown_window,
+        markdown::take_pending_opens,
     ])
 }
 
