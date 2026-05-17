@@ -51,8 +51,19 @@ export default defineConfig(async () => ({
         }
       : undefined,
     watch: {
-      // 3. tell vite to ignore watching `src-tauri`
-      ignored: ['**/src-tauri/**'],
+      // 3. tell vite to ignore watching paths outside the frontend source
+      //    tree. Without this, autosaves from the in-app markdown reader (or
+      //    any editor touching `docs/`, `crates/`, etc.) trigger a full
+      //    page reload across every open Tauri webview.
+      ignored: [
+        '**/src-tauri/**',
+        '**/crates/**',
+        '**/target/**',
+        '**/docs/**',
+        '**/.secretariat*/**',
+        '**/lexicons/**',
+        '**/scripts/**',
+      ],
     },
   },
 }))

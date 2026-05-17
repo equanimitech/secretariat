@@ -8,6 +8,16 @@ interface CrepeEditorProps {
   onChange: (markdown: string) => void
 }
 
+/**
+ * React wrapper for Milkdown Crepe.
+ *
+ * Change detection: we poll `crepe.getMarkdown()` every 500ms instead of
+ * using Crepe's listener API (`crepe.on(api => api.markdownUpdated(...))`)
+ * because the listener plugin's `editorView` context isn't injected at
+ * register-time in Crepe 7.x — registering a listener triggers a
+ * `MilkdownError: Context "editorView" not found`. Polling sidesteps the
+ * lifecycle issue, costs ~zero, and is good enough for autosave cadence.
+ */
 export function CrepeEditor({ initialValue, onChange }: CrepeEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null)
   const onChangeRef = useRef(onChange)
@@ -18,19 +28,44 @@ export function CrepeEditor({ initialValue, onChange }: CrepeEditorProps) {
   })
 
   useEffect(() => {
-    if (!hostRef.current) return
+    const host = hostRef.current
+    if (!host) return
+
+    let alive = true
+    let attached: Crepe | null = null
+    let pollTimer: number | null = null
+    let lastSeen = initialValueRef.current
+
     const crepe = new Crepe({
-      root: hostRef.current,
+      root: host,
       defaultValue: initialValueRef.current,
     })
-    crepe.on(api => {
-      api.markdownUpdated((_ctx, markdown) => {
-        onChangeRef.current(markdown)
+
+    crepe
+      .create()
+      .then(() => {
+        if (!alive) {
+          void crepe.destroy()
+          return
+        }
+        attached = crepe
+        pollTimer = window.setInterval(() => {
+          if (!attached) return
+          const md = attached.getMarkdown()
+          if (md !== lastSeen) {
+            lastSeen = md
+            onChangeRef.current(md)
+          }
+        }, 500)
       })
-    })
-    void crepe.create()
+      .catch(err => {
+        console.error('Crepe create failed', err)
+      })
+
     return () => {
-      void crepe.destroy()
+      alive = false
+      if (pollTimer !== null) window.clearInterval(pollTimer)
+      if (attached) void attached.destroy()
     }
   }, [])
 

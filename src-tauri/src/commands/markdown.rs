@@ -70,8 +70,8 @@ pub async fn open_markdown_window(app: AppHandle, path: String) -> Result<String
     let url = format!("markdown-window.html?path={encoded}");
     WebviewWindowBuilder::new(&app, &label, WebviewUrl::App(url.into()))
         .title("Markdown")
-        .inner_size(900.0, 700.0)
-        .min_inner_size(600.0, 500.0)
+        .inner_size(1100.0, 820.0)
+        .min_inner_size(560.0, 420.0)
         .resizable(true)
         .build()
         .map_err(|e| e.to_string())?;
@@ -114,8 +114,8 @@ pub fn spawn_markdown_window<R: tauri::Runtime>(
     let url = format!("markdown-window.html?path={encoded}");
     tauri::WebviewWindowBuilder::new(app, &label, WebviewUrl::App(url.into()))
         .title("Markdown")
-        .inner_size(900.0, 700.0)
-        .min_inner_size(600.0, 500.0)
+        .inner_size(1100.0, 820.0)
+        .min_inner_size(560.0, 420.0)
         .resizable(true)
         .build()
         .map_err(|e| e.to_string())?;
