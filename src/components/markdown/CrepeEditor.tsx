@@ -5,8 +5,8 @@ import '@milkdown/crepe/theme/common/style.css'
 // pull both as URL refs and inject the one matching the active theme via
 // a managed <link> element. The wrong sheet would otherwise win the
 // cascade and leave the editor stuck in one mode.
-import frameLightUrl from '@milkdown/crepe/theme/frame/style.css?url'
-import frameDarkUrl from '@milkdown/crepe/theme/frame-dark/style.css?url'
+import frameLightUrl from '@milkdown/crepe/theme/frame.css?url'
+import frameDarkUrl from '@milkdown/crepe/theme/frame-dark.css?url'
 
 /// Watch the html `dark` class managed by ThemeProvider. Lets non-React
 /// stylesheets (Crepe) follow the theme without needing useTheme everywhere.
