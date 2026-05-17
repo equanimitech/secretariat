@@ -12,7 +12,7 @@ export function resolveTitle(
     return fmTitle.trim()
   }
   const match = body.match(H1)
-  if (match) return match[1].trim()
+  if (match && match[1]) return match[1].trim()
   return basenameWithoutExt(filePath)
 }
 
