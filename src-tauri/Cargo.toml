@@ -36,11 +36,16 @@ tauri-plugin-process = "2"
 tauri-plugin-os = "2"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-deep-link = "2"
+tauri-plugin-shell = "2"
 url = "2"
 chrono = "0.4"
 log = "0.4"
 regex = "1"
 dirs = "5"
+sha2 = "0.10"
+sha1 = "0.10"
+urlencoding = "2"
+thiserror = "1"
 
 # Type-safe Tauri command bindings
 specta = { version = "=2.0.0-rc.22", features = ["derive", "serde_json"] }
@@ -55,6 +60,9 @@ tauri-plugin-window-state = "2"
 # macOS-only: NSPanel for native panel behavior (fullscreen overlay, click-outside dismiss)
 [target.'cfg(target_os = "macos")'.dependencies]
 tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", branch = "v2.1" }
+
+[dev-dependencies]
+tempfile = "3"
 
 # [profile.release] lives at the workspace root (../Cargo.toml).
 
