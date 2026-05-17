@@ -30,6 +30,7 @@ SNAPSHOT_DIR="$HOME/Documents/secretariat-snapshots"
 TS="$(date +%Y-%m-%d-%H%M%S)"
 SNAPSHOT="$SNAPSHOT_DIR/$TS-pre-v0.7.0.tgz"
 SELF_ROOT="$VAULT/_self"
+SELF_CHANNELS_DIR="$SELF_ROOT/channels"
 ARCHIVE="$VAULT/.archive"
 
 if [[ ! -d "$VAULT" ]]; then
@@ -57,7 +58,13 @@ echo "[migrate] sweeping .DS_Store…"
 find "$VAULT" -name '.DS_Store' -delete 2>/dev/null || true
 
 count_envelopes() {
-  find "$1" -type f -name '*.md' -path '*/envelopes/*' 2>/dev/null | wc -l | tr -d ' '
+  # Match any envelope by its filename pattern (`<YYYYMMDD>T<HHMMSS>Z-<rand>.md`),
+  # not just files inside an `envelopes/` subdir. Catches pre-time-shard
+  # captures (flat-layout v0.2 envelopes) AND time-sharded ones AND any
+  # archived-into-subdir variants. The gate's job is "no envelope file
+  # disappears" — strictest possible.
+  find "$1" -type f -regex '.*/20[0-9][0-9][0-9][0-9][0-9][0-9]T[0-9][0-9][0-9][0-9][0-9][0-9]Z-.*\.md' 2>/dev/null \
+    | wc -l | tr -d ' '
 }
 
 PRE_COUNT="$(count_envelopes "$VAULT")"
@@ -65,6 +72,51 @@ echo "[migrate] pre-migration envelope count: $PRE_COUNT"
 
 mkdir -p "$SELF_ROOT"
 mkdir -p "$ARCHIVE"
+
+# ----- v0.6.0 leftover sweep ---------------------------------------------
+# A pre-v0.7.0 daemon (running while the v0.6.0 binary upgraded) may
+# have kept writing to the legacy `queues/` and recreating `channels/`
+# at the vault root via stale `ensure_dirs` calls. Sweep both into the
+# new shape before the v0.7.0 binary starts. `mv`-only on envelopes.
+if [[ -d "$VAULT/queues" ]]; then
+  echo "[migrate] sweeping leftover queues/<ns>/<slug>/ into _self/channels/"
+  mkdir -p "$SELF_CHANNELS_DIR"
+  for ns_dir in "$VAULT/queues"/*/; do
+    [[ -d "$ns_dir" ]] || continue
+    ns="$(basename "$ns_dir")"
+    [[ "$ns" == .* ]] && continue
+    target_ns="$SELF_CHANNELS_DIR/$ns"
+    mkdir -p "$target_ns"
+    for slug_dir in "$ns_dir"/*; do
+      [[ -e "$slug_dir" ]] || continue
+      slug="$(basename "$slug_dir")"
+      if [[ -e "$target_ns/$slug" ]]; then
+        echo "[migrate]   merge: $ns/$slug already at target — moving envelopes only"
+        # Walk envelope files and `mv` each one, creating parent dirs as needed.
+        find "$slug_dir" -type f -name '*.md' -path '*/envelopes/*' | while read -r f; do
+          rel="${f#$slug_dir/}"
+          dst="$target_ns/$slug/$rel"
+          mkdir -p "$(dirname "$dst")"
+          mv "$f" "$dst"
+        done
+        # Non-envelope sidecars (channel.md, contract.local.md) we leave alone.
+      else
+        mv "$slug_dir" "$target_ns/$slug"
+      fi
+    done
+    rmdir "$ns_dir" 2>/dev/null || true
+  done
+  rmdir "$VAULT/queues" 2>/dev/null || true
+fi
+# Empty top-level `channels/` (recreated by stale daemon) is safe to drop.
+if [[ -d "$VAULT/channels" ]]; then
+  rmdir "$VAULT/channels" 2>/dev/null || \
+    echo "[migrate] top-level channels/ not empty; leaving for inspection"
+fi
+# Same for `peers/` (created by stale ensure_dirs; never used).
+if [[ -d "$VAULT/peers" ]]; then
+  rmdir "$VAULT/peers" 2>/dev/null || true
+fi
 
 # ----- slice 3 — identity consolidation ----------------------------------
 if [[ -f "$VAULT/key" && ! -f "$SELF_ROOT/identity/key" ]]; then
