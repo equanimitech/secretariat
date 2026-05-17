@@ -92,11 +92,9 @@ impl AliasMap {
     pub fn load(self_did: Did, paths: &KeyPaths) -> Result<Self, AliasMapError> {
         let mut map = Self::new(self_did);
 
-        if paths.contacts.exists() {
-            let book = ContactBook::load(&paths.contacts)?;
-            for contact in book.iter() {
-                map.insert(contact.did.clone(), contact.display_name.slug());
-            }
+        let book = ContactBook::load(&paths.contacts)?;
+        for contact in book.iter() {
+            map.insert(contact.did.clone(), contact.display_name.slug());
         }
 
         if paths.orgs_root.exists() {
@@ -142,6 +140,12 @@ pub enum AliasMapError {
 /// principal's substrate root. The result is the directory that
 /// *contains* `envelopes/`, `outbox/`, `_ciphertext/` for this queue.
 ///
+/// Path shape (v0.7+ — queue_dir alignment slice): `<root>/<alias>/channels/<segs>/`.
+/// Three kinds of `<alias>` — `_self`, `<org-alias>`, `<peer-alias>` —
+/// all sit at the same depth with `channels/` between alias and
+/// handle segments. Per [[project_contracts_attach_to_queues]] a DM
+/// is a 2-roster channel; cardinality changes shape, not primitive.
+///
 /// Pure compute — no IO. Path is not guaranteed to exist on disk;
 /// callers that need it materialized should `create_dir_all` against
 /// the result (or against [`envelopes_dir`] / [`outbox_dir`] /
@@ -149,6 +153,7 @@ pub enum AliasMapError {
 pub fn queue_dir(aliases: &AliasMap, recipient: &Recipient, root: &Path) -> PathBuf {
     let alias = aliases.alias_for(&recipient.owner);
     let mut dir = root.join(alias);
+    dir.push("channels");
     for seg in recipient.handle.segments() {
         dir.push(seg);
     }
@@ -197,10 +202,10 @@ mod tests {
     #[test]
     fn self_resolves_to_self_alias() {
         let aliases = AliasMap::new(alice());
-        let recipient = Recipient::new(alice(), QueueHandle::parse("inbox:triage").unwrap());
+        let recipient = Recipient::new(alice(), QueueHandle::parse("triage").unwrap());
         assert_eq!(
             queue_dir(&aliases, &recipient, root()),
-            PathBuf::from("/var/secretariat/_self/inbox/triage"),
+            PathBuf::from("/var/secretariat/_self/channels/triage"),
         );
     }
 
@@ -208,17 +213,17 @@ mod tests {
     fn known_peer_resolves_to_registered_alias() {
         let mut aliases = AliasMap::new(alice());
         aliases.insert(bob(), "marcelo");
-        let recipient = Recipient::new(bob(), QueueHandle::parse("inbox:default").unwrap());
+        let recipient = Recipient::new(bob(), QueueHandle::parse("inbox").unwrap());
         assert_eq!(
             queue_dir(&aliases, &recipient, root()),
-            PathBuf::from("/var/secretariat/marcelo/inbox/default"),
+            PathBuf::from("/var/secretariat/marcelo/channels/inbox"),
         );
     }
 
     #[test]
     fn unknown_peer_falls_back_to_sanitized_did() {
         let aliases = AliasMap::new(alice());
-        let recipient = Recipient::new(bob(), QueueHandle::parse("inbox:default").unwrap());
+        let recipient = Recipient::new(bob(), QueueHandle::parse("inbox").unwrap());
         let path = queue_dir(&aliases, &recipient, root());
         // The fallback uses the DID with `:` and `/` replaced by `_`.
         // Don't assert the exact string — depends on bob's
@@ -244,30 +249,30 @@ mod tests {
         aliases.insert(themia(), "themia.pro");
         let recipient = Recipient::new(
             themia(),
-            QueueHandle::parse("channel:dommage-corporel:paris-cohort").unwrap(),
+            QueueHandle::parse("dommage-corporel:paris-cohort").unwrap(),
         );
         assert_eq!(
             queue_dir(&aliases, &recipient, root()),
-            PathBuf::from("/var/secretariat/themia.pro/channel/dommage-corporel/paris-cohort"),
+            PathBuf::from("/var/secretariat/themia.pro/channels/dommage-corporel/paris-cohort"),
         );
     }
 
     #[test]
     fn sub_paths_compose_correctly() {
         let aliases = AliasMap::new(alice());
-        let recipient = Recipient::new(alice(), QueueHandle::parse("area:writing").unwrap());
+        let recipient = Recipient::new(alice(), QueueHandle::parse("writing").unwrap());
         let base = root();
         assert_eq!(
             envelopes_dir(&aliases, &recipient, base),
-            PathBuf::from("/var/secretariat/_self/area/writing/envelopes"),
+            PathBuf::from("/var/secretariat/_self/channels/writing/envelopes"),
         );
         assert_eq!(
             outbox_dir(&aliases, &recipient, base),
-            PathBuf::from("/var/secretariat/_self/area/writing/outbox"),
+            PathBuf::from("/var/secretariat/_self/channels/writing/outbox"),
         );
         assert_eq!(
             ciphertext_dir(&aliases, &recipient, base),
-            PathBuf::from("/var/secretariat/_self/area/writing/_ciphertext"),
+            PathBuf::from("/var/secretariat/_self/channels/writing/_ciphertext"),
         );
     }
 }

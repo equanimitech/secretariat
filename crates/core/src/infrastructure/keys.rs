@@ -49,8 +49,17 @@ pub enum KeyError {
 #[derive(Debug, Clone)]
 pub struct KeyPaths {
     pub root: PathBuf,
+    /// Active signing key, raw PKCS#8 bytes, mode `0600`. Lives at
+    /// `<self_root>/identity/key` (v0.7+); legacy `<root>/key` for
+    /// pre-v0.7 vaults.
     pub signing_key: PathBuf,
+    /// DID document scaffold; `did:web` principals upload this to their
+    /// `.well-known/did.json`. `<self_root>/identity/did.json` (v0.7+);
+    /// legacy `<root>/did.json` for pre-v0.7 vaults.
     pub did_document: PathBuf,
+    /// Principal's contact book at `<self_root>/contacts.md`. Markdown
+    /// with one `##` section per contact (YAML frontmatter for typed
+    /// fields, body for free-form prose).
     pub contacts: PathBuf,
     pub relay_state: PathBuf,
     pub peers_cache: PathBuf,
@@ -59,12 +68,17 @@ pub struct KeyPaths {
     /// channels. Reach the channels root via
     /// [`KeyPaths::personal_channels_root`].
     pub self_root: PathBuf,
+    /// Consolidated identity record at `<self_root>/identity.md`. Carries
+    /// the DID, display_name, full_name, key metadata, and rotation log
+    /// in YAML frontmatter; principal-editable prose body.
+    pub identity_md: PathBuf,
+    /// Directory holding the raw key + DID document — `<self_root>/identity/`.
+    pub identity_dir: PathBuf,
     /// Root for org-scoped state. Layout:
     /// `<orgs_root>/<alias>/.org` (metadata) + `<orgs_root>/<alias>/channels/<segs>/...`.
     pub orgs_root: PathBuf,
     pub bin: PathBuf,
     pub template: PathBuf,
-    pub profile: PathBuf,
     /// Unified principal preferences (composition, cognition, delivery).
     /// Supersedes the legacy `cognition.json` + `cadence.toml` files.
     pub preferences: PathBuf,
@@ -98,21 +112,23 @@ impl KeyPaths {
 
     pub fn under(root: PathBuf) -> Self {
         let self_root = root.join("_self");
+        let identity_dir = self_root.join("identity");
         Self {
-            signing_key: root.join("key"),
-            did_document: root.join("did.json"),
-            contacts: root.join("contacts.json"),
+            signing_key: identity_dir.join("key"),
+            did_document: identity_dir.join("did.json"),
+            identity_md: self_root.join("identity.md"),
+            contacts: self_root.join("contacts.md"),
             relay_state: root.join("relay-state.json"),
             peers_cache: root.join("peers"),
             orgs_root: root.join("orgs"),
             bin: root.join("bin"),
             template: root.join("template.md"),
-            profile: root.join("profile.json"),
             preferences: root.join("preferences.toml"),
             legacy_cognition_config: root.join("cognition.json"),
             legacy_cadence: root.join("cadence.toml"),
             contextification_log: self_root.join(".contextification.log"),
             contract_stub: self_root.join("contract-stub.md"),
+            identity_dir,
             self_root,
             root,
         }
@@ -129,6 +145,7 @@ impl KeyPaths {
             &self.root,
             &self.peers_cache,
             &self.self_root,
+            &self.identity_dir,
             &self.personal_channels_root(),
             &self.orgs_root,
             &self.bin,

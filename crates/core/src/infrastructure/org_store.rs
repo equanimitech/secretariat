@@ -1,22 +1,25 @@
-//! Per-org metadata storage at `<orgs_root>/<alias>/.org`.
+//! Per-org metadata storage at `<orgs_root>/<alias>/org.md`.
 //!
-//! JSON shape (v1):
+//! Markdown + YAML frontmatter (same shape as `channel.md`):
 //!
-//! ```json
-//! {
-//!   "version": 1,
-//!   "alias": "themia.pro",
-//!   "did": "did:web:themia.pro",
-//!   "name": "Themia",
-//!   "description": "Legal-tech jurimetry platform",
-//!   "created_at": "2026-05-12T03:00:00Z"
-//! }
+//! ```markdown
+//! ---
+//! $type: tech.equanimi.secretariat.org
+//! alias: themia.pro
+//! did: did:web:themia.pro
+//! name: Themia
+//! description: Legal-tech jurimetry platform
+//! created_at: 2026-05-12T03:00:00Z
+//! ---
+//!
+//! # Themia
+//!
+//! Org-level prose: why this org exists in my vault, who the
+//! operational contact is, signature line for org correspondence.
 //! ```
 //!
-//! Versioned for forward-compat. `did` is optional (`null` for local-only
-//! orgs that don't yet federate). The signed-envelope variant of org
-//! metadata (per `tech.equanimi.secretariat.orgDoc` lexicon) lands when
-//! relay sync ships — this JSON is the v0 placeholder.
+//! No backward-compat reads — pre-v0.7 vaults migrate via
+//! `scripts/migrate-vault-v0.7.0.sh` BEFORE upgrading.
 
 use std::path::{Path, PathBuf};
 
@@ -26,9 +29,10 @@ use thiserror::Error;
 
 use crate::domain::{Did, Org, OrgAlias, OrgAliasError};
 
-const CURRENT_VERSION: u32 = 1;
+const ORG_TYPE: &str = "tech.equanimi.secretariat.org";
+const DEFAULT_BODY: &str = "\n# {NAME}\n\n";
 /// On-disk filename for org metadata at the root of every org dir.
-pub const ORG_METADATA_FILENAME: &str = ".org";
+pub const ORG_METADATA_FILENAME: &str = "org.md";
 
 #[derive(Debug, Error)]
 pub enum OrgStoreError {
@@ -38,14 +42,8 @@ pub enum OrgStoreError {
         #[source]
         source: std::io::Error,
     },
-    #[error("malformed json at {path}: {source}")]
-    MalformedJson {
-        path: PathBuf,
-        #[source]
-        source: serde_json::Error,
-    },
-    #[error("unsupported .org version {version} at {path} — upgrade Secretariat")]
-    UnsupportedVersion { version: u32, path: PathBuf },
+    #[error("malformed frontmatter at {path}: {message}")]
+    MalformedFrontmatter { path: PathBuf, message: String },
     #[error("invalid alias `{alias}`: {source}")]
     InvalidAlias {
         alias: String,
@@ -62,23 +60,12 @@ pub enum OrgStoreError {
     AlreadyExists(String),
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-struct OrgFile {
-    version: u32,
-    alias: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    did: Option<String>,
-    name: String,
-    description: String,
-    created_at: String,
-}
-
 /// Path to a specific org's directory under `orgs_root`.
 pub fn org_dir(orgs_root: &Path, alias: &OrgAlias) -> PathBuf {
     orgs_root.join(alias.as_str())
 }
 
-/// Path to the `.org` metadata file inside an org's directory.
+/// Path to the `org.md` metadata file inside an org's directory.
 pub fn org_metadata_path(orgs_root: &Path, alias: &OrgAlias) -> PathBuf {
     org_dir(orgs_root, alias).join(ORG_METADATA_FILENAME)
 }
@@ -104,40 +91,91 @@ pub fn load_org(orgs_root: &Path, alias: &OrgAlias) -> Result<Option<Org>, OrgSt
         path: path.clone(),
         source: e,
     })?;
-    let file: OrgFile = serde_json::from_str(&raw).map_err(|e| OrgStoreError::MalformedJson {
-        path: path.clone(),
+    let (yaml, _body) = split_frontmatter(&raw).ok_or_else(|| {
+        OrgStoreError::MalformedFrontmatter {
+            path: path.clone(),
+            message: "missing `---` frontmatter delimiters".into(),
+        }
+    })?;
+    let fm: OrgFrontmatter =
+        serde_yaml::from_str(yaml).map_err(|e| OrgStoreError::MalformedFrontmatter {
+            path: path.clone(),
+            message: e.to_string(),
+        })?;
+    finalize(
+        fm.alias,
+        fm.did,
+        fm.name,
+        fm.description,
+        fm.created_at,
+        &path,
+    )
+    .map(Some)
+}
+
+fn finalize(
+    alias_str: String,
+    did_str: Option<String>,
+    name: String,
+    description: String,
+    created_at: String,
+    path: &Path,
+) -> Result<Org, OrgStoreError> {
+    let alias = OrgAlias::parse(&alias_str).map_err(|e| OrgStoreError::InvalidAlias {
+        alias: alias_str.clone(),
         source: e,
     })?;
-    if file.version != CURRENT_VERSION {
-        return Err(OrgStoreError::UnsupportedVersion {
-            version: file.version,
-            path,
-        });
-    }
-    let alias = OrgAlias::parse(&file.alias).map_err(|e| OrgStoreError::InvalidAlias {
-        alias: file.alias.clone(),
-        source: e,
-    })?;
-    let did = match file.did {
-        Some(s) => Some(Did::parse(&s).map_err(|e| OrgStoreError::InvalidDid {
+    let did = match did_str {
+        Some(s) if !s.is_empty() => Some(Did::parse(&s).map_err(|e| OrgStoreError::InvalidDid {
             did: s,
             reason: e.to_string(),
         })?),
-        None => None,
+        _ => None,
     };
-    let created_at = DateTime::parse_from_rfc3339(&file.created_at)
+    let created_at = DateTime::parse_from_rfc3339(&created_at)
         .map_err(|_| OrgStoreError::InvalidTimestamp {
-            value: file.created_at.clone(),
-            path,
+            value: created_at.clone(),
+            path: path.to_path_buf(),
         })?
         .with_timezone(&Utc);
-    Ok(Some(Org::new(
-        alias,
-        did,
-        file.name,
-        file.description,
-        created_at,
-    )))
+    Ok(Org::new(alias, did, name, description, created_at))
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct OrgFrontmatter {
+    #[serde(rename = "$type", default, skip_serializing_if = "String::is_empty")]
+    ty: String,
+    alias: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    did: Option<String>,
+    name: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    description: String,
+    created_at: String,
+}
+
+fn split_frontmatter(content: &str) -> Option<(&str, &str)> {
+    let stripped = content.strip_prefix('\u{FEFF}').unwrap_or(content);
+    let after_open = stripped
+        .strip_prefix("---\r\n")
+        .or_else(|| stripped.strip_prefix("---\n"))?;
+    let mut search_start = 0usize;
+    while let Some(rel) = after_open[search_start..].find("\n---") {
+        let abs = search_start + rel;
+        let after_dashes = abs + 4;
+        let tail = &after_open[after_dashes..];
+        if let Some(after_lf) = tail.strip_prefix('\n') {
+            return Some((&after_open[..abs], after_lf));
+        }
+        if let Some(after_crlf) = tail.strip_prefix("\r\n") {
+            return Some((&after_open[..abs], after_crlf));
+        }
+        if tail.is_empty() {
+            return Some((&after_open[..abs], ""));
+        }
+        search_start = abs + 1;
+    }
+    None
 }
 
 /// Atomic save (temp + rename). Creates parent dirs on demand. Errors
@@ -156,32 +194,38 @@ pub fn save_org(orgs_root: &Path, org: &Org, overwrite: bool) -> Result<(), OrgS
         source: e,
     })?;
 
-    let path = org_metadata_path(orgs_root, &org.alias);
-    if path.exists() && !overwrite {
+    let md_path = org_metadata_path(orgs_root, &org.alias);
+    if md_path.exists() && !overwrite {
         return Err(OrgStoreError::AlreadyExists(org.alias.as_str().to_string()));
     }
 
-    let file = OrgFile {
-        version: CURRENT_VERSION,
+    let fm = OrgFrontmatter {
+        ty: ORG_TYPE.to_string(),
         alias: org.alias.as_str().to_string(),
         did: org.did.as_ref().map(|d| d.as_str().to_string()),
         name: org.name.clone(),
         description: org.description.clone(),
         created_at: org.created_at.to_rfc3339(),
     };
-    let json =
-        serde_json::to_string_pretty(&file).map_err(|e| OrgStoreError::MalformedJson {
-            path: path.clone(),
-            source: e,
-        })?;
+    let yaml = serde_yaml::to_string(&fm).map_err(|e| OrgStoreError::MalformedFrontmatter {
+        path: md_path.clone(),
+        message: e.to_string(),
+    })?;
+    let title = if org.name.is_empty() {
+        org.alias.as_str()
+    } else {
+        &org.name
+    };
+    let body = DEFAULT_BODY.replace("{NAME}", title);
+    let rendered = format!("---\n{yaml}---\n{body}");
 
-    let tmp = path.with_extension("org.tmp");
-    std::fs::write(&tmp, json).map_err(|e| OrgStoreError::Io {
+    let tmp = md_path.with_extension("md.tmp");
+    std::fs::write(&tmp, rendered).map_err(|e| OrgStoreError::Io {
         path: tmp.clone(),
         source: e,
     })?;
-    std::fs::rename(&tmp, &path).map_err(|e| OrgStoreError::Io {
-        path: path.clone(),
+    std::fs::rename(&tmp, &md_path).map_err(|e| OrgStoreError::Io {
+        path: md_path.clone(),
         source: e,
     })?;
     Ok(())

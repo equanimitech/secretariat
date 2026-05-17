@@ -279,7 +279,6 @@ pub fn run() {
             tauri::async_runtime::spawn(async {
                 use secretariat_core::application::{sync_now, CadenceConfig};
                 use secretariat_core::infrastructure::keys::{load_signing_key, KeyPaths};
-                use secretariat_core::Did;
 
                 loop {
                     let interval_min = match KeyPaths::discover() {
@@ -301,17 +300,15 @@ pub fn run() {
                     // Skip silently if no identity yet (pre-onboarding) or
                     // if key/DID load fails. Errors don't kill the loop —
                     // try again next tick.
+                    use secretariat_core::infrastructure::identity_store::load_identity;
                     let Ok(paths) = KeyPaths::discover() else { continue };
-                    let did_file = paths.root.join("did");
-                    if !paths.signing_key.exists() || !did_file.exists() {
+                    if !paths.signing_key.exists() {
                         continue;
                     }
-                    let Ok(did_str) = std::fs::read_to_string(&did_file) else {
+                    let Ok(Some(identity)) = load_identity(&paths.identity_md) else {
                         continue;
                     };
-                    let Ok(did) = Did::parse(did_str.trim()) else {
-                        continue;
-                    };
+                    let did = identity.did;
                     let Ok(key) = load_signing_key(&paths.signing_key) else {
                         continue;
                     };

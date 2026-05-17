@@ -8,7 +8,6 @@
 //! shell is becoming the principal-facing front door.
 
 use serde::{Deserialize, Serialize};
-use std::fs;
 use std::path::PathBuf;
 
 use secretariat_core::application::{
@@ -20,9 +19,6 @@ use secretariat_core::application::{
 use secretariat_core::domain::DisplayName;
 use secretariat_core::infrastructure::keys::{
     generate_keypair, load_signing_key, save_signing_key, KeyPaths,
-};
-use secretariat_core::infrastructure::profile_store::{
-    load_profile as core_load_profile, save_profile as core_save_profile, PrincipalProfile,
 };
 use secretariat_core::Did;
 
@@ -45,30 +41,33 @@ pub struct IdentityState {
 #[tauri::command]
 #[specta::specta]
 pub async fn init_identity() -> Result<IdentityState, String> {
+    use chrono::Utc;
+    use secretariat_core::domain::DisplayName;
+    use secretariat_core::infrastructure::identity_store::{
+        load_identity, save_identity, PrincipalIdentity,
+    };
+
     let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
     paths
         .ensure_dirs()
         .map_err(|e| format!("creating directories under {}: {e}", paths.root.display()))?;
 
-    let did_file = paths.root.join("did");
-
     // Already initialized? Surface the existing DID.
-    if paths.signing_key.exists() && did_file.exists() {
-        let did = fs::read_to_string(&did_file)
-            .map_err(|e| format!("reading {}: {e}", did_file.display()))?
-            .trim()
-            .to_string();
-        return Ok(IdentityState { did, created: false });
+    if let Some(existing) = load_identity(&paths.identity_md)
+        .map_err(|e| format!("loading identity: {e}"))?
+    {
+        return Ok(IdentityState {
+            did: existing.did.as_str().to_string(),
+            created: false,
+        });
     }
 
-    // Refuse to clobber a partial install (key exists but no DID file, or
-    // vice versa). Surface a clear error so the principal can resolve it
-    // by either deleting the stale file or reusing the existing key.
+    // Refuse to clobber a partial install (key exists but no identity record).
     if paths.signing_key.exists() {
         return Err(format!(
-            "signing key exists at {} but no DID file at {} — refusing to regenerate",
+            "signing key exists at {} but no identity record at {} — refusing to regenerate",
             paths.signing_key.display(),
-            did_file.display()
+            paths.identity_md.display()
         ));
     }
 
@@ -78,8 +77,24 @@ pub async fn init_identity() -> Result<IdentityState, String> {
 
     save_signing_key(&paths.signing_key, &key)
         .map_err(|e| format!("writing signing key to {}: {e}", paths.signing_key.display()))?;
-    fs::write(&did_file, format!("{did}\n"))
-        .map_err(|e| format!("writing DID file {}: {e}", did_file.display()))?;
+
+    let now = Utc::now();
+    let display_name = DisplayName::parse("Principal")
+        .map_err(|e| format!("default display name invalid: {e}"))?;
+    let identity = PrincipalIdentity {
+        did: did.clone(),
+        did_method: "did:key".to_string(),
+        display_name,
+        full_name: None,
+        key_path: "identity/key".to_string(),
+        key_type: "ed25519".to_string(),
+        key_created_at: now,
+        key_rotations: Vec::new(),
+        created_at: now,
+        body: String::new(),
+    };
+    save_identity(&paths.identity_md, &identity)
+        .map_err(|e| format!("writing identity.md: {e}"))?;
 
     log::info!("init_identity: generated new did:key for principal");
     Ok(IdentityState {
@@ -94,16 +109,21 @@ pub async fn init_identity() -> Result<IdentityState, String> {
 #[tauri::command]
 #[specta::specta]
 pub async fn current_identity() -> Result<Option<IdentityState>, String> {
+    use secretariat_core::infrastructure::identity_store::load_identity;
+
     let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
-    let did_file = paths.root.join("did");
-    if !paths.signing_key.exists() || !did_file.exists() {
+    if !paths.signing_key.exists() {
         return Ok(None);
     }
-    let did = fs::read_to_string(&did_file)
-        .map_err(|e| format!("reading {}: {e}", did_file.display()))?
-        .trim()
-        .to_string();
-    Ok(Some(IdentityState { did, created: false }))
+    match load_identity(&paths.identity_md)
+        .map_err(|e| format!("loading identity: {e}"))?
+    {
+        Some(id) => Ok(Some(IdentityState {
+            did: id.did.as_str().to_string(),
+            created: false,
+        })),
+        None => Ok(None),
+    }
 }
 
 /// Diagnostic — returns the absolute path to `~/.secretariat/`. Useful for
@@ -148,11 +168,7 @@ pub async fn claim_invite_url(deep_link_or_url: String) -> Result<InviteClaimRep
     let _ = init_identity().await?;
 
     let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
-    let did_file = paths.root.join("did");
-    let claimant_did_str = std::fs::read_to_string(&did_file)
-        .map_err(|e| format!("reading {}: {e}", did_file.display()))?;
-    let claimant_did = Did::parse(claimant_did_str.trim())
-        .map_err(|e| format!("parsing principal DID: {e}"))?;
+    let claimant_did = load_self_did(&paths)?;
     let key = load_signing_key(&paths.signing_key)
         .map_err(|e| format!("loading signing key: {e}"))?;
 
@@ -350,10 +366,7 @@ pub async fn sync_now() -> Result<SyncReport, String> {
             .map_err(|e| format!("ipc tick: {e}"))?;
         serde_json::from_value(value).map_err(|e| format!("decoding outcome: {e}"))?
     } else {
-        let did_file = paths.root.join("did");
-        let did_str = std::fs::read_to_string(&did_file)
-            .map_err(|e| format!("reading {}: {e}", did_file.display()))?;
-        let did = Did::parse(did_str.trim()).map_err(|e| format!("parsing DID: {e}"))?;
+        let did = load_self_did(&paths)?;
         let key = load_signing_key(&paths.signing_key)
             .map_err(|e| format!("loading signing key: {e}"))?;
         core_sync_now(&paths, &did, &key)
@@ -430,10 +443,7 @@ pub async fn stamp_envelope(file_path: String) -> Result<StampReport, String> {
     use secretariat_core::ports::SignerError;
 
     let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
-    let did_file = paths.root.join("did");
-    let did_str = std::fs::read_to_string(&did_file)
-        .map_err(|e| format!("reading {}: {e}", did_file.display()))?;
-    let did = Did::parse(did_str.trim()).map_err(|e| format!("parsing DID: {e}"))?;
+    let did = load_self_did(&paths)?;
     let key = load_signing_key(&paths.signing_key)
         .map_err(|e| format!("loading signing key: {e}"))?;
 
@@ -518,10 +528,7 @@ pub async fn create_invite(purpose: Option<String>) -> Result<String, String> {
     use secretariat_core::infrastructure::transport::RelayState;
 
     let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
-    let did_file = paths.root.join("did");
-    let did_str = std::fs::read_to_string(&did_file)
-        .map_err(|e| format!("reading {}: {e}", did_file.display()))?;
-    let did = Did::parse(did_str.trim()).map_err(|e| format!("parsing DID: {e}"))?;
+    let did = load_self_did(&paths)?;
     let key = load_signing_key(&paths.signing_key)
         .map_err(|e| format!("loading signing key: {e}"))?;
 
@@ -570,22 +577,20 @@ pub struct Profile {
     pub display_name: String,
 }
 
-impl From<PrincipalProfile> for Profile {
-    fn from(p: PrincipalProfile) -> Self {
-        Self {
-            display_name: p.display_name.to_string(),
-        }
-    }
-}
-
-/// Read the principal's profile. Returns null when no profile has been
-/// set yet (fresh install pre-onboarding).
+/// Read the principal's profile. Returns null when no identity is set
+/// yet (fresh install pre-onboarding). Backed by `identity.md`
+/// frontmatter (v0.7+).
 #[tauri::command]
 #[specta::specta]
 pub async fn get_profile() -> Result<Option<Profile>, String> {
+    use secretariat_core::infrastructure::identity_store::load_identity;
+
     let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
-    let profile = core_load_profile(&paths.profile).map_err(|e| format!("load_profile: {e}"))?;
-    Ok(profile.map(Profile::from))
+    let identity = load_identity(&paths.identity_md)
+        .map_err(|e| format!("load_identity: {e}"))?;
+    Ok(identity.map(|id| Profile {
+        display_name: id.display_name.to_string(),
+    }))
 }
 
 /// Set the principal's display name. Idempotent — overwrites whatever
@@ -594,18 +599,23 @@ pub async fn get_profile() -> Result<Option<Profile>, String> {
 #[tauri::command]
 #[specta::specta]
 pub async fn set_profile(display_name: String) -> Result<Profile, String> {
+    use secretariat_core::infrastructure::identity_store::{load_identity, save_identity};
+
     let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
     paths
         .ensure_dirs()
         .map_err(|e| format!("creating directories: {e}"))?;
     let parsed = DisplayName::parse(&display_name)
         .map_err(|e| format!("invalid name: {e}"))?;
-    let profile = PrincipalProfile {
-        display_name: parsed,
-    };
-    core_save_profile(&paths.profile, &profile)
-        .map_err(|e| format!("save_profile: {e}"))?;
-    Ok(profile.into())
+    let mut identity = load_identity(&paths.identity_md)
+        .map_err(|e| format!("load_identity: {e}"))?
+        .ok_or_else(|| "no identity yet — initialize first".to_string())?;
+    identity.display_name = parsed.clone();
+    save_identity(&paths.identity_md, &identity)
+        .map_err(|e| format!("save_identity: {e}"))?;
+    Ok(Profile {
+        display_name: parsed.to_string(),
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -1009,23 +1019,13 @@ pub async fn quick_capture(text: String) -> Result<String, String> {
 }
 
 fn load_self_did(paths: &KeyPaths) -> Result<Did, String> {
-    let did_file = paths.root.join("did");
-    if did_file.exists() {
-        let raw = std::fs::read_to_string(&did_file).map_err(|e| format!("reading did: {e}"))?;
-        return Did::parse(raw.trim()).map_err(|e| format!("invalid did: {e}"));
-    }
-    if paths.did_document.exists() {
-        let raw = std::fs::read_to_string(&paths.did_document)
-            .map_err(|e| format!("reading did.json: {e}"))?;
-        let v: serde_json::Value =
-            serde_json::from_str(&raw).map_err(|e| format!("parsing did.json: {e}"))?;
-        let id = v
-            .get("id")
-            .and_then(|x| x.as_str())
-            .ok_or_else(|| "did.json has no `id`".to_string())?;
-        return Did::parse(id).map_err(|e| format!("invalid did in did.json: {e}"));
-    }
-    Err("no DID — run `sec init` first".to_string())
+    use secretariat_core::infrastructure::identity_store::load_identity;
+
+    let identity = load_identity(&paths.identity_md)
+        .map_err(|e| format!("loading identity: {e}"))?;
+    identity
+        .map(|id| id.did)
+        .ok_or_else(|| "no identity — run `sec init` first".to_string())
 }
 
 // Re-export for the bindings module so it can register these commands.

@@ -18,7 +18,7 @@ use crate::domain::{
     Did, Envelope, EnvelopeBuilder, EnvelopeDepth, EnvelopeUrgency, Recipient,
 };
 use crate::infrastructure::markdown::{embed_stamp, MarkdownError};
-use crate::infrastructure::queue_dir::{outbox_dir, AliasMap};
+use crate::infrastructure::queue_dir::AliasMap;
 
 #[derive(Debug, Error)]
 pub enum ComposeError {
@@ -54,7 +54,8 @@ pub fn compose_envelope(
     now: DateTime<Utc>,
 ) -> Result<PathBuf, ComposeError> {
     let envelope = build_envelope(&request);
-    let target_dir = outbox_dir(aliases, &request.recipient, root);
+    let queue_root = crate::infrastructure::queue_dir::queue_dir(aliases, &request.recipient, root);
+    let target_dir = queue_root.join("outbox");
     fs::create_dir_all(&target_dir).map_err(|e| ComposeError::Io {
         path: target_dir.clone(),
         source: e,
@@ -67,8 +68,17 @@ pub fn compose_envelope(
     let body: &str = match &request.body {
         Some(b) => b.as_str(),
         None => {
-            body_owned = fs::read_to_string(template_path).map_err(|e| ComposeError::Io {
-                path: template_path.to_path_buf(),
+            // Per-channel template override (AGENTS.md rule #5): prefer
+            // `<channel-dir>/template.md` when present; fall back to the
+            // principal's global template.
+            let channel_template = queue_root.join("template.md");
+            let chosen = if channel_template.is_file() {
+                &channel_template
+            } else {
+                template_path
+            };
+            body_owned = fs::read_to_string(chosen).map_err(|e| ComposeError::Io {
+                path: chosen.to_path_buf(),
                 source: e,
             })?;
             strip_existing_frontmatter(&body_owned)
@@ -176,10 +186,10 @@ mod tests {
         let now = Utc.with_ymd_and_hms(2026, 4, 30, 14, 25, 0).unwrap();
         let path = compose_envelope(req, &template, root, &aliases, now).unwrap();
 
-        // Lives under <root>/marcelo/inbox/default/outbox/.
+        // Lives under <root>/marcelo/channels/inbox/default/outbox/.
         assert_eq!(
             path.parent().unwrap(),
-            root.join("marcelo/inbox/default/outbox"),
+            root.join("marcelo/channels/inbox/default/outbox"),
         );
         assert!(path
             .file_name()
@@ -221,8 +231,45 @@ mod tests {
         let path = compose_envelope(req, &template, root, &aliases, now).unwrap();
         assert_eq!(
             path.parent().unwrap(),
-            root.join("_self/inbox/default/outbox"),
+            root.join("_self/channels/inbox/default/outbox"),
         );
+    }
+
+    #[test]
+    fn per_channel_template_overrides_global() {
+        let dir = TempDir::new().unwrap();
+        let global_template = dir.path().join("template.md");
+        fs::write(&global_template, "# GLOBAL\nGlobal body.\n").unwrap();
+        let root = dir.path();
+        let aliases = AliasMap::new(rafa_did());
+
+        // Plant a per-channel template at the recipient's queue dir.
+        let channel_dir = root.join("_self/channels/secretariat/dev");
+        fs::create_dir_all(&channel_dir).unwrap();
+        fs::write(
+            channel_dir.join("template.md"),
+            "# CHANNEL\nChannel-specific body.\n",
+        )
+        .unwrap();
+
+        let req = ComposeRequest {
+            from: rafa_did(),
+            recipient: Recipient::new(
+                rafa_did(),
+                QueueHandle::parse("secretariat:dev").unwrap(),
+            ),
+            depth: EnvelopeDepth::Subtle,
+            urgency: EnvelopeUrgency::Whenever,
+            source: "test".into(),
+            cadence_hint: None,
+            body: None,
+        };
+
+        let now = Utc.with_ymd_and_hms(2026, 5, 18, 12, 0, 0).unwrap();
+        let path = compose_envelope(req, &global_template, root, &aliases, now).unwrap();
+        let parsed = parse_document(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert!(parsed.body.contains("Channel-specific body"));
+        assert!(!parsed.body.contains("Global body"));
     }
 
     #[test]
