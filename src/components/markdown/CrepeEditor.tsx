@@ -1,7 +1,29 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Crepe } from '@milkdown/crepe'
 import '@milkdown/crepe/theme/common/style.css'
-import '@milkdown/crepe/theme/frame.css'
+// Crepe ships paired stylesheets. We can't conditionally `import` CSS, so
+// pull both as URL refs and inject the one matching the active theme via
+// a managed <link> element. The wrong sheet would otherwise win the
+// cascade and leave the editor stuck in one mode.
+import frameLightUrl from '@milkdown/crepe/theme/frame/style.css?url'
+import frameDarkUrl from '@milkdown/crepe/theme/frame-dark/style.css?url'
+
+/// Watch the html `dark` class managed by ThemeProvider. Lets non-React
+/// stylesheets (Crepe) follow the theme without needing useTheme everywhere.
+function useHtmlDarkClass(): boolean {
+  const [isDark, setIsDark] = useState(() =>
+    document.documentElement.classList.contains('dark'),
+  )
+  useEffect(() => {
+    const root = document.documentElement
+    const sync = () => setIsDark(root.classList.contains('dark'))
+    sync()
+    const observer = new MutationObserver(sync)
+    observer.observe(root, { attributes: true, attributeFilter: ['class'] })
+    return () => observer.disconnect()
+  }, [])
+  return isDark
+}
 
 interface CrepeEditorProps {
   initialValue: string
@@ -22,10 +44,24 @@ export function CrepeEditor({ initialValue, onChange }: CrepeEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null)
   const onChangeRef = useRef(onChange)
   const initialValueRef = useRef(initialValue)
+  const isDark = useHtmlDarkClass()
 
   useEffect(() => {
     onChangeRef.current = onChange
   })
+
+  // Swap Crepe's theme sheet to match the html `dark` class. Single
+  // <link>, replaced (not stacked) so the cascade stays deterministic.
+  useEffect(() => {
+    const link = document.createElement('link')
+    link.rel = 'stylesheet'
+    link.href = isDark ? frameDarkUrl : frameLightUrl
+    link.dataset.crepeTheme = isDark ? 'dark' : 'light'
+    document.head.appendChild(link)
+    return () => {
+      link.remove()
+    }
+  }, [isDark])
 
   useEffect(() => {
     const host = hostRef.current
