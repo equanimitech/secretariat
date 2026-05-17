@@ -64,7 +64,7 @@ never sent on wire.\n\n\
 Empty frontmatter above means \"contribute nothing to my accumulated \
 view\" — fields from my org-root and ancestor-channel contracts apply \
 as-is. Channel governance (roster, who can post, channel-wide artifact \
-policy) lives elsewhere — in `.channelDef` or signed governance \
+policy) lives elsewhere — in `channel.md` or signed governance \
 envelopes, not here.\n\n\
 Edit via `sec channels contract set` (CLI) or `set_channel_contract` \
 (MCP) once those verbs ship; in the meantime, edit by hand and \

@@ -133,6 +133,6 @@ platforms `sec` spawns the command and waits.
 | --- | --- |
 | `invalid handle ...` | Handle didn't parse — see `QueueHandle::parse` |
 | `not a channel handle` | Use `channel:foo` / `channel:foo:bar`, not `inbox:` / `area:` |
-| `channel ... does not exist` | No `.channelDef` at the resolved path — `sec channels create` first |
+| `channel ... does not exist` | No `channel.md` at the resolved path — `sec channels create` first |
 | `launch_command is empty in preferences` | `[cognition] launch_command = ""` — pick a real binary |
 | `could not launch ...` | OS-level spawn failure — typically the binary isn't on `$PATH` |

@@ -30,7 +30,7 @@ pub struct Args {
 
 #[derive(Subcommand, Debug)]
 enum Cmd {
-    /// Create a channel (writes `.channelDef` + pre-creates envelopes/).
+    /// Create a channel (writes `channel.md` + pre-creates envelopes/).
     Create(CreateArgs),
 
     /// List channels in a tree, grouped by top segment.

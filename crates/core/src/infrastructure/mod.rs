@@ -29,8 +29,9 @@ pub use did_key_resolver::DidKeyResolver;
 pub use did_web_resolver::DidWebResolver;
 pub use ed25519_signer::{AlwaysAllowGate, BiometricGate, Ed25519Signer};
 pub use channel_def_store::{
-    channel_def_path, channel_dir, delete_channel as delete_channel_tree, load_channel_def,
-    save_channel_def, ChannelDefStoreError, CHANNEL_DEF_FILENAME,
+    channel_def_exists, channel_def_exists_in_dir, channel_def_path, channel_dir,
+    delete_channel as delete_channel_tree, load_channel_def, read_channel_meta_in_dir,
+    save_channel_def, ChannelDefStoreError, CHANNEL_DEF_FILENAME, LEGACY_CHANNEL_DEF_FILENAME,
 };
 pub use binding_store::{load_channel_binding, resolve_channel_path, BindingStoreError};
 pub use contract_store::{

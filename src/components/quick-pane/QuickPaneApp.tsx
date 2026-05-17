@@ -157,7 +157,22 @@ export default function QuickPaneApp() {
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden rounded-[var(--app-corner-radius)] border border-border bg-background shadow-lg">
-      <Command className="flex h-full flex-col" loop>
+      <Command
+        className={
+          'flex h-full flex-col ' +
+          // Larger, less-crowded affordances. cmdk renders its primitives
+          // via data attributes; we override them here without touching
+          // the shared shadcn `command.tsx` (used elsewhere at default size).
+          '[&_[data-slot=command-input-wrapper]]:h-14 [&_[data-slot=command-input-wrapper]]:gap-3 [&_[data-slot=command-input-wrapper]]:px-4 ' +
+          '[&_[data-slot=command-input-wrapper]_svg]:size-5 ' +
+          '[&_[cmdk-input]]:h-14 [&_[cmdk-input]]:text-base ' +
+          '[&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:py-2 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-wider ' +
+          '[&_[cmdk-group]]:px-2 ' +
+          '[&_[cmdk-item]]:px-3 [&_[cmdk-item]]:py-3 [&_[cmdk-item]]:text-base [&_[cmdk-item]]:gap-3 ' +
+          '[&_[cmdk-list]]:scroll-py-2'
+        }
+        loop
+      >
         <CommandInput
           ref={inputRef}
           value={text}
@@ -167,12 +182,7 @@ export default function QuickPaneApp() {
         />
         <CommandList className="flex-1">
           <CommandEmpty>
-            {/* When the user types but nothing matches, cmdk hides
-                groups. We still want the capture row available — it's
-                rendered as the always-visible bottom group below this
-                section, and cmdk's empty state only fires when the
-                Launch group has no matches. Keep this block lean. */}
-            <div className="px-3 py-1.5 text-xs text-muted-foreground">
+            <div className="px-4 py-3 text-sm text-muted-foreground">
               No matching channels.
             </div>
           </CommandEmpty>
@@ -186,9 +196,11 @@ export default function QuickPaneApp() {
                   onSelect={() => handleLaunch(ch)}
                   className="flex items-center gap-3"
                 >
-                  <span className="flex flex-1 flex-col overflow-hidden">
+                  <span className="flex flex-1 flex-col gap-0.5 overflow-hidden">
                     <span className="flex items-center gap-2">
-                      <span className="font-medium">{ch.handle}</span>
+                      <span className="text-base font-medium leading-tight">
+                        {ch.handle}
+                      </span>
                       {ch.has_cognition_override && (
                         <span
                           className="rounded-sm bg-amber-400/20 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-amber-700 dark:text-amber-300"
@@ -198,7 +210,7 @@ export default function QuickPaneApp() {
                         </span>
                       )}
                     </span>
-                    <span className="truncate text-xs text-muted-foreground">
+                    <span className="truncate text-sm text-muted-foreground">
                       {ch.org ? `${ch.org} · ` : ''}
                       {ch.root_path}
                     </span>
@@ -217,13 +229,13 @@ export default function QuickPaneApp() {
               keywords={text ? [text] : []}
               className="flex items-center gap-3"
             >
-              <span className="flex flex-col">
-                <span className="font-medium">
+              <span className="flex flex-col gap-0.5">
+                <span className="text-base font-medium leading-tight">
                   {text.trim()
                     ? `Capture "${text.trim().slice(0, 60)}${text.trim().length > 60 ? '…' : ''}"`
                     : 'Capture to inbox:triage'}
                 </span>
-                <span className="text-xs text-muted-foreground">
+                <span className="text-sm text-muted-foreground">
                   Falls back when no channel matches · saves locally, never sent
                 </span>
               </span>

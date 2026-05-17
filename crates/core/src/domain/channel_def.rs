@@ -1,9 +1,10 @@
 //! `ChannelDef` — value object describing a channel's metadata.
 //!
-//! v0.3 stores this as a `.channelDef` JSON file alongside `envelopes/`
-//! inside each channel directory. The signed-envelope variant (per
-//! `tech.equanimi.secretariat.channelDef` lexicon) lands when relay
-//! sync ships — this JSON is the v0 placeholder.
+//! v0.3 stores this as a `channel.md` markdown file (YAML frontmatter +
+//! optional body prose) alongside `envelopes/` inside each channel
+//! directory. The frontmatter mirrors the
+//! `tech.equanimi.secretariat.channelDef` lexicon; the signed-envelope
+//! variant lands when relay sync ships.
 
 use chrono::{DateTime, Utc};
 

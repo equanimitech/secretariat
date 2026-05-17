@@ -50,8 +50,8 @@ pub enum LaunchChannelError {
 /// `org_channels_root(paths.orgs_root, alias)` for an org channel.
 ///
 /// Errors when `handle` isn't a `channel:...` handle or when the
-/// channel doesn't have a `.channelDef` at the resolved path — same
-/// existence gate as capture/contract verbs.
+/// channel doesn't have a `channel.md` (or legacy `.channelDef`) at the
+/// resolved path — same existence gate as capture/contract verbs.
 pub fn launch_channel(
     channels_root: &Path,
     handle: &QueueHandle,

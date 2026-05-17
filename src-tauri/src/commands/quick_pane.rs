@@ -19,8 +19,8 @@ const QUICK_PANE_LABEL: &str = "quick-pane";
 /// typeahead (up to ~10 rows of channels + the always-visible capture
 /// fallback row); the front-end keeps the actual rendered list within
 /// this envelope.
-const QUICK_PANE_WIDTH: f64 = 560.0;
-const QUICK_PANE_HEIGHT: f64 = 420.0;
+const QUICK_PANE_WIDTH: f64 = 620.0;
+const QUICK_PANE_HEIGHT: f64 = 520.0;
 
 /// Tracks the currently registered quick pane shortcut for selective unregistration.
 /// This allows us to unregister only our shortcut without affecting other shortcuts.
@@ -76,7 +76,10 @@ fn init_quick_pane_macos(app: &AppHandle) -> Result<(), String> {
     let panel = PanelBuilder::<_, QuickPanePanel>::new(app, QUICK_PANE_LABEL)
         .url(WebviewUrl::App("quick-pane.html".into()))
         .title("Quick Entry")
-        .size(Size::Logical(LogicalSize::new(500.0, 72.0)))
+        .size(Size::Logical(LogicalSize::new(
+            QUICK_PANE_WIDTH,
+            QUICK_PANE_HEIGHT,
+        )))
         .level(PanelLevel::Status) // Status level to appear above fullscreen apps
         .transparent(true)
         .has_shadow(true)
@@ -117,7 +120,7 @@ fn init_quick_pane_standard(app: &AppHandle) -> Result<(), String> {
         WebviewUrl::App("quick-pane.html".into()),
     )
     .title("Quick Entry")
-    .inner_size(500.0, 72.0)
+    .inner_size(QUICK_PANE_WIDTH, QUICK_PANE_HEIGHT)
     .always_on_top(true)
     .skip_taskbar(true)
     .decorations(false)

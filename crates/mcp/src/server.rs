@@ -413,9 +413,9 @@ pub struct ListChannelsOutput {
 pub struct ChannelSummaryDto {
     /// Canonical handle, e.g. `channel:secretariat:dev`.
     pub handle: String,
-    /// Human-readable display name from `.channelDef` (empty if unset).
+    /// Human-readable display name from `channel.md` (empty if unset).
     pub name: String,
-    /// Free-form description from `.channelDef` (empty if unset).
+    /// Free-form description from `channel.md` (empty if unset).
     pub description: String,
     /// Number of envelopes in this channel.
     pub envelope_count: usize,
@@ -1345,9 +1345,9 @@ impl SecretariatServer {
             open_world_hint = false
         ),
         description = "Create a channel inside an org (or in the principal's personal \
-        tree if `org` is omitted). Writes a `.channelDef` metadata file and pre-creates \
-        the `envelopes/` directory so the channel is visible in `list_channels` even \
-        before any captures land. \
+        tree if `org` is omitted). Writes a `channel.md` manifest (YAML frontmatter + \
+        markdown body) and pre-creates the `envelopes/` directory so the channel is \
+        visible in `list_channels` even before any captures land. \
         \
         The `handle` must start with `channel:` and may have any number of colon-pathed \
         segments (`channel:product:data:baux-commerciaux`). Use `name` and `description` \
@@ -1383,7 +1383,7 @@ impl SecretariatServer {
             idempotent_hint = true,
             open_world_hint = false
         ),
-        description = "Hard-delete a channel's entire directory tree — `.channelDef`, \
+        description = "Hard-delete a channel's entire directory tree — `channel.md`, \
         envelopes, sub-channels, everything beneath the handle's path. Destructive and \
         irreversible. Requires `confirm: true`. \
         \
@@ -1433,7 +1433,7 @@ impl SecretariatServer {
 
         This file is **never sent on wire** and **never shared with other roster members**. \
         Channel governance (roster, channel-wide artifact policy) lives separately in \
-        `.channelDef` or future signed governance envelopes — not surfaced by this tool."
+        `channel.md` or future signed governance envelopes — not surfaced by this tool."
     )]
     async fn get_channel_contract(
         &self,

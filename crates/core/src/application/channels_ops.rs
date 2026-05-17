@@ -26,8 +26,8 @@ use thiserror::Error;
 
 use crate::domain::{ChannelDef, QueueHandle};
 use crate::infrastructure::channel_def_store::{
-    delete_channel as delete_channel_tree, save_channel_def, ChannelDefStoreError,
-    CHANNEL_DEF_FILENAME,
+    channel_def_exists_in_dir, delete_channel as delete_channel_tree, read_channel_meta_in_dir,
+    save_channel_def, ChannelDefStoreError,
 };
 use crate::infrastructure::contract_store::{
     channel_contract_path, save_stub_if_absent, ContractStoreError,
@@ -63,16 +63,15 @@ pub enum ChannelOpError {
 pub struct ChannelSummary {
     /// Canonical handle, e.g. `channel:secretariat:dev`.
     pub handle: String,
-    /// Human-readable display name from `.channelDef` (empty if no
-    /// channelDef exists or name field is empty).
+    /// Human-readable display name from the channel manifest (empty if
+    /// no manifest exists or name field is empty).
     pub name: String,
-    /// Free-form description from `.channelDef` (empty if unset).
+    /// Free-form description from the channel manifest (empty if unset).
     pub description: String,
     /// Number of `.md` envelope files under `envelopes/` (any depth).
     pub envelope_count: usize,
     /// Timestamp of the most recent envelope, parsed from its filename
-    /// (`%Y%m%dT%H%M%SZ-<rand>.md`). None only if filenames are malformed
-    /// — which shouldn't happen for substrate-produced files.
+    /// (`%Y%m%dT%H%M%SZ-<rand>.md`). None when filenames are malformed.
     pub latest_at: Option<DateTime<Utc>>,
 }
 
@@ -134,7 +133,7 @@ fn walk(
         }
         let handle_str = format!("{handle_prefix}:{seg_name}");
         let envelopes_dir = path.join("envelopes");
-        let has_def = path.join(CHANNEL_DEF_FILENAME).is_file();
+        let has_def = channel_def_exists_in_dir(&path);
         let (count, latest_at) = if envelopes_dir.is_dir() {
             scan_envelopes_dir(&envelopes_dir)?
         } else {
@@ -143,17 +142,14 @@ fn walk(
         // Treat as a channel if it has explicit metadata (created via
         // `create_channel`) or any envelopes have landed in it.
         if has_def || count > 0 {
-            let (display_name, description) = if has_def {
-                match fs::read_to_string(path.join(CHANNEL_DEF_FILENAME)) {
-                    Ok(raw) => parse_def_meta(&raw).unwrap_or_default(),
-                    Err(_) => (String::new(), String::new()),
-                }
+            let (name, description) = if has_def {
+                read_channel_meta_in_dir(&path)
             } else {
                 (String::new(), String::new())
             };
             out.push(ChannelSummary {
                 handle: handle_str.clone(),
-                name: display_name,
+                name,
                 description,
                 envelope_count: count,
                 latest_at,
@@ -162,21 +158,6 @@ fn walk(
         walk(&path, &handle_str, out)?;
     }
     Ok(())
-}
-
-/// Minimal local parse to avoid an extra cross-module call inside the walk.
-/// Returns (name, description) from a `.channelDef` JSON blob.
-fn parse_def_meta(raw: &str) -> Option<(String, String)> {
-    #[derive(serde::Deserialize)]
-    struct Min {
-        #[serde(default)]
-        name: String,
-        #[serde(default)]
-        description: String,
-    }
-    serde_json::from_str::<Min>(raw)
-        .ok()
-        .map(|m| (m.name, m.description))
 }
 
 fn scan_envelopes_dir(dir: &Path) -> Result<(usize, Option<DateTime<Utc>>), ChannelOpError> {
@@ -296,10 +277,10 @@ fn read_one(path: &Path) -> Result<ChannelEnvelope, ChannelOpError> {
     })
 }
 
-/// Create a channel by writing its `.channelDef` metadata file,
-/// pre-creating the `envelopes/` directory, and auto-scaffolding a
-/// stub `contract.local.md` (empty frontmatter — no overrides, inherit
-/// from ancestors). Errors if the channel already has a `.channelDef`.
+/// Create a channel by writing its `channel.md` manifest, pre-creating
+/// the `envelopes/` directory, and auto-scaffolding a stub
+/// `contract.local.md` (empty frontmatter — no overrides, inherit from
+/// ancestors). Errors if the channel already has a manifest.
 /// `handle` must start with `channel:`.
 ///
 /// The contract-stub write is idempotent: if a `contract.local.md` already
@@ -353,7 +334,7 @@ mod tests {
         let q = QueueHandle::parse(handle).unwrap();
         // For channel handles, ensure the channel exists before capture —
         // `capture_to_queue` refuses to write into an unknown channel
-        // (`ChannelNotFound`) so tests must vivify the `.channelDef` here.
+        // (`ChannelNotFound`) so tests must vivify the `channel.md` here.
         if q.top_namespace() == "channel" {
             let _ = create_channel(channels, q.clone(), "", "", now);
         }

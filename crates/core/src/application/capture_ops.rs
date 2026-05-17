@@ -37,7 +37,7 @@ use thiserror::Error;
 use crate::domain::{
     Did, Envelope, EnvelopeBuilder, EnvelopeDepth, EnvelopeUrgency, QueueHandle, Recipient,
 };
-use crate::infrastructure::channel_def_store::CHANNEL_DEF_FILENAME;
+use crate::infrastructure::channel_def_store::channel_def_exists_in_dir;
 use crate::infrastructure::markdown::{embed_stamp, MarkdownError};
 
 /// Top-namespace token that routes a capture into the channel-dir layout.
@@ -140,11 +140,12 @@ fn resolve_target_dir(
         for seg in &segments[1..] {
             dir.push(seg);
         }
-        // Existence gate: refuse to capture into a channel whose
-        // `.channelDef` is absent. Auto-vivifying the directory tree on
-        // capture would let a typo silently spawn a phantom channel that
-        // never appears in `list_channels` and has no roster/governance.
-        if !dir.join(CHANNEL_DEF_FILENAME).is_file() {
+        // Existence gate: refuse to capture into a channel whose manifest
+        // (`channel.md` or legacy `.channelDef`) is absent. Auto-vivifying
+        // the directory tree on capture would let a typo silently spawn a
+        // phantom channel that never appears in `list_channels` and has no
+        // roster/governance.
+        if !channel_def_exists_in_dir(&dir) {
             return Err(CaptureError::ChannelNotFound {
                 handle: queue.as_str().to_string(),
             });
@@ -207,7 +208,7 @@ mod tests {
         (dir.join("queues"), dir.join("channels"))
     }
 
-    /// Plant a minimal `.channelDef` so capture_to_queue's existence
+    /// Plant a minimal `channel.md` so capture_to_queue's existence
     /// gate clears. Mirrors what `create_channel` would have written.
     fn touch_channel(channel_tree: &Path, handle: &str) {
         let h = QueueHandle::parse(handle).unwrap();
@@ -216,7 +217,11 @@ mod tests {
             dir.push(seg);
         }
         fs::create_dir_all(&dir).unwrap();
-        fs::write(dir.join(".channelDef"), "{}").unwrap();
+        fs::write(
+            dir.join("channel.md"),
+            "---\n$type: tech.equanimi.secretariat.channelDef\n---\n",
+        )
+        .unwrap();
     }
 
     #[test]
@@ -436,7 +441,7 @@ mod tests {
 
     #[test]
     fn capture_to_unknown_channel_errors() {
-        // No `.channelDef` planted → capture must refuse rather than
+        // No `channel.md` planted → capture must refuse rather than
         // silently vivify a phantom channel directory.
         let dir = TempDir::new().unwrap();
         let (queues, channel_tree) = roots_under(dir.path());

@@ -8,7 +8,7 @@
 //! shared with other roster members.
 //!
 //! Distinct from **channel governance** (roster, "this channel only
-//! accepts stamped envelopes" policy) — that lives in `.channelDef` or
+//! accepts stamped envelopes" policy) — that lives in `channel.md` or
 //! a future signed `channelDef` envelope owned by the channel owner.
 //! Don't conflate the two: governance is shared & public to the
 //! roster; consumption is private & per-principal.
@@ -27,7 +27,7 @@
 //! Additional consumption fields (`depth_filter`, `urgency_filter`,
 //! `notify`) land when the routing daemon ships and demands them.
 //! Governance fields (`roster`, `accepts_only`, `cadence_max`) don't
-//! belong here at all — they extend `.channelDef`.
+//! belong here at all — they extend `channel.md`.
 
 /// Trust level requirements applied as a receiver-side filter.
 ///
