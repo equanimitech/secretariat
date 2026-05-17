@@ -15,9 +15,12 @@ use crate::types::DEFAULT_QUICK_PANE_SHORTCUT;
 /// Window label for the quick pane
 const QUICK_PANE_LABEL: &str = "quick-pane";
 
-/// Quick pane window dimensions
-const QUICK_PANE_WIDTH: f64 = 500.0;
-const QUICK_PANE_HEIGHT: f64 = 72.0;
+/// Quick pane window dimensions. Tall enough to host the cmdk launcher
+/// typeahead (up to ~10 rows of channels + the always-visible capture
+/// fallback row); the front-end keeps the actual rendered list within
+/// this envelope.
+const QUICK_PANE_WIDTH: f64 = 560.0;
+const QUICK_PANE_HEIGHT: f64 = 420.0;
 
 /// Tracks the currently registered quick pane shortcut for selective unregistration.
 /// This allows us to unregister only our shortcut without affecting other shortcuts.

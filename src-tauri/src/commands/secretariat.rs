@@ -839,6 +839,198 @@ pub async fn review_org(
     launch_macos_in(target, &cmd, Some(&cwd))
 }
 
+// ---------------------------------------------------------------------------
+// Quick-pane launcher commands
+// ---------------------------------------------------------------------------
+
+/// A channel the principal can launch into from the quick-pane typeahead.
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
+pub struct LaunchableChannel {
+    pub handle: String,
+    pub org: Option<String>,
+    pub name: String,
+    pub root_path: String,
+    pub has_cognition_override: bool,
+}
+
+/// List every channel the principal can launch into.
+#[tauri::command]
+#[specta::specta]
+pub async fn list_launchable_channels() -> Result<Vec<LaunchableChannel>, String> {
+    use secretariat_core::application::{list_channels, list_orgs};
+    use secretariat_core::domain::QueueHandle;
+    use secretariat_core::infrastructure::channel_def_store::channel_dir;
+    use secretariat_core::infrastructure::{load_channel_binding, org_store::org_channels_root};
+
+    let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
+    let mut out: Vec<LaunchableChannel> = Vec::new();
+
+    if paths.channels.is_dir() {
+        for ch in list_channels(&paths.channels).map_err(|e| format!("list_channels: {e}"))? {
+            let parsed = match QueueHandle::parse(&ch.handle) {
+                Ok(h) => h,
+                Err(_) => continue,
+            };
+            let default = channel_dir(&paths.channels, &parsed);
+            let binding = load_channel_binding(&default).unwrap_or_default();
+            let root = binding
+                .root_path
+                .clone()
+                .unwrap_or(default)
+                .to_string_lossy()
+                .to_string();
+            let has_override = binding.launch_command.is_some()
+                || !binding.launch_args.is_empty()
+                || !binding.launch_env.is_empty();
+            out.push(LaunchableChannel {
+                handle: ch.handle,
+                org: None,
+                name: ch.name,
+                root_path: root,
+                has_cognition_override: has_override,
+            });
+        }
+    }
+
+    for o in list_orgs(&paths.orgs_root).map_err(|e| format!("list_orgs: {e}"))? {
+        let root = org_channels_root(&paths.orgs_root, &o.alias);
+        if !root.is_dir() {
+            continue;
+        }
+        for ch in list_channels(&root).map_err(|e| format!("list_channels: {e}"))? {
+            let parsed = match QueueHandle::parse(&ch.handle) {
+                Ok(h) => h,
+                Err(_) => continue,
+            };
+            let default = channel_dir(&root, &parsed);
+            let binding = load_channel_binding(&default).unwrap_or_default();
+            let resolved = binding
+                .root_path
+                .clone()
+                .unwrap_or(default)
+                .to_string_lossy()
+                .to_string();
+            let has_override = binding.launch_command.is_some()
+                || !binding.launch_args.is_empty()
+                || !binding.launch_env.is_empty();
+            out.push(LaunchableChannel {
+                handle: ch.handle,
+                org: Some(o.alias.as_str().to_string()),
+                name: ch.name,
+                root_path: resolved,
+                has_cognition_override: has_override,
+            });
+        }
+    }
+    Ok(out)
+}
+
+/// Launch a channel from the quick-pane via `sec launch` semantics
+/// (binding-aware cwd + per-channel cognition overrides applied).
+#[tauri::command]
+#[specta::specta]
+pub async fn launch_channel_from_pane(
+    handle: String,
+    org: Option<String>,
+    terminal: Option<String>,
+) -> Result<(), String> {
+    use secretariat_core::application::launch_channel_with_binding;
+    use secretariat_core::domain::{OrgAlias, QueueHandle};
+    use secretariat_core::infrastructure::{
+        load_or_migrate_preferences, org_store::org_channels_root, PrefsLauncher,
+    };
+
+    let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
+    let parsed_handle =
+        QueueHandle::parse(&handle).map_err(|e| format!("invalid handle `{handle}`: {e}"))?;
+    let channels_root = match org.as_deref() {
+        None => paths.channels.clone(),
+        Some(s) => {
+            let alias = OrgAlias::parse(s)
+                .map_err(|e| format!("invalid org alias `{s}`: {e}"))?;
+            org_channels_root(&paths.orgs_root, &alias)
+        }
+    };
+    let prefs = load_or_migrate_preferences(
+        &paths.preferences,
+        &paths.legacy_cognition_config,
+        &paths.legacy_cadence,
+    )
+    .map_err(|e| format!("loading preferences: {e}"))?;
+
+    let base = PrefsLauncher::from_prefs(&prefs.cognition);
+    let (_p, binding) = launch_channel_with_binding(&channels_root, &parsed_handle, &base)
+        .map_err(|e| format!("{e}"))?;
+    let launcher = PrefsLauncher::from_prefs_with_binding(&prefs.cognition, &binding);
+    let (plan, _b) =
+        launch_channel_with_binding(&channels_root, &parsed_handle, &launcher)
+            .map_err(|e| format!("{e}"))?;
+
+    let mut shell = String::new();
+    for (k, v) in &plan.env {
+        let escaped = v.replace('"', "\\\"");
+        shell.push_str(&format!("{k}=\"{escaped}\" "));
+    }
+    shell.push_str(&plan.command);
+    for a in &plan.args {
+        let escaped = a.replace('"', "\\\"");
+        shell.push_str(&format!(" \"{escaped}\""));
+    }
+    let target = AssistantTarget::from_pref(terminal.as_deref());
+    launch_macos_in(target, &shell, Some(&plan.cwd))
+}
+
+/// Capture an arbitrary blob of text to `inbox:triage` from the quick-pane.
+#[tauri::command]
+#[specta::specta]
+pub async fn quick_capture(text: String) -> Result<String, String> {
+    use chrono::Utc;
+    use secretariat_core::application::{capture_to_queue, CaptureRequest, CaptureRoots};
+    use secretariat_core::domain::QueueHandle;
+
+    if text.trim().is_empty() {
+        return Err("text is empty".to_string());
+    }
+    let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
+    paths.ensure_dirs().map_err(|e| format!("{e}"))?;
+    let did = load_self_did(&paths)?;
+    let queue =
+        QueueHandle::parse("inbox:triage").map_err(|e| format!("invalid queue: {e}"))?;
+    let req = CaptureRequest {
+        from: did,
+        queue,
+        body: text,
+        source: "quick-pane".to_string(),
+    };
+    let roots = CaptureRoots {
+        flat_queues: &paths.queues,
+        channel_tree: &paths.channels,
+    };
+    let path = capture_to_queue(req, roots, Utc::now())
+        .map_err(|e| format!("capture failed: {e}"))?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+fn load_self_did(paths: &KeyPaths) -> Result<Did, String> {
+    let did_file = paths.root.join("did");
+    if did_file.exists() {
+        let raw = std::fs::read_to_string(&did_file).map_err(|e| format!("reading did: {e}"))?;
+        return Did::parse(raw.trim()).map_err(|e| format!("invalid did: {e}"));
+    }
+    if paths.did_document.exists() {
+        let raw = std::fs::read_to_string(&paths.did_document)
+            .map_err(|e| format!("reading did.json: {e}"))?;
+        let v: serde_json::Value =
+            serde_json::from_str(&raw).map_err(|e| format!("parsing did.json: {e}"))?;
+        let id = v
+            .get("id")
+            .and_then(|x| x.as_str())
+            .ok_or_else(|| "did.json has no `id`".to_string())?;
+        return Did::parse(id).map_err(|e| format!("invalid did in did.json: {e}"));
+    }
+    Err("no DID — run `sec init` first".to_string())
+}
+
 // Re-export for the bindings module so it can register these commands.
 #[allow(dead_code)]
 pub fn _types_used_in_bindings() -> (PathBuf,) {

@@ -57,23 +57,28 @@ pub fn run() {
         app_builder = app_builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             // Tray click is the primary surface gesture; `open -a Secretariat`
             // (Finder/Spotlight/CLI) is the secondary. Either way, route here.
-            // When `open -a Secretariat path/to/file.md` reenters, argv[1..] are
-            // candidate file paths — funnel them into PendingOpens for the
-            // frontend to drain.
-            use tauri::Emitter;
-            let pending = app.state::<crate::markdown::pending::PendingOpens>();
-            let mut added_any = false;
+            // When `secretariat path/to/file.md` reenters, argv[1..] are
+            // candidate file paths — spawn their markdown windows directly
+            // from Rust so we don't depend on the main webview being mounted
+            // (it's hidden on startup; the webview only loads on first show).
+            log::info!("single-instance callback fired with argv: {args:?}");
+            let mut opened_any = false;
             for arg in args.iter().skip(1) {
                 let p = std::path::PathBuf::from(arg);
-                if p.exists() {
-                    pending.push(p);
-                    added_any = true;
+                if !p.exists() {
+                    log::warn!("single-instance: arg path does not exist: {arg}");
+                    continue;
+                }
+                if let Err(e) = crate::commands::markdown::spawn_markdown_window(app, &p) {
+                    log::warn!("single-instance: spawn_markdown_window failed: {e}");
+                } else {
+                    opened_any = true;
                 }
             }
-            if added_any {
-                let _ = app.emit("markdown://pending-opens-added", ());
+            // If no markdown args, fall back to the original surface-main behavior.
+            if !opened_any {
+                surface_main_window(app);
             }
-            surface_main_window(app);
         }));
     }
 
@@ -373,15 +378,19 @@ pub fn run() {
             // fires before the webview's listener is registered, so the buffer
             // bridges the gap.
             RunEvent::Opened { urls } => {
-                use tauri::Emitter;
-                let pending = app_handle.state::<crate::markdown::pending::PendingOpens>();
+                log::info!("RunEvent::Opened with {} url(s)", urls.len());
                 for url in urls {
-                    if let Ok(path) = url.to_file_path() {
-                        log::info!("RunEvent::Opened received: {}", path.display());
-                        pending.push(path);
+                    let Ok(path) = url.to_file_path() else {
+                        log::warn!("RunEvent::Opened — url not file-shaped: {url}");
+                        continue;
+                    };
+                    log::info!("RunEvent::Opened — spawning window for {}", path.display());
+                    if let Err(e) =
+                        crate::commands::markdown::spawn_markdown_window(app_handle, &path)
+                    {
+                        log::warn!("RunEvent::Opened — spawn_markdown_window failed: {e}");
                     }
                 }
-                let _ = app_handle.emit("markdown://pending-opens-added", ());
             }
 
             // Cleanup on actual exit (Cmd+Q, menu Quit, or window close on non-macOS).

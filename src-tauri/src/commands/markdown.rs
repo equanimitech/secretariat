@@ -94,3 +94,31 @@ fn window_label(path: &str) -> String {
     let hex = format!("{:x}", hasher.finalize());
     format!("md:{}", &hex[..12])
 }
+
+/// Server-side spawn — bypasses the frontend round-trip. Called from
+/// `RunEvent::Opened` and the single-instance argv callback so a freshly
+/// arrived path opens its window even when the main webview is dormant
+/// (main window is `visible: false` at startup; its webview only loads
+/// after `window.show()`).
+pub fn spawn_markdown_window<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    path: &std::path::Path,
+) -> Result<String, String> {
+    let path_str = path.to_string_lossy().to_string();
+    let label = window_label(&path_str);
+    if let Some(existing) = app.get_webview_window(&label) {
+        existing.set_focus().map_err(|e| e.to_string())?;
+        return Ok(label);
+    }
+    let encoded = urlencoding::encode(&path_str);
+    let url = format!("markdown-window.html?path={encoded}");
+    tauri::WebviewWindowBuilder::new(app, &label, WebviewUrl::App(url.into()))
+        .title("Markdown")
+        .inner_size(900.0, 700.0)
+        .min_inner_size(600.0, 500.0)
+        .resizable(true)
+        .build()
+        .map_err(|e| e.to_string())?;
+    log::info!("spawn_markdown_window: opened window {label} for {path_str}");
+    Ok(label)
+}

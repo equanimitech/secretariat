@@ -388,6 +388,40 @@ async reviewOrg(alias: string, terminal: string | null, command: string | null) 
 }
 },
 /**
+ * List every channel the principal can launch into.
+ */
+async listLaunchableChannels() : Promise<Result<LaunchableChannel[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_launchable_channels") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Launch a channel from the quick-pane via `sec launch` semantics
+ * (binding-aware cwd + per-channel cognition overrides applied).
+ */
+async launchChannelFromPane(handle: string, org: string | null, terminal: string | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("launch_channel_from_pane", { handle, org, terminal }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Capture an arbitrary blob of text to `inbox:triage` from the quick-pane.
+ */
+async quickCapture(text: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("quick_capture", { text }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Reveal a path in Finder (macOS) / file manager (other platforms).
  * 
  * Used by the Paths pane's "Reveal in Finder" button so the principal
@@ -658,6 +692,10 @@ export type InviteClaimReport = { inviter_did: string; claimant_did: string; cla
  */
 registered: boolean }
 export type JsonValue = null | boolean | number | string | JsonValue[] | Partial<{ [key in string]: JsonValue }>
+/**
+ * A channel the principal can launch into from the quick-pane typeahead.
+ */
+export type LaunchableChannel = { handle: string; org: string | null; name: string; root_path: string; has_cognition_override: boolean }
 export type PreferencesDto = { composition: CompositionSettingsDto; cognition: CognitionSettingsDto; delivery: DeliverySettingsDto }
 export type Profile = { display_name: string }
 export type ReadMarkdownResult = { content: string; sha256: string }
