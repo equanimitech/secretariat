@@ -20,7 +20,7 @@ use anyhow::{anyhow, Context, Result};
 use clap::Parser;
 use std::path::PathBuf;
 
-use secretariat_core::application::launch_channel as do_launch;
+use secretariat_core::application::launch_channel_with_binding as do_launch;
 use secretariat_core::application::show_org;
 use secretariat_core::domain::{OrgAlias, QueueHandle};
 use secretariat_core::infrastructure::org_store::org_channels_root;
@@ -77,9 +77,18 @@ pub fn run(args: Args) -> Result<()> {
         &paths.legacy_cadence,
     )
     .context("loading preferences")?;
-    let launcher = PrefsLauncher::from_prefs(&prefs.cognition);
 
-    let plan = do_launch(&channels_root, &handle, &launcher).map_err(|e| anyhow!(e))?;
+    // First pass: resolve the binding via a temporary base-prefs launcher
+    // so we can read per-channel overrides off the contract.local.md.
+    // Second pass: layer overrides onto a binding-aware launcher and
+    // rebuild the plan. Two passes is the cost of keeping the use case
+    // launcher-agnostic; cheap (one file read).
+    let base_launcher = PrefsLauncher::from_prefs(&prefs.cognition);
+    let (_first_plan, binding) =
+        do_launch(&channels_root, &handle, &base_launcher).map_err(|e| anyhow!(e))?;
+    let launcher = PrefsLauncher::from_prefs_with_binding(&prefs.cognition, &binding);
+    let (plan, _binding) =
+        do_launch(&channels_root, &handle, &launcher).map_err(|e| anyhow!(e))?;
 
     if args.print_plan {
         let json = serde_json::json!({

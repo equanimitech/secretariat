@@ -47,7 +47,7 @@ pub use invite_ops::{
     claim_invite, create_invite, view_invite, InviteClaimed, InviteCreated, InviteError,
     InviteView, DEFAULT_INVITE_TTL_HOURS,
 };
-pub use launch_channel::{launch_channel, LaunchChannelError};
+pub use launch_channel::{launch_channel, launch_channel_with_binding, LaunchChannelError};
 pub use process_correspondence_claims::{
     process_correspondence_claims, ClaimProcessError, ClaimProcessOutcome, CorrespondenceClaim,
     SkipReason,

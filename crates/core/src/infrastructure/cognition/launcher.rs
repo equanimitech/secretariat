@@ -32,6 +32,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
+use crate::domain::ChannelBinding;
 use crate::infrastructure::preferences::CognitionPrefs;
 use crate::ports::{CognitionLauncher, LaunchPlan, LauncherError};
 
@@ -43,15 +44,40 @@ pub struct PrefsLauncher {
 }
 
 impl PrefsLauncher {
-    /// Build from preferences. Trims the command but otherwise leaves
-    /// the caller's args/env unmolested — preferences are the source
-    /// of truth.
+    /// Build from preferences alone — no channel override. Trims the
+    /// command but otherwise leaves the caller's args/env unmolested.
     pub fn from_prefs(prefs: &CognitionPrefs) -> Self {
         Self {
             command: prefs.launch_command.trim().to_string(),
             args: prefs.launch_args.clone(),
             env: prefs.launch_env.clone(),
         }
+    }
+
+    /// Build from preferences with per-channel overrides layered on top.
+    ///
+    /// Resolution rules:
+    /// - `launch_command`: binding wins when `Some`, else prefs.
+    /// - `launch_args`: binding wins when non-empty (replaces, not
+    ///   appends — args are a substrate contract, not additive).
+    /// - `launch_env`: per-key merge, binding wins on conflicts. Keys
+    ///   only in prefs survive (e.g. workspace-wide proxy var); keys
+    ///   only in binding land as-is (e.g. journals' LM Studio routing).
+    pub fn from_prefs_with_binding(prefs: &CognitionPrefs, binding: &ChannelBinding) -> Self {
+        let command = match binding.launch_command.as_deref() {
+            Some(s) if !s.trim().is_empty() => s.trim().to_string(),
+            _ => prefs.launch_command.trim().to_string(),
+        };
+        let args = if binding.launch_args.is_empty() {
+            prefs.launch_args.clone()
+        } else {
+            binding.launch_args.clone()
+        };
+        let mut env = prefs.launch_env.clone();
+        for (k, v) in &binding.launch_env {
+            env.insert(k.clone(), v.clone());
+        }
+        Self { command, args, env }
     }
 }
 
@@ -133,5 +159,62 @@ mod tests {
             l.plan_launch(tmp.path()),
             Err(LauncherError::EmptyCommand)
         ));
+    }
+
+    #[test]
+    fn binding_command_overrides_prefs() {
+        let mut prefs = CognitionPrefs::default();
+        prefs.launch_command = "claude".into();
+        let mut binding = ChannelBinding::empty();
+        binding.launch_command = Some("/usr/local/bin/journal-claude".into());
+        let l = PrefsLauncher::from_prefs_with_binding(&prefs, &binding);
+        let tmp = TempDir::new().unwrap();
+        let plan = l.plan_launch(tmp.path()).unwrap();
+        assert_eq!(plan.command, "/usr/local/bin/journal-claude");
+    }
+
+    #[test]
+    fn binding_args_replace_prefs_when_present() {
+        let mut prefs = CognitionPrefs::default();
+        prefs.launch_args = vec!["--default-flag".into()];
+        let mut binding = ChannelBinding::empty();
+        binding.launch_args = vec!["--model".into(), "openai/gpt-oss-20b".into()];
+        let l = PrefsLauncher::from_prefs_with_binding(&prefs, &binding);
+        let tmp = TempDir::new().unwrap();
+        let plan = l.plan_launch(tmp.path()).unwrap();
+        assert_eq!(plan.args, vec!["--model", "openai/gpt-oss-20b"]);
+    }
+
+    #[test]
+    fn empty_binding_args_inherits_prefs() {
+        let mut prefs = CognitionPrefs::default();
+        prefs.launch_args = vec!["--default-flag".into()];
+        let binding = ChannelBinding::empty();
+        let l = PrefsLauncher::from_prefs_with_binding(&prefs, &binding);
+        let tmp = TempDir::new().unwrap();
+        let plan = l.plan_launch(tmp.path()).unwrap();
+        assert_eq!(plan.args, vec!["--default-flag"]);
+    }
+
+    #[test]
+    fn binding_env_merges_with_prefs_env() {
+        let mut prefs = CognitionPrefs::default();
+        prefs.launch_env.insert("HTTP_PROXY".into(), "x".into());
+        prefs.launch_env.insert("SHARED".into(), "from-prefs".into());
+        let mut binding = ChannelBinding::empty();
+        binding
+            .launch_env
+            .insert("ANTHROPIC_BASE_URL".into(), "http://localhost:1234".into());
+        binding.launch_env.insert("SHARED".into(), "from-binding".into());
+        let l = PrefsLauncher::from_prefs_with_binding(&prefs, &binding);
+        let tmp = TempDir::new().unwrap();
+        let plan = l.plan_launch(tmp.path()).unwrap();
+        assert_eq!(plan.env.get("HTTP_PROXY").map(String::as_str), Some("x"));
+        assert_eq!(
+            plan.env.get("ANTHROPIC_BASE_URL").map(String::as_str),
+            Some("http://localhost:1234")
+        );
+        // Binding wins on collision.
+        assert_eq!(plan.env.get("SHARED").map(String::as_str), Some("from-binding"));
     }
 }

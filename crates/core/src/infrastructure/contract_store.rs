@@ -35,6 +35,7 @@
 //! An empty-frontmatter file (`---\n---\n` + prose) round-trips as
 //! `ChannelContract::empty()` — the auto-scaffold stub.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -179,11 +180,17 @@ struct ContractFile {
     cadence_floor_minutes: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     min_trust: Option<String>,
-    /// Receiver-private binding. Leaf-only — never inherited via the
-    /// accumulate merge. Sibling to `ChannelContract` in the on-disk
+    /// Receiver-private binding fields. Leaf-only — never inherited via
+    /// the accumulate merge. Sibling to `ChannelContract` in the on-disk
     /// shape; lifted into [`ChannelBinding`] by the parser.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     root_path: Option<PathBuf>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    launch_command: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    launch_args: Vec<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    launch_env: BTreeMap<String, String>,
 }
 
 fn emit_frontmatter(contract: &ChannelContract) -> Result<String, String> {
@@ -199,6 +206,9 @@ fn emit_frontmatter_full(
         cadence_floor_minutes: contract.cadence_floor_minutes,
         min_trust: contract.min_trust.map(|g| g.as_str().to_string()),
         root_path: binding.root_path.clone(),
+        launch_command: binding.launch_command.clone(),
+        launch_args: binding.launch_args.clone(),
+        launch_env: binding.launch_env.clone(),
     };
     serde_yaml::to_string(&file).map_err(|e| e.to_string())
 }
@@ -231,6 +241,9 @@ fn parse_frontmatter_full(
     };
     let binding = ChannelBinding {
         root_path: file.root_path,
+        launch_command: file.launch_command,
+        launch_args: file.launch_args,
+        launch_env: file.launch_env,
     };
     Ok((contract, binding))
 }
