@@ -44,11 +44,12 @@ pub fn create_org(
     name: impl Into<String>,
     description: impl Into<String>,
     created_at: DateTime<Utc>,
+    stub_override: Option<&Path>,
 ) -> Result<Org, OrgOpsError> {
     let org = Org::new(alias, did, name, description, created_at);
     save_org(orgs_root, &org, false)?;
     let contract_path = org_contract_path(&org_dir(orgs_root, &org.alias));
-    save_stub_if_absent(&contract_path)?;
+    save_stub_if_absent(&contract_path, stub_override)?;
     Ok(org)
 }
 
@@ -101,6 +102,7 @@ mod tests {
             "Themia",
             "Legal-tech",
             when(),
+            None,
         )
         .unwrap();
         let shown = show_org(&root, &org.alias).unwrap().unwrap();
@@ -111,8 +113,8 @@ mod tests {
     fn create_refuses_to_overwrite_existing() {
         let dir = TempDir::new().unwrap();
         let root = dir.path().join("orgs");
-        create_org(&root, alias("themia.pro"), None, "Themia", "", when()).unwrap();
-        let r = create_org(&root, alias("themia.pro"), None, "Themia v2", "", when());
+        create_org(&root, alias("themia.pro"), None, "Themia", "", when(), None).unwrap();
+        let r = create_org(&root, alias("themia.pro"), None, "Themia v2", "", when(), None);
         assert!(matches!(
             r,
             Err(OrgOpsError::Store(OrgStoreError::AlreadyExists(_)))
@@ -123,9 +125,9 @@ mod tests {
     fn list_orgs_sorted_alphabetically() {
         let dir = TempDir::new().unwrap();
         let root = dir.path().join("orgs");
-        create_org(&root, alias("themia.pro"), None, "Themia", "", when()).unwrap();
-        create_org(&root, alias("equanimi.tech"), None, "Equanimi", "", when()).unwrap();
-        create_org(&root, alias("nwyana"), None, "Nwyana", "", when()).unwrap();
+        create_org(&root, alias("themia.pro"), None, "Themia", "", when(), None).unwrap();
+        create_org(&root, alias("equanimi.tech"), None, "Equanimi", "", when(), None).unwrap();
+        create_org(&root, alias("nwyana"), None, "Nwyana", "", when(), None).unwrap();
         let orgs = list_orgs(&root).unwrap();
         assert_eq!(orgs.len(), 3);
         assert_eq!(orgs[0].alias.as_str(), "equanimi.tech");
@@ -146,7 +148,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let root = dir.path().join("orgs");
         let a = alias("themia.pro");
-        create_org(&root, a.clone(), None, "Themia", "", when()).unwrap();
+        create_org(&root, a.clone(), None, "Themia", "", when(), None).unwrap();
         let contract_path = crate::infrastructure::contract_store::org_contract_path(
             &crate::infrastructure::org_store::org_dir(&root, &a),
         );
@@ -155,7 +157,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert!(loaded.is_empty(), "stub frontmatter contributes nothing");
-        assert!(body.contains("consumption contract"));
+        assert!(body.contains("# importance"));
     }
 
     #[test]
@@ -172,7 +174,7 @@ mod tests {
             "---\ncadence_floor_minutes: 60\n---\nmy-overrides\n",
         )
         .unwrap();
-        create_org(&root, a, None, "Themia", "", when()).unwrap();
+        create_org(&root, a, None, "Themia", "", when(), None).unwrap();
         let (loaded, body) = crate::infrastructure::contract_store::load_contract(&contract_path)
             .unwrap()
             .unwrap();
@@ -184,7 +186,7 @@ mod tests {
     fn delete_removes_tree_and_makes_show_return_none() {
         let dir = TempDir::new().unwrap();
         let root = dir.path().join("orgs");
-        create_org(&root, alias("themia.pro"), None, "Themia", "", when()).unwrap();
+        create_org(&root, alias("themia.pro"), None, "Themia", "", when(), None).unwrap();
         delete_org(&root, &alias("themia.pro")).unwrap();
         assert!(show_org(&root, &alias("themia.pro")).unwrap().is_none());
     }

@@ -291,11 +291,12 @@ pub fn create_channel(
     name: impl Into<String>,
     description: impl Into<String>,
     created_at: DateTime<Utc>,
+    stub_override: Option<&Path>,
 ) -> Result<ChannelDef, ChannelOpError> {
     let def = ChannelDef::new(handle, name, description, created_at);
     save_channel_def(channels_root, &def, false)?;
     let contract_path = channel_contract_path(channels_root, &def.handle);
-    save_stub_if_absent(&contract_path)?;
+    save_stub_if_absent(&contract_path, stub_override)?;
     Ok(def)
 }
 
@@ -328,7 +329,7 @@ mod tests {
     /// `channel.md` first (the existence gate refuses unknown channels).
     fn capture(vault_root: &Path, channels: &Path, handle: &str, body: &str, now: DateTime<Utc>) {
         let q = QueueHandle::parse(handle).unwrap();
-        let _ = create_channel(channels, q.clone(), "", "", now);
+        let _ = create_channel(channels, q.clone(), "", "", now, None);
         let req = CaptureRequest {
             from: principal(),
             queue: q,
@@ -482,7 +483,7 @@ mod tests {
         let channels = self_channels(&dir);
         let h = QueueHandle::parse("dev:secretariat").unwrap();
         let when = Utc.with_ymd_and_hms(2026, 5, 12, 0, 0, 0).unwrap();
-        create_channel(&channels, h.clone(), "Dev — Secretariat", "", when).unwrap();
+        create_channel(&channels, h.clone(), "Dev — Secretariat", "", when, None).unwrap();
         let contract_path =
             crate::infrastructure::contract_store::channel_contract_path(&channels, &h);
         assert!(contract_path.is_file(), "stub contract.local.md should be written");
@@ -490,7 +491,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert!(loaded.is_empty(), "stub frontmatter should contribute nothing");
-        assert!(body.contains("consumption contract"));
+        assert!(body.contains("# importance"));
     }
 
     #[test]
@@ -510,7 +511,7 @@ mod tests {
         )
         .unwrap();
 
-        create_channel(&channels, h.clone(), "Dev — Secretariat", "", when).unwrap();
+        create_channel(&channels, h.clone(), "Dev — Secretariat", "", when, None).unwrap();
 
         let (loaded, body) = crate::infrastructure::contract_store::load_contract(&contract_path)
             .unwrap()
@@ -525,7 +526,7 @@ mod tests {
         let channels = self_channels(&dir);
         let h = QueueHandle::parse("product:data:baux-commerciaux").unwrap();
         let when = Utc.with_ymd_and_hms(2026, 5, 12, 0, 0, 0).unwrap();
-        let def = create_channel(&channels, h, "Baux commerciaux", "Cohort tracking", when)
+        let def = create_channel(&channels, h, "Baux commerciaux", "Cohort tracking", when, None)
             .unwrap();
         assert_eq!(def.name, "Baux commerciaux");
         // Empty channel shows in list (no envelopes, name carried through).
@@ -542,8 +543,8 @@ mod tests {
         let channels = self_channels(&dir);
         let h = QueueHandle::parse("secretariat:dev").unwrap();
         let when = Utc.with_ymd_and_hms(2026, 5, 12, 0, 0, 0).unwrap();
-        create_channel(&channels, h.clone(), "", "", when).unwrap();
-        let r = create_channel(&channels, h, "", "", when);
+        create_channel(&channels, h.clone(), "", "", when, None).unwrap();
+        let r = create_channel(&channels, h, "", "", when, None);
         assert!(matches!(
             r,
             Err(ChannelOpError::ChannelDefStore(
@@ -558,7 +559,7 @@ mod tests {
         let channels = self_channels(&dir);
         let h = QueueHandle::parse("secretariat:dev").unwrap();
         let when = Utc.with_ymd_and_hms(2026, 5, 12, 0, 0, 0).unwrap();
-        create_channel(&channels, h.clone(), "", "", when).unwrap();
+        create_channel(&channels, h.clone(), "", "", when, None).unwrap();
         capture(
             dir.path(),
             &channels,

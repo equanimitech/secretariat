@@ -78,6 +78,11 @@ pub struct KeyPaths {
     /// `_self/` so a `tail` over the principal's own tree picks it up
     /// alongside captures.
     pub contextification_log: PathBuf,
+    /// Principal's user-editable `contract.local.md` stub. When this
+    /// file exists, `save_stub_if_absent` uses its body as the scaffold
+    /// for every newly-created channel; otherwise the built-in fallback
+    /// applies. Lives at `<self_root>/contract-stub.md`.
+    pub contract_stub: PathBuf,
 }
 
 impl KeyPaths {
@@ -107,6 +112,7 @@ impl KeyPaths {
             legacy_cognition_config: root.join("cognition.json"),
             legacy_cadence: root.join("cadence.toml"),
             contextification_log: self_root.join(".contextification.log"),
+            contract_stub: self_root.join("contract-stub.md"),
             self_root,
             root,
         }

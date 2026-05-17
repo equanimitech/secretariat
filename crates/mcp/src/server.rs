@@ -1266,6 +1266,7 @@ impl SecretariatServer {
             name,
             description,
             Utc::now(),
+            Some(&self.paths.contract_stub),
         )
         .map_err(|e| invalid_request(format!("create_org failed: {e}")))?;
         info!(alias = %org.alias.as_str(), "org created via MCP");
@@ -1385,8 +1386,15 @@ impl SecretariatServer {
             .name
             .unwrap_or_else(|| handle.slug().to_string());
         let description = params.description.unwrap_or_default();
-        let def = app_create_channel(&root, handle, name, description, Utc::now())
-            .map_err(|e| invalid_request(format!("create_channel failed: {e}")))?;
+        let def = app_create_channel(
+            &root,
+            handle,
+            name,
+            description,
+            Utc::now(),
+            Some(&self.paths.contract_stub),
+        )
+        .map_err(|e| invalid_request(format!("create_channel failed: {e}")))?;
         info!(handle = %def.handle.as_str(), "channel created via MCP");
         Ok(Json(ChannelDefDto {
             handle: def.handle.as_str().to_string(),

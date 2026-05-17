@@ -327,8 +327,15 @@ fn run_create(
     let name = args
         .name
         .unwrap_or_else(|| handle.slug().to_string());
-    let def = create_channel(&root, handle, name, args.description, Utc::now())
-        .context("creating channel")?;
+    let def = create_channel(
+        &root,
+        handle,
+        name,
+        args.description,
+        Utc::now(),
+        Some(&paths.contract_stub),
+    )
+    .context("creating channel")?;
     println!("created channel: {}", def.handle);
     if !def.name.is_empty() {
         println!("  name: {}", def.name);
