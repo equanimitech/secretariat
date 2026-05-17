@@ -19,8 +19,7 @@ use super::paths::{key_paths, load_did};
 pub struct Args {
     /// Target queue handle — colon-separated path segments, e.g.
     /// `triage`, `articles`, `dommage-corporel:paris-cohort`. Tree
-    /// depth = colon depth. v0.5+ handles no longer carry a
-    /// `channel:` / `inbox:` / `area:` namespace prefix.
+    /// depth = colon depth.
     #[arg(long)]
     queue: String,
 
