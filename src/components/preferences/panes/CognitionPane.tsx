@@ -54,13 +54,25 @@ export function CognitionPane() {
 
   // Hydrate the form from disk on mount. Empty when no config saved
   // yet — the principal sees the default-off state explicitly.
+  // Wrapped in try/finally because the legacy IPC commands referenced
+  // here were consolidated into the unified preferences flow and now
+  // throw (not resolve to {status:'error'}); without the finally the
+  // spinner hangs forever. Rewriting against `get_preferences` is
+  // the followup; this just stops the hang.
   useEffect(() => {
     void (async () => {
-      const result = await commands.loadCognitionConfig()
-      if (result.status === 'ok' && result.data) {
-        setForm(dtoToForm(result.data))
+      try {
+        const result = await commands.loadCognitionConfig()
+        if (result.status === 'ok' && result.data) {
+          setForm(dtoToForm(result.data))
+        } else if (result.status === 'error') {
+          setError(result.error)
+        }
+      } catch (e) {
+        setError(String(e))
+      } finally {
+        setLoadingConfig(false)
       }
-      setLoadingConfig(false)
     })()
   }, [])
 
@@ -81,6 +93,8 @@ export function CognitionPane() {
       } else {
         setError(result.error)
       }
+    } catch (e) {
+      setError(String(e))
     } finally {
       setRefreshingModels(false)
     }
@@ -97,6 +111,8 @@ export function CognitionPane() {
       }
       setSavedNote('Saved.')
       setTimeout(() => setSavedNote(null), 2000)
+    } catch (e) {
+      setError(String(e))
     } finally {
       setSaving(false)
     }
