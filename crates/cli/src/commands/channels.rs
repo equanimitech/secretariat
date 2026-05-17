@@ -1,11 +1,11 @@
 //! `sec channels` — CRUD over the channel tree.
 //!
-//! Channels are colon-pathed handles (`channel:secretariat:dev`,
-//! `channel:dommage-corporel:paris-cohort`). When `--org <alias>` is
-//! passed, the channel lives inside that org's tree at
+//! Channels are colon-pathed handles (`secretariat:dev`,
+//! `dommage-corporel:paris-cohort`). When `--org <alias>` is passed, the
+//! channel lives inside that org's tree at
 //! `~/.secretariat/orgs/<alias>/channels/<segs>/`. Without `--org` it
-//! lives in the principal's personal tree at `~/.secretariat/channels/`.
-//! See `docs/decisions/2026-05-12-substrate-layout-v03.md`.
+//! lives in the principal's personal tree at
+//! `~/.secretariat/_self/channels/<segs>/`.
 
 use std::path::PathBuf;
 
@@ -97,7 +97,7 @@ pub struct ContractSetArgs {
 
 #[derive(Parser, Debug)]
 pub struct CreateArgs {
-    /// Channel handle (`channel:foo:bar`).
+    /// Channel handle (`foo:bar`).
     handle: String,
     /// Org alias the channel lives in. Omit for personal channels.
     #[arg(long)]
@@ -116,7 +116,7 @@ pub struct ListArgs {
     #[arg(long)]
     org: Option<String>,
     /// Only show channels whose handle starts with this prefix
-    /// (e.g. `channel:product`).
+    /// (e.g. `product`).
     #[arg(long)]
     prefix: Option<String>,
     /// Flat output instead of the default grouped/tree render.
@@ -358,7 +358,7 @@ fn run_list(
             .as_deref()
             .map(|o| format!("`{o}`"))
             .unwrap_or_else(|| "(personal)".to_string());
-        println!("(no channels in {scope} — create one with `sec channels create channel:<name>`)");
+        println!("(no channels in {scope} — create one with `sec channels create <handle>`)");
         return Ok(());
     }
     if args.flat {
@@ -391,20 +391,18 @@ fn print_flat_row(s: &secretariat_core::application::ChannelSummary) {
     );
 }
 
-/// Group channels by their top segment after `channel:` and render as a
-/// shallow tree. Channels with a single segment after `channel:` (e.g.
-/// `channel:general`) land in an `(unprefixed)` bucket.
+/// Group channels by their top segment and render as a shallow tree.
+/// Single-segment handles (e.g. `general`) land in a `(top-level)`
+/// bucket; multi-segment handles (e.g. `com:blog`) group under their
+/// first segment.
 fn print_grouped(summaries: &[secretariat_core::application::ChannelSummary]) {
     use std::collections::BTreeMap;
     let mut groups: BTreeMap<String, Vec<&secretariat_core::application::ChannelSummary>> =
         BTreeMap::new();
     for s in summaries {
-        let segs: Vec<&str> = s.handle.split(':').collect();
-        // `channel:<top>:<rest>...`. Top group key:
-        let group = if segs.len() <= 2 {
-            "(unprefixed)".to_string()
-        } else {
-            segs[1].to_string()
+        let group = match s.handle.split_once(':') {
+            Some((top, _)) => top.to_string(),
+            None => "(top-level)".to_string(),
         };
         groups.entry(group).or_default().push(s);
     }
