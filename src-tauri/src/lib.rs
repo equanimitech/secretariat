@@ -354,6 +354,22 @@ pub fn run() {
                 }
             }
 
+            // macOS: "Open With" / `open -a Secretariat path/to/file.md` →
+            // append paths to PendingOpens and notify the frontend. The event
+            // fires before the webview's listener is registered, so the buffer
+            // bridges the gap.
+            RunEvent::Opened { urls } => {
+                use tauri::Emitter;
+                let pending = app_handle.state::<crate::markdown::pending::PendingOpens>();
+                for url in urls {
+                    if let Ok(path) = url.to_file_path() {
+                        log::info!("RunEvent::Opened received: {}", path.display());
+                        pending.push(path);
+                    }
+                }
+                let _ = app_handle.emit("markdown://pending-opens-added", ());
+            }
+
             // Cleanup on actual exit (Cmd+Q, menu Quit, or window close on non-macOS).
             // RunEvent::Exit fires reliably before the process exits, unlike ExitRequested
             // which doesn't fire for Cmd+Q on macOS (tauri-apps/tauri#9198).
