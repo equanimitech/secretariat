@@ -11,13 +11,17 @@ interface CrepeEditorProps {
 export function CrepeEditor({ initialValue, onChange }: CrepeEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null)
   const onChangeRef = useRef(onChange)
-  onChangeRef.current = onChange
+  const initialValueRef = useRef(initialValue)
+
+  useEffect(() => {
+    onChangeRef.current = onChange
+  })
 
   useEffect(() => {
     if (!hostRef.current) return
     const crepe = new Crepe({
       root: hostRef.current,
-      defaultValue: initialValue,
+      defaultValue: initialValueRef.current,
     })
     crepe.on(api => {
       api.markdownUpdated((_ctx, markdown) => {
@@ -28,7 +32,6 @@ export function CrepeEditor({ initialValue, onChange }: CrepeEditorProps) {
     return () => {
       void crepe.destroy()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   return <div ref={hostRef} className="prose-host h-full overflow-auto" />
