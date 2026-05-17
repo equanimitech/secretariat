@@ -11,6 +11,7 @@ pub mod delivery_policy;
 pub mod inbox_actions;
 pub mod inbox_ops;
 pub mod invite_ops;
+pub mod launch_channel;
 pub mod process_correspondence_claims;
 pub mod review_queue;
 pub mod send_envelope;
@@ -46,6 +47,7 @@ pub use invite_ops::{
     claim_invite, create_invite, view_invite, InviteClaimed, InviteCreated, InviteError,
     InviteView, DEFAULT_INVITE_TTL_HOURS,
 };
+pub use launch_channel::{launch_channel, LaunchChannelError};
 pub use process_correspondence_claims::{
     process_correspondence_claims, ClaimProcessError, ClaimProcessOutcome, CorrespondenceClaim,
     SkipReason,

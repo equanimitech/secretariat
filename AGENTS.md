@@ -24,6 +24,17 @@ desktop app).
   daemon + MCP wiring; principal-facing review/compose happens via Claude
   (MCP) or CLI.
 
+- **`sec launch`** — opens Claude Code (or any configured cognition CLI)
+  with `cwd` set to a channel's bound directory. The channel's
+  `contract.local.md` carries an optional `root_path: <abs-path>`
+  override; when set, the channel-dir resolves to that host path
+  (typically a git repo). Cognition substrate is config-driven via
+  `[cognition] launch_command / launch_args / launch_env` in
+  `preferences.toml` — LM Studio integration is a config block, no
+  fork. See `docs/developer/launch.md`. The headless `dispatch`
+  counterpart and the `sec bind` writer ship in a separate slice
+  (`docs/pitches/2026-05-13-launch-dispatch-root-path.md`).
+
   Sidecars are staged into `src-tauri/binaries/` by
   `src-tauri/scripts/build-sidecars.sh`, which Tauri's `beforeBuildCommand`
   runs automatically during `pnpm tauri:dev` / `pnpm tauri:build`. For a

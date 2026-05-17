@@ -12,6 +12,7 @@
 //! `preferences.toml`, and delete the legacy files. After migration the
 //! legacy files are gone; callers should use this module exclusively.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -69,7 +70,7 @@ pub enum CognitionProvider {
     OpenaiCompat,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CognitionPrefs {
     /// Selected substrate. Defaults to `anthropic` when missing.
     #[serde(default)]
@@ -93,6 +94,54 @@ pub struct CognitionPrefs {
     /// are not applied. Defaults to 0.7 when missing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub route_threshold: Option<f32>,
+
+    /// Command resolved by `sec launch` to start the principal's chosen
+    /// interactive cognition CLI in a channel-bound cwd. Defaults to
+    /// `claude` (Claude Code). Override to swap substrates without
+    /// touching the use case — e.g. a wrapper script that points
+    /// `claude` at a local LM Studio endpoint, or a different CLI
+    /// entirely.
+    #[serde(default = "default_launch_command")]
+    pub launch_command: String,
+
+    /// Args appended after `launch_command`. Examples:
+    /// - `["--model", "openai/gpt-oss-20b"]` for LM Studio routing.
+    /// - `["--dangerously-skip-permissions"]` for sandboxed sub-orgs.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub launch_args: Vec<String>,
+
+    /// Env vars layered on top of the parent process env at launch
+    /// time. Canonical use: point Claude Code at an OpenAI-compatible
+    /// endpoint hosted by LM Studio:
+    ///
+    /// ```toml
+    /// [cognition.launch_env]
+    /// ANTHROPIC_BASE_URL = "http://localhost:1234"
+    /// ANTHROPIC_AUTH_TOKEN = "lmstudio"
+    /// ```
+    ///
+    /// See `docs/developer/launch.md` for the full LM Studio recipe.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub launch_env: BTreeMap<String, String>,
+}
+
+fn default_launch_command() -> String {
+    "claude".to_string()
+}
+
+impl Default for CognitionPrefs {
+    fn default() -> Self {
+        Self {
+            provider: CognitionProvider::default(),
+            api_key: None,
+            api_base: None,
+            model: None,
+            route_threshold: None,
+            launch_command: default_launch_command(),
+            launch_args: Vec::new(),
+            launch_env: BTreeMap::new(),
+        }
+    }
 }
 
 impl CognitionPrefs {
@@ -267,6 +316,46 @@ mod tests {
         let d = dir();
         let p = Preferences::load(&d.path().join("preferences.toml")).unwrap();
         assert_eq!(p, Preferences::default());
+    }
+
+    #[test]
+    fn launch_command_defaults_to_claude() {
+        let p = Preferences::default();
+        assert_eq!(p.cognition.launch_command, "claude");
+        assert!(p.cognition.launch_args.is_empty());
+        assert!(p.cognition.launch_env.is_empty());
+    }
+
+    #[test]
+    fn launch_fields_round_trip_via_toml() {
+        let d = dir();
+        let path = d.path().join("preferences.toml");
+        let mut prefs = Preferences::default();
+        prefs.cognition.launch_command = "/usr/local/bin/claude".into();
+        prefs.cognition.launch_args = vec!["--model".into(), "openai/gpt-oss-20b".into()];
+        prefs
+            .cognition
+            .launch_env
+            .insert("ANTHROPIC_BASE_URL".into(), "http://localhost:1234".into());
+        prefs
+            .cognition
+            .launch_env
+            .insert("ANTHROPIC_AUTH_TOKEN".into(), "lmstudio".into());
+        prefs.save(&path).unwrap();
+        let loaded = Preferences::load(&path).unwrap();
+        assert_eq!(loaded, prefs);
+    }
+
+    #[test]
+    fn omitted_launch_fields_deserialize_to_defaults() {
+        let d = dir();
+        let path = d.path().join("preferences.toml");
+        // Older preferences.toml with no [cognition] launch_* keys.
+        std::fs::write(&path, "[cognition]\napi_key = \"sk-test\"\n").unwrap();
+        let loaded = Preferences::load(&path).unwrap();
+        assert_eq!(loaded.cognition.launch_command, "claude");
+        assert!(loaded.cognition.launch_args.is_empty());
+        assert!(loaded.cognition.launch_env.is_empty());
     }
 
     #[test]

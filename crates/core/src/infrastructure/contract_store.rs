@@ -40,7 +40,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::domain::{ChannelContract, QueueHandle, TrustGate};
+use crate::domain::{ChannelBinding, ChannelContract, QueueHandle, TrustGate};
 
 use super::channel_def_store::channel_dir;
 
@@ -143,6 +143,15 @@ pub fn save_stub_if_absent(path: &Path) -> Result<bool, ContractStoreError> {
 pub fn load_contract(
     path: &Path,
 ) -> Result<Option<(ChannelContract, String)>, ContractStoreError> {
+    Ok(load_contract_with_binding(path)?.map(|(c, _b, body)| (c, body)))
+}
+
+/// Load a contract along with its [`ChannelBinding`]. The binding is
+/// receiver-private metadata living in the same frontmatter — only the
+/// parser separates the two value objects.
+pub fn load_contract_with_binding(
+    path: &Path,
+) -> Result<Option<(ChannelContract, ChannelBinding, String)>, ContractStoreError> {
     if !path.exists() {
         return Ok(None);
     }
@@ -156,8 +165,8 @@ pub fn load_contract(
             message: "missing `---` frontmatter delimiters".into(),
         }
     })?;
-    let contract = parse_frontmatter(yaml_block, path)?;
-    Ok(Some((contract, body.to_string())))
+    let (contract, binding) = parse_frontmatter_full(yaml_block, path)?;
+    Ok(Some((contract, binding, body.to_string())))
 }
 
 // -- on-disk shape ------------------------------------------------------------
@@ -170,20 +179,36 @@ struct ContractFile {
     cadence_floor_minutes: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     min_trust: Option<String>,
+    /// Receiver-private binding. Leaf-only — never inherited via the
+    /// accumulate merge. Sibling to `ChannelContract` in the on-disk
+    /// shape; lifted into [`ChannelBinding`] by the parser.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    root_path: Option<PathBuf>,
 }
 
 fn emit_frontmatter(contract: &ChannelContract) -> Result<String, String> {
+    emit_frontmatter_full(contract, &ChannelBinding::empty())
+}
+
+fn emit_frontmatter_full(
+    contract: &ChannelContract,
+    binding: &ChannelBinding,
+) -> Result<String, String> {
     let file = ContractFile {
         ty: CONTRACT_TYPE.to_string(),
         cadence_floor_minutes: contract.cadence_floor_minutes,
         min_trust: contract.min_trust.map(|g| g.as_str().to_string()),
+        root_path: binding.root_path.clone(),
     };
     serde_yaml::to_string(&file).map_err(|e| e.to_string())
 }
 
-fn parse_frontmatter(yaml: &str, path: &Path) -> Result<ChannelContract, ContractStoreError> {
+fn parse_frontmatter_full(
+    yaml: &str,
+    path: &Path,
+) -> Result<(ChannelContract, ChannelBinding), ContractStoreError> {
     if yaml.trim().is_empty() {
-        return Ok(ChannelContract::empty());
+        return Ok((ChannelContract::empty(), ChannelBinding::empty()));
     }
     let file: ContractFile = serde_yaml::from_str(yaml).map_err(|e| {
         ContractStoreError::MalformedFrontmatter {
@@ -200,10 +225,14 @@ fn parse_frontmatter(yaml: &str, path: &Path) -> Result<ChannelContract, Contrac
             }
         })?),
     };
-    Ok(ChannelContract {
+    let contract = ChannelContract {
         cadence_floor_minutes: file.cadence_floor_minutes,
         min_trust,
-    })
+    };
+    let binding = ChannelBinding {
+        root_path: file.root_path,
+    };
+    Ok((contract, binding))
 }
 
 /// Split a `---\n...\n---\n<body>` document. Returns `None` if the file
@@ -328,5 +357,31 @@ mod tests {
         std::fs::write(&path, "no frontmatter at all\n").unwrap();
         let r = load_contract(&path);
         assert!(matches!(r, Err(ContractStoreError::MalformedFrontmatter { .. })));
+    }
+
+    #[test]
+    fn parses_root_path_into_binding() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join(CONTRACT_FILENAME);
+        std::fs::write(
+            &path,
+            "---\ncadence_floor_minutes: 15\nroot_path: /Users/rafa/Developer/secretariat\n---\nbody\n",
+        )
+        .unwrap();
+        let (_, binding, body) = load_contract_with_binding(&path).unwrap().unwrap();
+        assert_eq!(
+            binding.root_path.as_deref(),
+            Some(std::path::Path::new("/Users/rafa/Developer/secretariat"))
+        );
+        assert!(body.contains("body"));
+    }
+
+    #[test]
+    fn binding_empty_when_root_path_missing() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join(CONTRACT_FILENAME);
+        std::fs::write(&path, "---\ncadence_floor_minutes: 15\n---\n").unwrap();
+        let (_, binding, _) = load_contract_with_binding(&path).unwrap().unwrap();
+        assert!(binding.is_empty());
     }
 }

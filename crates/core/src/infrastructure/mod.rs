@@ -1,6 +1,7 @@
 //! Infrastructure — concrete adapters. Populated incrementally per the
 //! implementation sequencing in the plan.
 
+pub mod binding_store;
 pub mod biometric;
 pub mod channel_def_store;
 pub mod cognition;
@@ -31,9 +32,10 @@ pub use channel_def_store::{
     channel_def_path, channel_dir, delete_channel as delete_channel_tree, load_channel_def,
     save_channel_def, ChannelDefStoreError, CHANNEL_DEF_FILENAME,
 };
+pub use binding_store::{load_channel_binding, resolve_channel_path, BindingStoreError};
 pub use contract_store::{
-    channel_contract_path, load_contract, org_contract_path, save_contract, save_stub_if_absent,
-    ContractStoreError, CONTRACT_FILENAME,
+    channel_contract_path, load_contract, load_contract_with_binding, org_contract_path,
+    save_contract, save_stub_if_absent, ContractStoreError, CONTRACT_FILENAME,
 };
 pub use keys::{generate_keypair, load_signing_key, save_signing_key, write_did_document, KeyError, KeyPaths};
 pub use markdown::{embed_stamp, parse_document, MarkdownError, ParsedDocument};
@@ -41,6 +43,7 @@ pub use org_store::{
     delete_org as delete_org_tree, list_org_dirs, load_org, org_channels_root, org_dir,
     org_metadata_path, save_org, OrgStoreError, ORG_METADATA_FILENAME,
 };
+pub use cognition::PrefsLauncher;
 pub use preferences::{
     load_or_migrate as load_or_migrate_preferences, CognitionPrefs, CognitionProvider,
     CompositionPrefs, DeliveryPrefs, Preferences, PreferencesError,

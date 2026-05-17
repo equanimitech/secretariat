@@ -5,6 +5,7 @@
 
 mod acts;
 mod attested_document;
+mod channel_binding;
 mod channel_contract;
 mod channel_def;
 mod contact;
@@ -18,6 +19,7 @@ mod stamp;
 
 pub use acts::{EnvelopeDepth, EnvelopeUrgency, StampAct};
 pub use attested_document::{canonical_body_hash, AttestedDocument, DocumentInvariantError};
+pub use channel_binding::ChannelBinding;
 pub use channel_contract::{ChannelContract, TrustGate};
 pub use channel_def::ChannelDef;
 pub use contact::{

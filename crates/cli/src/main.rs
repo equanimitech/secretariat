@@ -50,6 +50,9 @@ enum Cmd {
     /// Create or claim invite tokens against the relay.
     Invite(commands::invite::Args),
 
+    /// Open Claude Code (or the configured cognition CLI) in a channel-bound cwd.
+    Launch(commands::launch::Args),
+
     /// Wire `sec-mcp` into Claude Desktop / Claude Code (no JSON editing).
     Mcp(commands::mcp::Args),
 
@@ -72,6 +75,7 @@ fn main() -> Result<()> {
         Cmd::Daemon(a) => commands::daemon::run(a),
         Cmd::Read(a) => commands::read::run(a),
         Cmd::Invite(a) => commands::invite::run(a),
+        Cmd::Launch(a) => commands::launch::run(a),
         Cmd::Mcp(a) => commands::mcp::run(a),
         Cmd::Profile(a) => commands::profile::run(a),
     }

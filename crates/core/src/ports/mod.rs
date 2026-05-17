@@ -132,3 +132,43 @@ pub trait CognitionPort: Send + Sync {
         existing_queues: &[QueueHandle],
     ) -> impl std::future::Future<Output = Result<RouteSuggestion, CognitionError>> + Send;
 }
+
+// -- CognitionLauncher --------------------------------------------------------
+//
+// Plans how to start the principal's chosen interactive cognition CLI
+// inside a channel-bound cwd. Pure planning — the use case returns the
+// plan and the host (CLI exec, future MCP `launch_channel`) decides
+// whether to replace the process, spawn-detach, or hand it to a
+// terminal. Substrate-agnostic by design: today's only adapter wraps
+// Claude Code (`claude`), but the same shape covers a future LM Studio
+// CLI, Ollama wrapper, or BYOK runner without touching application
+// code. See `docs/developer/launch.md`.
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LaunchPlan {
+    /// Executable to start, resolved against `$PATH` or an absolute path.
+    pub command: String,
+    /// Args passed after `command`. Concatenated from the adapter's
+    /// base args and any user-configured `launch_args`.
+    pub args: Vec<String>,
+    /// Working directory for the launched process — typically the
+    /// channel-dir, possibly remapped via [`crate::domain::ChannelBinding`].
+    pub cwd: std::path::PathBuf,
+    /// Env overrides layered on top of the parent process env. Empty
+    /// when running against the principal's default cognition (e.g.
+    /// Claude API). Populated when routing to LM Studio or another
+    /// OpenAI-compatible endpoint via `ANTHROPIC_BASE_URL` etc.
+    pub env: std::collections::BTreeMap<String, String>,
+}
+
+#[derive(Debug, Error)]
+pub enum LauncherError {
+    #[error("launch_command is empty in preferences")]
+    EmptyCommand,
+}
+
+pub trait CognitionLauncher: Send + Sync {
+    /// Build a [`LaunchPlan`] describing how to start an interactive
+    /// session rooted at `cwd`. Pure — no process is spawned here.
+    fn plan_launch(&self, cwd: &std::path::Path) -> Result<LaunchPlan, LauncherError>;
+}
