@@ -9,6 +9,8 @@ mod commands;
 mod types;
 mod utils;
 
+#[cfg(target_os = "macos")]
+use tauri::ActivationPolicy;
 use tauri::{Manager, RunEvent, WindowEvent};
 
 // Re-export only what's needed externally
@@ -31,9 +33,13 @@ pub fn run() {
     #[cfg(desktop)]
     {
         app_builder = app_builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            // In Accessory mode the app has no Dock icon, so re-launching the .app
+            // (or `open -a Secretariat`) is the canonical way for the principal
+            // to surface the window. Show + unminimize + focus, in that order.
             if let Some(window) = app.get_webview_window("main") {
-                let _ = window.set_focus();
+                let _ = window.show();
                 let _ = window.unminimize();
+                let _ = window.set_focus();
             }
         }));
     }
@@ -108,6 +114,16 @@ pub fn run() {
                 "App handle initialized for package: {}",
                 app.package_info().name
             );
+
+            // Run as a background "accessory" app on macOS — no Dock icon, no
+            // Cmd+Tab entry. The principal opens the window deliberately
+            // (re-launch the .app, deep link, or quick-pane shortcut); the
+            // rest of the time Secretariat runs like a daemon. Mirrors the
+            // docker-daemon model the principal wants.
+            #[cfg(target_os = "macos")]
+            {
+                app.set_activation_policy(ActivationPolicy::Accessory);
+            }
 
             // Set up global shortcut plugin (without any shortcuts - we register them separately)
             #[cfg(desktop)]

@@ -1785,10 +1785,12 @@ impl ServerHandler for SecretariatServer {
 /// stamp ceremony, onboarding — belong in MCP prompts, not here. This block
 /// is just the framing the model needs to call any tool correctly.
 const SERVER_INSTRUCTIONS: &str = "\
-Secretariat is cryptographically attested AI-mediated correspondence. The \
-principal is the human; you are the scribe. The principal stamps; you never \
-do. Drafts live under `~/.secretariat/outbox/<recipient-did>/` and become \
-sent envelopes only after the principal authorizes the stamp via Touch ID.
+Secretariat is ambient context for AI, stamped by humans. You live in the \
+context stream — read and draft continuously; the principal only enters to \
+stamp the moments that count. You are the scribe; the principal stamps, you \
+never do. Drafts live under `~/.secretariat/outbox/<recipient-did>/` and \
+become sent envelopes only after the principal authorizes the stamp via \
+Touch ID.
 
 Stamp ceremony (mandatory before calling `stamp`):
   1. Call `read` on the same `file_path`.
