@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
+import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { commands } from '@/lib/tauri-bindings'
 import {
   parseMarkdown,
@@ -54,6 +55,9 @@ export function MarkdownWindow({ filePath }: MarkdownWindowProps) {
 
   useEffect(() => {
     document.title = title
+    void getCurrentWebviewWindow()
+      .setTitle(title)
+      .catch(err => console.warn('setTitle failed', err))
   }, [title])
 
   const scheduleSave = useCallback(
