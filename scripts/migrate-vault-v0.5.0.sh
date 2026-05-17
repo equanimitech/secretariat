@@ -51,6 +51,11 @@ count_envelopes() {
 PRE_COUNT="$(count_envelopes "$VAULT")"
 echo "[migrate] pre-migration envelope count: $PRE_COUNT"
 
+# Sweep macOS .DS_Store noise so the rmdir-on-empty checks at the end
+# don't false-positive on substrate-private dirs.
+echo "[migrate] sweeping .DS_Store…"
+find "$VAULT" -name '.DS_Store' -delete 2>/dev/null || true
+
 # ----- target layout --------------------------------------------------------
 SELF_ROOT="$VAULT/_self"
 SELF_CHANNELS="$SELF_ROOT/channels"
