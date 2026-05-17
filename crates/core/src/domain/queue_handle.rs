@@ -5,18 +5,22 @@
 //! owner DID picks whose disk. `owner == self_did` keeps the envelope
 //! local; otherwise it routes to the owner's relay.
 //!
-//! Grammar (v0.3, nested): `^<seg>(:<seg>)+$` where each `<seg>` matches
-//! `[a-z][a-z0-9-]*`. Tree depth = colon depth.
+//! Grammar (v0.5, channel-only): `^<seg>(:<seg>)*$` where each `<seg>`
+//! matches `[a-z_][a-z0-9_-]*`. Tree depth = colon depth.
+//!
+//! Single-segment handles are valid (v0.5+) — colons signal nesting,
+//! they're not required.
 //!
 //! Examples:
-//! - `inbox:triage` — flat local capture queue (v0.2 style, still valid)
-//! - `area:writing`, `project:secretariat` — flat principal-defined
-//! - `channel:dommage-corporel:paris-cohort` — nested channel under an
-//!   org's tree (v0.3)
-//! - `channel:secretariat:dev:_meta` — meta-queue colocated with a
-//!   channel (leading-underscore segments are substrate-private)
+//! - `triage` — single-segment handle, e.g. `_self/channels/triage/`
+//! - `articles` — single-segment under any root
+//! - `dommage-corporel:paris-cohort` — nested channel under an
+//!   org's tree
 //!
-//! Namespaces are **free-form** — the parser validates shape only.
+//! The `channel:` / `inbox:` / `area:` / `project:` prefixes from
+//! v0.2 / v0.3 are gone — handles no longer carry namespace info.
+//! The root (principal vs org) is carried by the `Recipient`, not
+//! the handle (see the namespace-collapse pitch, 2026-05-17).
 
 use std::fmt;
 
@@ -27,13 +31,9 @@ use thiserror::Error;
 pub enum QueueHandleError {
     #[error("queue handle is empty")]
     Empty,
-    #[error("queue handle missing `:` separator (expected `<namespace>:<segment>[...]`)")]
-    MissingSeparator,
-    #[error("queue handle has empty namespace before `:`")]
-    EmptyNamespace,
     #[error("queue handle has empty segment between `:` separators")]
     EmptySegment,
-    #[error("queue handle segment must start with a lowercase letter and contain only `[a-z0-9-]`")]
+    #[error("queue handle segment must start with a lowercase letter or `_` and contain only `[a-z0-9_-]`")]
     InvalidChars,
     #[error("queue handle exceeds 64-byte length")]
     TooLong,
@@ -55,22 +55,10 @@ impl QueueHandle {
         if s.len() > MAX_LEN {
             return Err(QueueHandleError::TooLong);
         }
-        if !s.contains(':') {
-            return Err(QueueHandleError::MissingSeparator);
-        }
 
-        let segments: Vec<&str> = s.split(':').collect();
-        if segments.len() < 2 {
-            return Err(QueueHandleError::MissingSeparator);
-        }
-
-        for (i, seg) in segments.iter().enumerate() {
+        for seg in s.split(':') {
             if seg.is_empty() {
-                return Err(if i == 0 {
-                    QueueHandleError::EmptyNamespace
-                } else {
-                    QueueHandleError::EmptySegment
-                });
+                return Err(QueueHandleError::EmptySegment);
             }
             validate_segment(seg)?;
         }
@@ -82,31 +70,35 @@ impl QueueHandle {
         &self.0
     }
 
-    /// First segment — `inbox` for `inbox:triage`,
-    /// `channel` for `channel:dommage-corporel:paris-cohort`.
+    /// First segment of the handle.
+    ///
+    /// LEGACY: pre-v0.5 callers used this to branch on `"channel"` vs
+    /// flat-queue namespaces. v0.5+ the first segment carries no special
+    /// meaning. Prefer `segments()` and the `Recipient` root.
     pub fn top_namespace(&self) -> &str {
         self.0.split(':').next().unwrap()
     }
 
-    /// All segments in order (top namespace first).
+    /// All segments in order.
     pub fn segments(&self) -> Vec<&str> {
         self.0.split(':').collect()
     }
 
-    /// Backward-compat alias for `top_namespace()`.
+    /// LEGACY alias for `top_namespace()`.
     pub fn namespace(&self) -> &str {
         self.top_namespace()
     }
 
-    /// Everything after the first colon — `triage` for `inbox:triage`,
-    /// `dommage-corporel:paris-cohort` for the nested example.
+    /// Everything after the first colon, or `""` for a single-segment handle.
+    ///
+    /// LEGACY: only meaningful when paired with `top_namespace()` for old
+    /// flat-queue path layouts. v0.5+ callers should iterate `segments()`.
     pub fn slug(&self) -> &str {
-        self.0.split_once(':').map(|(_, s)| s).unwrap()
+        self.0.split_once(':').map(|(_, s)| s).unwrap_or("")
     }
 
-    /// Path-safe form: `inbox:triage` → `inbox/triage`,
-    /// `channel:dommage-corporel:paris-cohort` →
-    /// `channel/dommage-corporel/paris-cohort`.
+    /// Path-safe form: `triage` → `triage`,
+    /// `dommage-corporel:paris-cohort` → `dommage-corporel/paris-cohort`.
     pub fn as_path_segment(&self) -> String {
         self.0.replace(':', "/")
     }
@@ -216,18 +208,30 @@ mod tests {
     }
 
     #[test]
-    fn rejects_missing_colon() {
-        assert!(matches!(
-            QueueHandle::parse("inbox-triage"),
-            Err(QueueHandleError::MissingSeparator)
-        ));
+    fn accepts_single_segment() {
+        // v0.5+: single-segment handles are valid (channel-only world, no
+        // namespace prefix required). `triage`, `articles`, `journals` all
+        // resolve as direct children of `<root>/channels/`.
+        let h = QueueHandle::parse("triage").unwrap();
+        assert_eq!(h.as_str(), "triage");
+        assert_eq!(h.segments(), vec!["triage"]);
+        assert_eq!(h.as_path_segment(), "triage");
+        assert_eq!(h.slug(), ""); // legacy method: empty for single-segment
     }
 
     #[test]
-    fn rejects_empty_namespace() {
+    fn accepts_handle_without_separator() {
+        // A bare identifier is a legal handle now — `inbox-triage` parses
+        // as a single segment, not as a pre-colon namespace.
+        assert!(QueueHandle::parse("inbox-triage").is_ok());
+    }
+
+    #[test]
+    fn rejects_empty_leading_segment() {
+        // A leading `:` produces an empty first segment, which is invalid.
         assert!(matches!(
             QueueHandle::parse(":triage"),
-            Err(QueueHandleError::EmptyNamespace)
+            Err(QueueHandleError::EmptySegment)
         ));
     }
 
@@ -330,7 +334,8 @@ mod tests {
 
     #[test]
     fn serde_rejects_malformed_string() {
-        let r: Result<QueueHandle, _> = serde_json::from_str("\"no-colon-here\"");
+        // Uppercase is structurally invalid under any grammar version.
+        let r: Result<QueueHandle, _> = serde_json::from_str("\"NotAValidHandle\"");
         assert!(r.is_err());
     }
 }
