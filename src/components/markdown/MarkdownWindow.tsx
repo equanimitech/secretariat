@@ -3,6 +3,13 @@ import { toast } from 'sonner'
 import { Stamp } from 'lucide-react'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { Button } from '@/components/ui/button'
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarHeader,
+  SidebarInset,
+  SidebarProvider,
+} from '@/components/ui/sidebar'
 import { commands } from '@/lib/tauri-bindings'
 import {
   parseMarkdown,
@@ -146,32 +153,43 @@ export function MarkdownWindow({ filePath }: MarkdownWindowProps) {
   }
 
   return (
-    <div className="bg-background text-foreground flex h-screen flex-col">
-      <MarkdownTitlebar title={title} saving={saving} />
-      <div className="flex-1 overflow-y-auto">
-        <FrontmatterPanel
-          frontmatter={frontmatter}
-          onChange={next => {
-            setFrontmatter(next)
-            scheduleSave(next, body)
-          }}
-        />
-        <main>
-          <CrepeEditor
-            initialValue={body}
+    <SidebarProvider defaultOpen={false} className="h-screen min-h-0">
+      <SidebarInset className="bg-background text-foreground flex h-screen flex-col">
+        <MarkdownTitlebar title={title} saving={saving} filePath={filePath} />
+        <div className="flex-1 overflow-y-auto">
+          <main>
+            <CrepeEditor
+              initialValue={body}
+              onChange={next => {
+                setBody(next)
+                scheduleSave(frontmatter, next)
+              }}
+            />
+          </main>
+          <footer className="border-border flex justify-center border-t px-6 py-8">
+            <Button size="lg" onClick={onStamp} disabled={stamping || saving}>
+              <Stamp size={16} className="mr-2" />
+              {stamping ? 'Stamping…' : 'Stamp this envelope'}
+            </Button>
+          </footer>
+        </div>
+      </SidebarInset>
+      <Sidebar side="right" collapsible="offcanvas">
+        <SidebarHeader>
+          <h2 className="text-muted-foreground px-3 py-2 text-xs font-medium uppercase tracking-wider">
+            Frontmatter
+          </h2>
+        </SidebarHeader>
+        <SidebarContent>
+          <FrontmatterPanel
+            frontmatter={frontmatter}
             onChange={next => {
-              setBody(next)
-              scheduleSave(frontmatter, next)
+              setFrontmatter(next)
+              scheduleSave(next, body)
             }}
           />
-        </main>
-        <footer className="border-border flex justify-center border-t px-6 py-8">
-          <Button size="lg" onClick={onStamp} disabled={stamping || saving}>
-            <Stamp size={16} className="mr-2" />
-            {stamping ? 'Stamping…' : 'Stamp this envelope'}
-          </Button>
-        </footer>
-      </div>
-    </div>
+        </SidebarContent>
+      </Sidebar>
+    </SidebarProvider>
   )
 }

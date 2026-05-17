@@ -73,6 +73,8 @@ pub async fn open_markdown_window(app: AppHandle, path: String) -> Result<String
         .inner_size(1100.0, 820.0)
         .min_inner_size(560.0, 420.0)
         .resizable(true)
+        // Markdown windows accept no file drops — body is the only content.
+        .disable_drag_drop_handler()
         .build()
         .map_err(|e| e.to_string())?;
     Ok(label)
@@ -117,6 +119,8 @@ pub fn spawn_markdown_window<R: tauri::Runtime>(
         .inner_size(1100.0, 820.0)
         .min_inner_size(560.0, 420.0)
         .resizable(true)
+        // Markdown windows accept no file drops — body is the only content.
+        .disable_drag_drop_handler()
         .build()
         .map_err(|e| e.to_string())?;
     log::info!("spawn_markdown_window: opened window {label} for {path_str}");

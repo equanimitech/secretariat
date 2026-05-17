@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Crepe } from '@milkdown/crepe'
+import { Crepe, CrepeFeature } from '@milkdown/crepe'
 import '@milkdown/crepe/theme/common/style.css'
 // Crepe ships paired stylesheets. We can't conditionally `import` CSS, so
 // pull both as URL refs and inject the one matching the active theme via
@@ -75,6 +75,20 @@ export function CrepeEditor({ initialValue, onChange }: CrepeEditorProps) {
     const crepe = new Crepe({
       root: host,
       defaultValue: initialValueRef.current,
+      // Envelopes are markdown text — no images, no media drops.
+      features: {
+        [CrepeFeature.ImageBlock]: false,
+      },
+      featureConfigs: {
+        // Keep the slash-menu inside BlockEdit but hide the per-block
+        // drag handle on the left — its drag interaction is glitchy in
+        // Crepe 7.x and isn't worth the visual noise for our use.
+        [CrepeFeature.BlockEdit]: {
+          blockHandle: {
+            shouldShow: () => false,
+          },
+        },
+      },
     })
 
     crepe
