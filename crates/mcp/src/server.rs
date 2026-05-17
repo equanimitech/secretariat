@@ -1011,10 +1011,11 @@ impl SecretariatServer {
             idempotent_hint = true,
             open_world_hint = false
         ),
-        description = "Archive an inbox envelope — move it out of the active \
-        inbox into `inbox/archived/`. Use during a review session when the \
-        principal says 'handled' / 'ignore' / 'done with this'. Files stay on \
-        disk for history; just out of the active queue. Idempotent."
+        description = "Archive an envelope — move it from its queue's \
+        `envelopes/` tree into the sibling `archived/` directory. Use during a \
+        review session when the principal says 'handled' / 'ignore' / 'done \
+        with this'. Files stay on disk for history; just out of the active \
+        queue. Idempotent."
     )]
     async fn archive(
         &self,

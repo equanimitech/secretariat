@@ -11,13 +11,20 @@ desktop app).
 
 ## What's here today
 
-- **CLI (`sec`)** — works end-to-end on macOS. `init` / `compose` / `stamp` /
-  `verify` / `list` / `daemon install` / `mcp install`. See
-  `docs/developer/secretariat-architecture.md`.
-- **MCP server (`sec-mcp`)** — built. Exposes `compose`, `stamp`, `read`,
-  `verify`, `list_outbox`, `list_inbox`, `list_contacts`, `add_contact`,
-  `invite_create`, `invite_claim`, `init`, `daemon_install`,
-  `daemon_status`. Source at `crates/mcp/`.
+- **CLI (`sec`)** — works end-to-end on macOS. Subcommands:
+  `init` / `profile` / `compose` / `capture` / `stamp` / `verify` / `read`
+  / `list` / `channels` / `orgs` / `invite` / `daemon` / `mcp` / `launch`
+  / `view`. See `docs/developer/secretariat-architecture.md`.
+- **MCP server (`sec-mcp`)** — built. Tools: `compose`, `capture`,
+  `list_channels`, `read_channel`, `stamp`, `archive`, `read`, `verify`,
+  `invite`, `accept_invite`, `create_org` / `list_orgs` / `delete_org`,
+  `create_channel` / `delete_channel`, `get_channel_contract` /
+  `set_channel_contract` / `resolve_channel_contract`, `get_org_contract`
+  / `set_org_contract`, `daemon_tick`, `daemon_status`. Resources:
+  `secretariat://contacts`, `secretariat://orgs`,
+  `secretariat://compositions`. `init` / `daemon_install` deliberately
+  not exposed — Tauri owns onboarding + daemon lifecycle; CLI handles
+  headless. Source at `crates/mcp/`.
 - **Tauri shell** — running. Bundles `sec` + `sec-mcp` as sidecars and on
   launch wires them silently (`sec mcp install`, `sec daemon install`).
   Per `project_mcp_is_primary_interface`, the app is tray + quick-pane +
@@ -53,10 +60,19 @@ These are non-negotiable. They override the template's defaults where they confl
    no `reqwest`, no `chrono::Utc::now()`. Time and randomness enter via
    parameters. Aggregates enforce invariants at construction.
 
-3. **AT-proto-lexicon-shaped records.** Every record type has a `$type`
-   discriminator (e.g. `tech.equanimi.secretariat.stamp`). Schemas are mirrored
-   under `lexicons/` — that directory is the source of truth for the on-wire
-   shape, even though it does not yet drive runtime validation.
+3. **AT-proto-lexicon-shaped records — `lexicons/` is the source of
+   truth, by practice.** Every record type has a `$type` discriminator
+   (e.g. `tech.equanimi.secretariat.stamp`). Schemas live under
+   `lexicons/` and are authoritative for the on-wire shape. The
+   authority is currently enforced by **workflow, not by codegen or
+   runtime validation**: when you change any record shape — add a
+   field, rename a field, change a grammar — the lexicon edit lands
+   in the **same commit** as the Rust change. Lexicon-first if you
+   can; Rust-then-lexicon-in-the-same-commit if you can't. A
+   record-shape PR without a corresponding `lexicons/` diff is a
+   stop-the-line event. Codegen + runtime validation are real
+   options later (when the lexicon is published, or when a second
+   implementation appears) — until then, the practice is the gate.
 
 4. **Three-layer trust model: signature mandatory, stamp selective,
    counter-stamp multi-party.** Updated 2026-05-12 for the v0.3 substrate

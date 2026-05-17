@@ -52,11 +52,10 @@ three-namespace tax forever.
 ### What's in scope
 
 - New layout (see Elements §1).
-- One-shot migration tool (`sec vault migrate` — idempotent, reads
-  current shape, writes new shape, dry-run by default).
 - `CaptureRoots` collapses to a single `vault_root` parameter; the use
   case resolves `root × handle → directory` via one rule.
-- `QueueHandle` grammar simplifies (Elements §3).
+- `QueueHandle` grammar simplifies (Elements §3). **No compatibility
+  shim** — three principals, one cutover, hard break.
 - `.org` → `org.md`, `profile.json` → `identity.md`, `contacts.json`
   → `contacts.md`, `cognition.json` → `cognition.md` (markdown +
   frontmatter for principal-editable; raw bytes for keys, machine-only
@@ -64,9 +63,47 @@ three-namespace tax forever.
 - `~/.secretariat/peers/` deleted (empty, dead).
 - `~/.secretariat/.tauri-{daemon,mcp}-binary-path` moved under
   `~/.secretariat/.runtime/` (operational, not principal-facing).
-- Migration of all existing user vaults (Rafa's own first, then
-  Marcelo's, Christophe's) coordinated as part of the v0.5.0
-  release — breaking change, gated on a clean upgrade path.
+- **Rafa's vault migration via one-shot hand-script.** A `migrate.sh`
+  in the repo root (or `scripts/migrate-vault-v0.5.0.sh`) — read the
+  mapping, run `mv` (NEVER `rm`) on every envelope, delete the script
+  after the cutover. No CLI verb, no reversibility, no dry-run UX.
+  Three principals: Marcelo + Christophe have **zero envelopes today**
+  → fresh install on v0.5.0 is safe for them specifically because
+  there's nothing to lose. The third wrote the code.
+
+  **Invariant: envelopes are never destroyed.** The script moves
+  envelopes; format/layout changes around them. This holds for every
+  future migration too — when a principal has envelopes, the migration
+  is `mv`-only on the envelope bodies, never `rm`, never nuke-and-
+  reinstall. The substrate's promise is sovereignty over
+  correspondence; breaking that promise once corrodes it forever.
+- **Pre-v0.3 surface cleanups** carried by the same slice (sediment
+  the new layout has no answer for; better to clear with the rename):
+  - `sec list peers` walks the now-deleted `peers/` dir — drop the
+    `Peers` target. `sec list {inbox,outbox}` overlaps the
+    channels surface — fold into `sec channels` or move under
+    `sec debug` (diagnostic only).
+  - MCP `compose` default `handle = "inbox:default"` is bilateral-
+    era. Make `handle` required, or default to `inbox` under `_self`
+    per the new grammar.
+  - MCP `capture` plumbs `legacy_cognition_config` +
+    `legacy_cadence` paths into `load_or_migrate_preferences`
+    (`server.rs:803-811`). Migration completes with v0.5.0; the
+    cleanup slice drops the shim.
+  - `commands/paths.rs::load_did` back-compat fallback for installs
+    that pre-date the `did` file. Drops in v0.6.0 cleanup window.
+  - MCP historic comments at `server.rs:995/1000/1075/1080/1135`
+    documenting removed tools — move to `CHANGELOG.md`, out of
+    the source file.
+- **Lexicons as source of truth — by practice** (Elements §7).
+  Today `lexicons/*.json` mirrors the wire shape but no one's been
+  required to update it alongside Rust changes. The collapse
+  renames half the surface; if the lexicon doesn't follow, drift
+  compounds. Resolution: a workflow rule in `AGENTS.md` + memory
+  ("edit the lexicon in the same commit as the record-shape
+  change"), not codegen or runtime validation. Cheap to enforce
+  while there's one author; promote to CI gate when contributor
+  count grows.
 
 ### What's out of scope
 
@@ -81,6 +118,16 @@ three-namespace tax forever.
 - Migrating to a single binary identity wrapper that includes the key
   (HSM, encrypted bundle). Keys stay loose binary at
   `_self/identity/key` for now; rotation/migration UX is its own wedge.
+- **`_meta` sibling queue** — explicitly dropped, not deferred. The
+  earlier "every channel auto-spawns a `<channel>:_meta`" pattern
+  ([[project_meta_channel_pattern]] — superseded 2026-05-17) is gone.
+  Structural artifacts (`channel.md` / `contract.md` /
+  `contract.local.md` / `template.md` / `CLAUDE.md` / `.claude/skills/`)
+  live as **files** in the channel-dir. Mutations to them flow as
+  `$type`-tagged envelopes (`tech.equanimi.secretariat.rosterUpdate`,
+  `…channelDef`, `…skillDrop`) in the channel's main `envelopes/`
+  stream. No sibling queue, no sub-queue, no resolved-cache directory.
+  See [[project_namespace_collapse_drops_meta]].
 
 ## Elements
 
@@ -171,10 +218,11 @@ Examples:
 - Old `channel:dommage-corporel:paris-cohort` → new handle
   `dommage-corporel:paris-cohort` under `orgs/themia.pro` root.
 
-Compatibility shim: the parser accepts the old `channel:` /
-`inbox:` / `area:` / `project:` prefix and strips it during the
-migration window (v0.5.0 → v0.6.0). Strips, doesn't error — lets old
-captures still resolve while the model unlearns the prefix.
+**No compatibility shim.** Three principals; Marcelo + Christophe
+have nothing yet; my own vault gets the hand-script. The parser
+hard-rejects the old `channel:` / `inbox:` / `area:` / `project:`
+prefix from v0.5.0 onward. The simpler grammar pays off
+immediately; the shim would have lived too long anyway.
 
 Wire URI grammar (per [[project_queue_uri_grammar]]):
 `did:web:themia.pro#dommage-corporel:paris-cohort`. The `channel:`
@@ -203,27 +251,33 @@ fn channel_dir(vault_root: &Path,
 `CaptureRoots { flat_queues, channel_tree }` → deleted. Everywhere it
 appears, replaced with `vault_root` + the resolver.
 
-### 5. `sec vault migrate`
+### 5. Hand-script `scripts/migrate-vault-v0.5.0.sh`
 
-CLI verb. Reads current shape, computes target layout, prints a
-dry-run by default. With `--apply`:
+Bash. Runs once against my own vault. Steps:
 
-1. Move `did`, `key`, `profile.json` into `_self/identity.md` +
-   `_self/identity/key`. Merge fields into frontmatter.
-2. Move `template.md`, `contacts.json`, `contracts/*` into `_self/`
-   tree. JSON→markdown conversion via existing serde models.
-3. Move `queues/inbox/triage/*` → `_self/channels/inbox/envelopes/`.
+1. `mv` `did`, `key`, `profile.json` data into `_self/identity.md` +
+   `_self/identity/key`. JSON→frontmatter via a small inline Python
+   one-liner (or `jq` + `printf`).
+2. `mv` `template.md`, `contacts.json`, `contracts/*` into `_self/`
+   tree. JSON→markdown for `contacts.json` → `contacts.md`.
+3. `mv` `queues/inbox/triage/*` → `_self/channels/inbox/envelopes/`.
    Same for `queues/area/<X>/` → `_self/channels/<X>/envelopes/`,
    `queues/project/<X>/` → `_self/channels/<X>/envelopes/`.
-4. Move top-level `channels/<X>/` → `_self/channels/<X>/`.
-5. Rename `<org>/.org` → `<org>/org.md` (JSON→frontmatter).
-6. Delete `peers/`. Move `logs/` → `.logs/`, `daemon.sock` etc. → `.runtime/`.
-7. Re-validate: walk the new tree, parse every `channel.md` and
-   `contract.local.md`, confirm no orphans.
+   **Every envelope is `mv`'d, never `rm`'d. Never `cp` + delete-
+   original either — `mv` keeps the file the same inode.**
+4. `mv` top-level `channels/<X>/` → `_self/channels/<X>/`.
+5. `mv` `<org>/.org` → `<org>/org.md` (JSON→frontmatter).
+6. `rmdir peers/` (verify empty first). `mv logs/` → `.logs/`,
+   `daemon.sock` etc. → `.runtime/`.
+7. Walk the new tree, confirm envelope count before == count after.
+   If mismatch, abort + restore from snapshot.
 
-Idempotent — running twice does nothing on the second pass.
-Reversible — emits a JSON log of every move; `sec vault migrate
---rollback <log>` undoes it.
+Pre-flight: `tar -czf ~/Documents/secretariat-snapshots/<date>-pre-collapse.tgz ~/.secretariat/`.
+That's the rollback. Delete the snapshot a week after cutover when
+the new vault has accumulated enough traffic to be trusted.
+
+After cutover: `rm scripts/migrate-vault-v0.5.0.sh`. One-shot, no
+maintenance.
 
 ### 6. MCP + CLI surface updates
 
@@ -232,27 +286,87 @@ operation lands on application + CLI + MCP + tests. The verbs
 themselves don't change much — what changes is what they receive:
 
 - `capture` (tool) — `queue` parameter accepts the new bare-handle
-  grammar; compatibility shim translates `inbox:triage` →
-  `triage` for the migration window.
-- `compose` (tool) — same compatibility shim on the recipient
-  handle.
+  grammar; no shim, old prefix is a hard parse error. Drop
+  `legacy_cognition_config` + `legacy_cadence` paths from the
+  preferences-migration call; the hand-script already converted
+  everything.
+- `compose` (tool) — same bare-handle grammar on the recipient.
+  Make `handle` REQUIRED (no `inbox:default` fallback); the
+  channel-first world has no sensible default recipient queue.
 - `list_channels` (tool) — walks the new tree; output unchanged.
 - `read_channel` (tool) — same.
 - `secretariat://orgs` (resource) — walks new tree; output unchanged.
 - `secretariat://contacts` (resource) — reads `contacts.md` instead
   of `contacts.json`.
+- `sec list` (CLI) — drop the `Peers` target (dir is gone). Fold
+  `inbox`/`outbox` under `sec channels` or `sec debug`; the bare
+  `sec list` verb retires.
+- Historic `// Note: …was a tool in 0.2.x…` blocks in `server.rs`
+  move to `CHANGELOG.md`. Source file carries current surface only.
 
-### 7. Migration coordination
+### 7. Lexicons as source of truth (practice, not codegen)
 
-Three principals to migrate:
-- **Rafa** — author, eats own dog food, migrates first.
-- **Marcelo** — manual coordination; one walkthrough call.
-- **Christophe** — DM with migration steps + offer to run remotely.
+Today `lexicons/*.json` is decorative — it mirrors the on-wire shape
+but no code path validates against it. The Rust types in
+`crates/core/src/domain/` are the de facto authority; lexicon drift
+is silent. The collapse renames half the surface (handle grammar,
+record paths, frontmatter fields); shipping that without locking
+lexicons as SoT compounds drift.
 
-Gate the v0.5.0 release behind all three successful migrations. The
-release notes are the migration guide; the `sec vault migrate
---dry-run` output is the trust-build (the principal sees every move
-before approving).
+Resolved as a **workflow rule**, not a technical mechanism. No
+codegen, no runtime validator — those are appetite traps the
+substrate doesn't need yet. Instead, the rule lands in `AGENTS.md`
+and Claude's memory:
+
+> When changing any record shape — adding a field, renaming a
+> field, changing a grammar — the lexicon under `lexicons/` is
+> edited in the **same commit** as the Rust change. Lexicon
+> first if you can; Rust-then-lexicon-in-same-commit if you can't.
+> Reviewing a record-shape PR that lacks a lexicon diff is a
+> stop-the-line event.
+
+Why a practice rule is enough right now:
+
+- One author, two pilot principals. Drift is detectable by eye on
+  every PR; we don't need a CI gate to catch it.
+- The lexicons aren't published yet (`AGENTS.md` "Out of scope")
+  so external consumers can't be broken by drift. The cost of a
+  miss is internal confusion, not a wire incompatibility.
+- Codegen + runtime validation are real options *later* — when
+  publishing the lexicon or when a second implementation (mobile,
+  web) appears. Today they'd be cost without payoff.
+
+Scope inside this pitch:
+
+- Every record-shape rename this slice does (`org.md`,
+  `identity.md`, `contacts.md`, new `QueueHandle` grammar, the
+  `_self` + `orgs/<alias>` envelope `to` shape) ships its lexicon
+  edit in the same PR.
+- Add the rule as a numbered Hard Rule in `AGENTS.md` so Claude
+  reads it on every session start.
+- Add a memory entry so the rule survives outside the repo too.
+
+Out of scope: build.rs codegen, runtime JSON-schema validation,
+CI conformance test, lexicon publication. All revisitable when
+the constraints change.
+
+### 8. Migration coordination
+
+Three principals; only one carries data.
+
+- **Rafa** — author, runs `scripts/migrate-vault-v0.5.0.sh` against
+  own vault after pre-flight snapshot. Verifies envelope count
+  matches before/after. Deletes script after one week of clean
+  operation on new layout.
+- **Marcelo** — zero envelopes today. Fresh install on v0.5.0:
+  `brew upgrade secretariat`, then `sec init` re-derives identity
+  from existing key (key file is untouched), nothing to migrate.
+- **Christophe** — same. Possibly hasn't installed yet, in which
+  case v0.5.0 is just "the install."
+
+No release gate. The hand-script proves itself on my own vault;
+Marcelo and Christophe never run it because there's nothing to
+migrate.
 
 ## Risks
 
@@ -261,27 +375,35 @@ before approving).
 - **Conversion-time data loss in `profile.json` → `identity.md`.**
   Frontmatter is structurally weaker than typed JSON; round-trip via
   serde-yaml → struct → serde-yaml is lossy if unknown keys
-  exist. Mitigation: migration tool preserves unknown frontmatter
-  keys verbatim by reading raw YAML then re-emitting.
-- **The compatibility shim becomes permanent.** Every migration
-  window I've shipped has lived twice as long as planned. Hard
-  deadline: v0.6.0 removes the prefix shim; CI fails if any
-  handle in test fixtures still uses the prefix.
-- **Idempotent migration that secretly isn't.** The `--apply`
-  step has to be exactly reversible. Spike: run migration, run
-  rollback, run migration again, diff the tree against the first
-  migration. If it differs, the migration isn't idempotent. Block
-  the slice on that test passing.
+  exist. Mitigation: hand-script preserves unknown keys verbatim by
+  reading raw JSON, emitting raw YAML, and never round-tripping
+  through a typed struct.
+- **Envelope loss during `mv`.** The substrate's prime directive
+  (`AGENTS.md` invariants; sovereignty rules) is that the principal
+  never loses correspondence. Mitigation: pre-flight `tar` snapshot
+  to `~/Documents/secretariat-snapshots/`; post-`mv` count match
+  check; abort + restore if mismatch. Hand-script never `rm`s an
+  envelope file — only `mv`. Same inode preserved.
 - **Nested channels collide with same-named flat queues during
   migration.** What if `queues/area/journals/` exists AND
   `channels/journals/` exists? Today they're separate; after the
   collapse they'd both want to be `_self/channels/journals/`.
-  Mitigation: migration tool detects collisions in dry-run and
-  refuses to apply until the principal chooses a rename.
-- **`QueueHandle::parse` already validates the old grammar across
-  hundreds of tests.** Test churn will be high. Mitigation: keep
-  the old grammar working under the shim; new tests assert the new
-  grammar; old tests stay green until the v0.6.0 cleanup slice.
+  Mitigation: hand-script checks for collisions before any move
+  and bails to the principal (me) for manual rename.
+- **`QueueHandle::parse` test churn.** The grammar test suite is
+  ~30 cases; all must flip in one PR since there's no shim. Plan
+  for it; it's not a risk, it's a known cost.
+- **Lexicon practice silently rots.** A rule that only Claude reads
+  decays the moment a contributor lands a record-shape change
+  without reading `AGENTS.md`. Mitigation: until there's a second
+  human contributor, drift is recoverable by-eye. Re-evaluate when
+  someone other than Rafa lands a record-shape PR — that's the
+  moment to escalate practice → CI gate.
+- **CHANGELOG migration loses context.** The historic `// Note:`
+  comments at `server.rs:995/1000/1075/1080/1135` document *why* a
+  tool was removed, not just *that* it was. Mitigation: move
+  verbatim, link from `CHANGELOG.md` back to the commit + the
+  superseding tool's section in the file.
 
 ### 🏴 Off-sides called
 
@@ -305,28 +427,28 @@ before approving).
 
 - Could ship the layout collapse WITHOUT renaming `.org` → `org.md`,
   `profile.json` → `identity.md`, `contacts.json` → `contacts.md`.
-  Pure markdown conversion can be its own follow-up. Buys ~2 weeks.
+  Pure markdown conversion can be its own follow-up. Buys ~3 days.
   Risk: the inconsistency stays visible to the principal, eroding
   the "one principle" payoff.
-- Could ship the layout collapse WITHOUT dropping the `channel:` /
-  `inbox:` prefix. Just unify directories. Buys ~1 week. Risk: the
-  handle vocabulary still lies, and every future surface that reads
-  handles inherits the dead weight.
-- Could defer the migration tool to a separate slice and ship the
-  new layout + tell users "fresh vault required." Buys ~2 weeks.
-  Risk: existing principals can't upgrade; v0.5.0 effectively forks.
+- Could defer the `_self/identity.md` consolidation. Loose `did` +
+  `key` + `profile.json` at root stays. Buys ~3 days. Risk: same
+  inconsistency erosion; the `_self/` surface lands incomplete.
+
+(Pre-revision "defer migration tool" fat cut deleted — there is no
+migration tool, and the script-only path *is* the chosen approach.
+Pre-revision "no shim" fat cut deleted — already accepted into the
+main scope.)
 
 ### 🧪 Domain knowledge
 
 - Confirm what `queues/equanimitech/secretariat/` represents — looks
   like a flat queue using GTD `equanimitech` namespace, but the
   bare `equanimitech` namespace isn't documented anywhere. Spike
-  before migration: does the principal think of this as
-  `area:equanimitech:secretariat` or as a project root?
+  before the hand-script: does the principal (me) think of this as
+  `area:equanimitech:secretariat` or as a project root? Decide
+  manually before writing the move rule.
 - Confirm whether `~/.secretariat/peers/` is truly dead or held by
   some experimental code path. Grep + git log say dead; verify.
-- Confirm Marcelo + Christophe will actually run the migration
-  rather than nuke and restart. The `--dry-run` UX is load-bearing.
 
 ## Pitch
 
@@ -356,9 +478,13 @@ principal-authored JSON to markdown with frontmatter; keep
 `preferences.toml` (app-level config) and `relay-state.json`
 (machine-only) as-is.
 
-Ship behind a one-shot, idempotent, reversible `sec vault migrate`
-tool. Land in v0.5.0 with a compatibility shim for old handle
-grammars; remove the shim in v0.6.0.
+Ship in v0.5.0 as a hard cutover. No CLI migration verb, no
+compatibility shim. My own vault gets a one-shot bash script
+(`scripts/migrate-vault-v0.5.0.sh`) that `mv`s every envelope into
+the new layout under a pre-flight `tar` snapshot. Marcelo and
+Christophe have zero envelopes today — they just install v0.5.0
+fresh. Envelopes are never deleted, only moved; that invariant
+holds for this migration and every future one.
 
 The bet pays off when:
 - A new contributor opens `~/.secretariat/` and the layout is
@@ -369,6 +495,12 @@ The bet pays off when:
   `contract.local.md` via one resolver, not two.
 - The `CaptureRoots` parameter and its `flat_queues`/`channel_tree`
   split are gone from every call site.
+- `lexicons/*.json` edits land in the same PR as every record-shape
+  Rust change. Drift gets caught by the reviewer, not after.
+- `sec list peers` / MCP `compose handle: inbox:default` /
+  preferences migration shim / `did.json` fallback in
+  `load_did` — all gone. The pre-v0.3 sediment is cleared in the
+  same slice that earns the right to do so.
 
 ### No-gos
 
@@ -381,9 +513,11 @@ The bet pays off when:
 - **No hidden-by-default principal context.** `_self/` is visible;
   identity, contracts, templates are visible. Only `.runtime/`,
   `.logs/`, and `.<file>` operational dotfiles are hidden.
-- **No breaking change without a migration tool.** `sec vault
-  migrate --dry-run` ships first; `--apply` ships only after the
-  dry-run has been audited by all three pilot principals.
+- **Envelopes are never destroyed.** The hand-script `mv`s; never
+  `rm`s, never `cp` + delete-original. Pre-flight `tar` snapshot is
+  the rollback. Count match before/after is the gate. This holds
+  for this migration and every future migration — the substrate's
+  promise of sovereignty over correspondence is non-negotiable.
 
 ## Reference
 
@@ -405,3 +539,16 @@ The bet pays off when:
   the prefix-drop is a one-file change
 - `docs/decisions/2026-05-12-substrate-layout-v03.md` — what
   v0.3 thought the layout would be; this pitch supersedes
+- `lexicons/` — current decorative source; becomes runtime SoT per
+  Elements §7
+- `crates/mcp/src/server.rs:803-811` — `legacy_cognition_config` +
+  `legacy_cadence` preferences-migration shim, retiring this slice
+- `crates/mcp/src/server.rs:709` — `inbox:default` compose fallback,
+  retiring this slice
+- `crates/cli/src/commands/paths.rs::load_did` — `did.json`
+  back-compat fallback, retiring with the v0.6.0 cleanup
+- `crates/cli/src/commands/list.rs` — `Peers`/`Inbox`/`Outbox`
+  targets, retiring or moving under `sec debug`
+- AGENTS.md "Out of scope" list — counter-stamp + lexicon
+  publication still deferred; this pitch lifts only the *internal*
+  lexicon SoT, not on-wire publication
