@@ -117,6 +117,10 @@ fi
 if [[ -d "$VAULT/peers" ]]; then
   rmdir "$VAULT/peers" 2>/dev/null || true
 fi
+# Recursively nuke any empty directories left under `queues/` after the
+# merge — stops the queue_dir alignment step from treating it as a
+# peer alias.
+find "$VAULT/queues" -depth -type d -empty -delete 2>/dev/null || true
 
 # ----- slice 3 — identity consolidation ----------------------------------
 if [[ -f "$VAULT/key" && ! -f "$SELF_ROOT/identity/key" ]]; then
@@ -257,7 +261,7 @@ for peer_dir in "$VAULT"/*/; do
   [[ -d "$peer_dir" ]] || continue
   name="$(basename "$peer_dir")"
   case "$name" in
-    _self|orgs|bin|peers|logs|.archive|.runtime) continue ;;
+    _self|orgs|bin|peers|logs|queues|channels|.archive|.runtime) continue ;;
   esac
 
   # Already migrated?
