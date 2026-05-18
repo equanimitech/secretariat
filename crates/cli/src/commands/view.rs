@@ -37,7 +37,7 @@ pub fn run(args: Args) -> Result<()> {
                 status
             );
         }
-        return Ok(());
+        Ok(())
     }
 
     #[cfg(not(target_os = "macos"))]

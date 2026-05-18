@@ -114,14 +114,19 @@ mod tests {
 
     #[test]
     fn lm_studio_recipe_produces_full_env_and_model_args() {
-        let mut prefs = CognitionPrefs::default();
-        prefs.launch_args = vec!["--model".into(), "openai/gpt-oss-20b".into()];
-        prefs
-            .launch_env
-            .insert("ANTHROPIC_BASE_URL".into(), "http://localhost:1234".into());
-        prefs
-            .launch_env
-            .insert("ANTHROPIC_AUTH_TOKEN".into(), "lmstudio".into());
+        let prefs = CognitionPrefs {
+            launch_args: vec!["--model".into(), "openai/gpt-oss-20b".into()],
+            launch_env: [
+                (
+                    "ANTHROPIC_BASE_URL".to_string(),
+                    "http://localhost:1234".to_string(),
+                ),
+                ("ANTHROPIC_AUTH_TOKEN".to_string(), "lmstudio".to_string()),
+            ]
+            .into_iter()
+            .collect(),
+            ..Default::default()
+        };
         let l = PrefsLauncher::from_prefs(&prefs);
         let tmp = TempDir::new().unwrap();
         let plan = l.plan_launch(tmp.path()).unwrap();
@@ -139,8 +144,10 @@ mod tests {
 
     #[test]
     fn empty_command_errors() {
-        let mut prefs = CognitionPrefs::default();
-        prefs.launch_command = "".into();
+        let prefs = CognitionPrefs {
+            launch_command: "".into(),
+            ..Default::default()
+        };
         let l = PrefsLauncher::from_prefs(&prefs);
         let tmp = TempDir::new().unwrap();
         assert!(matches!(
@@ -151,8 +158,10 @@ mod tests {
 
     #[test]
     fn whitespace_only_command_errors() {
-        let mut prefs = CognitionPrefs::default();
-        prefs.launch_command = "   ".into();
+        let prefs = CognitionPrefs {
+            launch_command: "   ".into(),
+            ..Default::default()
+        };
         let l = PrefsLauncher::from_prefs(&prefs);
         let tmp = TempDir::new().unwrap();
         assert!(matches!(
@@ -163,10 +172,14 @@ mod tests {
 
     #[test]
     fn binding_command_overrides_prefs() {
-        let mut prefs = CognitionPrefs::default();
-        prefs.launch_command = "claude".into();
-        let mut binding = ChannelBinding::empty();
-        binding.launch_command = Some("/usr/local/bin/journal-claude".into());
+        let prefs = CognitionPrefs {
+            launch_command: "claude".into(),
+            ..Default::default()
+        };
+        let binding = ChannelBinding {
+            launch_command: Some("/usr/local/bin/journal-claude".into()),
+            ..ChannelBinding::empty()
+        };
         let l = PrefsLauncher::from_prefs_with_binding(&prefs, &binding);
         let tmp = TempDir::new().unwrap();
         let plan = l.plan_launch(tmp.path()).unwrap();
@@ -175,10 +188,14 @@ mod tests {
 
     #[test]
     fn binding_args_replace_prefs_when_present() {
-        let mut prefs = CognitionPrefs::default();
-        prefs.launch_args = vec!["--default-flag".into()];
-        let mut binding = ChannelBinding::empty();
-        binding.launch_args = vec!["--model".into(), "openai/gpt-oss-20b".into()];
+        let prefs = CognitionPrefs {
+            launch_args: vec!["--default-flag".into()],
+            ..Default::default()
+        };
+        let binding = ChannelBinding {
+            launch_args: vec!["--model".into(), "openai/gpt-oss-20b".into()],
+            ..ChannelBinding::empty()
+        };
         let l = PrefsLauncher::from_prefs_with_binding(&prefs, &binding);
         let tmp = TempDir::new().unwrap();
         let plan = l.plan_launch(tmp.path()).unwrap();
@@ -187,8 +204,10 @@ mod tests {
 
     #[test]
     fn empty_binding_args_inherits_prefs() {
-        let mut prefs = CognitionPrefs::default();
-        prefs.launch_args = vec!["--default-flag".into()];
+        let prefs = CognitionPrefs {
+            launch_args: vec!["--default-flag".into()],
+            ..Default::default()
+        };
         let binding = ChannelBinding::empty();
         let l = PrefsLauncher::from_prefs_with_binding(&prefs, &binding);
         let tmp = TempDir::new().unwrap();
@@ -198,14 +217,27 @@ mod tests {
 
     #[test]
     fn binding_env_merges_with_prefs_env() {
-        let mut prefs = CognitionPrefs::default();
-        prefs.launch_env.insert("HTTP_PROXY".into(), "x".into());
-        prefs.launch_env.insert("SHARED".into(), "from-prefs".into());
-        let mut binding = ChannelBinding::empty();
-        binding
-            .launch_env
-            .insert("ANTHROPIC_BASE_URL".into(), "http://localhost:1234".into());
-        binding.launch_env.insert("SHARED".into(), "from-binding".into());
+        let prefs = CognitionPrefs {
+            launch_env: [
+                ("HTTP_PROXY".to_string(), "x".to_string()),
+                ("SHARED".to_string(), "from-prefs".to_string()),
+            ]
+            .into_iter()
+            .collect(),
+            ..Default::default()
+        };
+        let binding = ChannelBinding {
+            launch_env: [
+                (
+                    "ANTHROPIC_BASE_URL".to_string(),
+                    "http://localhost:1234".to_string(),
+                ),
+                ("SHARED".to_string(), "from-binding".to_string()),
+            ]
+            .into_iter()
+            .collect(),
+            ..ChannelBinding::empty()
+        };
         let l = PrefsLauncher::from_prefs_with_binding(&prefs, &binding);
         let tmp = TempDir::new().unwrap();
         let plan = l.plan_launch(tmp.path()).unwrap();
