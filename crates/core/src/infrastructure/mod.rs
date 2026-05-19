@@ -19,7 +19,6 @@ pub mod org_store;
 pub mod preferences;
 pub mod queue_dir;
 pub mod native_biometric;
-pub mod subscription_store;
 pub mod transport;
 
 pub use biometric::{build_signer, pick_gate, AnyGate};
@@ -55,5 +54,4 @@ pub use identity_store::{
 pub use queue_dir::{
     ciphertext_dir, envelopes_dir, outbox_dir, queue_dir, AliasMap, SELF_ALIAS,
 };
-pub use subscription_store::{Subscription, SubscriptionStore, SubscriptionStoreError};
 pub use native_biometric::NativeBiometricGate;
