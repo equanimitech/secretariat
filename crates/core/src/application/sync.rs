@@ -102,26 +102,52 @@ pub async fn sync_now(
     let aliases = AliasMap::load(did.clone(), paths)?;
 
     let mut state = RelayState::load(&paths.relay_state)?;
-    let endpoints: Vec<String> = state
-        .iter()
-        .filter(|r| r.registered)
-        .map(|r| r.endpoint.clone())
-        .collect();
 
-    for endpoint in endpoints {
+    // Enumerate queues this principal subscribes to. v0.8 sources:
+    //   - DM auto-subscription: `(self_did, "inbox:default")` at every
+    //     relay we're registered with.
+    //   - Org channel subscriptions: walks `<root>/orgs/<alias>/` and
+    //     emits one queue per channel-dir the principal joined. Wired
+    //     in the org-membership slice; currently returns empty.
+    let queues = enumerate_subscribed_queues(paths, did, &state);
+
+    // Group queues by endpoint so token refresh + claim drain happen
+    // once per relay, not once per queue.
+    let mut endpoints: Vec<String> = queues.iter().map(|q| q.endpoint.clone()).collect();
+    endpoints.sort();
+    endpoints.dedup();
+
+    for endpoint in &endpoints {
         let mut report = RelaySyncReport {
             endpoint: endpoint.clone(),
             ..Default::default()
         };
 
-        // 1. Poll inbound.
-        match poll_one_relay(&mut state, &endpoint, did, key, paths, &aliases).await {
-            Ok(count) => report.inbound_count = count,
-            Err(e) => report.warnings.push(format!("inbound poll: {e}")),
+        // 1. Refresh token once per endpoint. Same token serves every
+        //    queue at this endpoint.
+        let client = RelayClient::new(endpoint, did.clone(), key);
+        if let Err(e) = refresh_token_if_needed(&mut state, endpoint, &client).await {
+            report.warnings.push(format!("auth: {e}"));
+            outcome.per_relay.push(report);
+            continue;
         }
 
-        // 2. Drain claim notifications. Reuses the auth token poll_one set up.
-        match drain_claims_for_relay(&state, &endpoint, did, key, paths).await {
+        // 2. Poll every subscribed queue hosted at this endpoint.
+        for queue in queues.iter().filter(|q| &q.endpoint == endpoint) {
+            match poll_one_queue(&mut state, queue, did, key, paths, &aliases).await {
+                Ok(count) => report.inbound_count += count,
+                Err(e) => report.warnings.push(format!(
+                    "poll {}#{}: {e}",
+                    queue.owner.as_str(),
+                    queue.handle.as_str()
+                )),
+            }
+        }
+
+        // 3. Drain claim notifications — bilateral peer-invite flow,
+        //    one stream per endpoint regardless of how many queues
+        //    we poll there.
+        match drain_claims_for_relay(&state, endpoint, did, key, paths).await {
             Ok(out) => report.auto_added_contacts = out.added.len(),
             Err(e) => report.warnings.push(format!("claim drain: {e}")),
         }
@@ -144,40 +170,94 @@ pub async fn sync_now(
 // 1. Poll inbound
 // ---------------------------------------------------------------------------
 
-async fn poll_one_relay(
+/// One queue the daemon's poll loop iterates. Three fields: WHO owns it
+/// (`owner` DID — could be self for DMs, an org DID for channels, a peer
+/// for non-default DM handles), WHICH queue on that owner's machine
+/// (`handle`), and WHERE it's served (`endpoint`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SubscribedQueue {
+    pub owner: Did,
+    pub handle: QueueHandle,
+    pub endpoint: String,
+}
+
+/// Enumerate every queue this principal currently syncs. Two sources:
+///
+/// - **DM auto-subscription.** For every registered relay endpoint, the
+///   principal's own `(self_did, "inbox:default")` queue. This is the
+///   two-party-case-of-the-queue-primitive ([[project_namespace_symmetry]]);
+///   peers POST envelopes to this queue, the principal polls them.
+///
+/// - **Org channel subscriptions.** Walks `<root>/orgs/<alias>/` and emits
+///   one entry per channel-dir the principal joined. Reads relay endpoint
+///   from `membership.local.md` (written by `accept_org_invite` — next
+///   slice). Currently returns nothing because no membership files exist
+///   yet; ready when the org-membership slice lands.
+///
+/// Pure compute (modulo a filesystem walk). Idempotent across calls.
+fn enumerate_subscribed_queues(
+    paths: &KeyPaths,
+    self_did: &Did,
+    state: &RelayState,
+) -> Vec<SubscribedQueue> {
+    let mut queues = Vec::new();
+
+    // Source 1: DM at every registered relay.
+    let inbox_default = QueueHandle::parse("inbox:default").expect("inbox:default valid");
+    for relay in state.iter().filter(|r| r.registered) {
+        queues.push(SubscribedQueue {
+            owner: self_did.clone(),
+            handle: inbox_default.clone(),
+            endpoint: relay.endpoint.clone(),
+        });
+    }
+
+    // Source 2: org channel subscriptions. Hook lands when
+    // `accept_org_invite` writes `membership.local.md` files; for now
+    // walk the orgs dir to surface the structure, but emit nothing
+    // (no membership files = no subscriptions yet). Keeps the
+    // enumeration shape uniform across DM and org sources.
+    let _ = &paths.orgs_root; // walk wiring lands in org-membership slice
+
+    queues
+}
+
+/// Poll one `(owner, handle)` queue at its relay, file every inbound
+/// envelope, advance the per-queue cursor. Assumes the caller already
+/// refreshed the auth token for `queue.endpoint`.
+///
+/// `did` is the principal's own DID — the bearer identity for the poll.
+/// Distinct from `queue.owner`: for org channels the queue is owned by
+/// the org's DID but we authenticate as the subscriber. The two happen
+/// to match for DM queues.
+async fn poll_one_queue(
     state: &mut RelayState,
-    endpoint: &str,
+    queue: &SubscribedQueue,
     did: &Did,
     key: &SigningKey,
     paths: &KeyPaths,
     aliases: &AliasMap,
 ) -> Result<usize, RelayClientError> {
-    let client = RelayClient::new(endpoint, did.clone(), key);
-
-    refresh_token_if_needed(state, endpoint, &client).await?;
-
-    // DMs are the two-party case of the queue primitive — `(self, inbox:default)`.
-    // Cursor is per-queue now (v0.8 per-queue cursor model); future channel
-    // subscriptions enumerate sibling queues here, polling each with its own
-    // cursor against the same relay endpoint.
-    let inbox_default = QueueHandle::parse("inbox:default").expect("inbox:default valid");
     let (token, cursor) = {
-        let entry = state.entry(endpoint).expect("just refreshed");
-        (
-            entry.token.clone().unwrap(),
-            entry.cursor_for(did, &inbox_default),
-        )
+        let entry = state.entry(&queue.endpoint).ok_or_else(|| {
+            RelayClientError::BadResponse(format!(
+                "no relay state entry for endpoint {} — refresh skipped?",
+                queue.endpoint
+            ))
+        })?;
+        let token = entry.token.clone().ok_or_else(|| {
+            RelayClientError::BadResponse(format!("no token for endpoint {}", queue.endpoint))
+        })?;
+        (token, entry.cursor_for(&queue.owner, &queue.handle))
     };
 
+    let client = RelayClient::new(&queue.endpoint, did.clone(), key);
     let inbound = client
-        .poll(did, &inbox_default, &token, cursor)
+        .poll(&queue.owner, &queue.handle, &token, cursor)
         .await?;
     let mut max_id = cursor;
     for env in &inbound {
         if let Err(e) = file_inbound(paths, aliases, env) {
-            // Soft failure on a single envelope shouldn't poison the cursor;
-            // log via the returned RelayClientError variant the caller can
-            // propagate.
             return Err(RelayClientError::BadResponse(format!(
                 "could not file inbound id={}: {e}",
                 env.id
@@ -188,8 +268,8 @@ async fn poll_one_relay(
         }
     }
     state
-        .entry_mut(endpoint)
-        .set_cursor_for(did, &inbox_default, max_id);
+        .entry_mut(&queue.endpoint)
+        .set_cursor_for(&queue.owner, &queue.handle, max_id);
     Ok(inbound.len())
 }
 
