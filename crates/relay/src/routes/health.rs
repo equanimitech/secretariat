@@ -20,6 +20,6 @@ pub async fn handler(State(state): State<Arc<AppState>>) -> Json<HealthResponse>
         ok: true,
         version: env!("CARGO_PKG_VERSION"),
         registered_count: state.registered_count(),
-        queue_count: state.queue_lengths().len(),
+        queue_count: state.channel_queue_lengths().len(),
     })
 }

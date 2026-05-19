@@ -19,6 +19,7 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use secretariat_core::domain::QueueHandle;
 use secretariat_core::Did;
 use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
@@ -28,7 +29,11 @@ use tracing::info;
 use crate::queue::TenantQueue;
 use crate::state::Invite;
 
-const STATE_VERSION: u32 = 1;
+/// v2 (2026-05-19): collapsed the legacy per-DID `queues:` field into the
+/// `(owner, handle)`-keyed `channels:` index. DMs ride as `(peer, "inbox:default")`
+/// per the queues-as-primitive substrate model (see envelope lexicon's
+/// channel-of-two framing). No migration code — nothing was in production.
+pub const STATE_VERSION: u32 = 2;
 pub const STATE_FILENAME: &str = "state.json";
 
 #[derive(Debug, Error)]
@@ -50,12 +55,25 @@ pub enum PersistError {
 /// On-disk wire shape. `tenants` uses the [`PersistedTenant`] form
 /// (registered in `state.rs`) so the in-memory `VerifyingKey` doesn't need
 /// to be serializable directly.
+///
+/// `channels` is the single queue index axis — keyed by `(owner_did, handle)`
+/// per the queues-as-primitive substrate model. Serialized as a list rather
+/// than a map because JSON map keys must be strings; flattening to a list
+/// avoids ad-hoc tuple-key encoding.
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct StateFile {
     pub version: u32,
     pub tenants: Vec<super::state::PersistedTenant>,
-    pub queues: HashMap<Did, TenantQueue>,
     pub invites: HashMap<String, Invite>,
+    pub channels: Vec<PersistedChannelQueue>,
+}
+
+/// One entry in the channel index — a per-`(owner, handle)` queue.
+#[derive(Debug, Serialize, Deserialize)]
+pub(crate) struct PersistedChannelQueue {
+    pub owner: Did,
+    pub handle: QueueHandle,
+    pub queue: TenantQueue,
 }
 
 impl Default for StateFile {
@@ -63,8 +81,8 @@ impl Default for StateFile {
         Self {
             version: STATE_VERSION,
             tenants: Vec::new(),
-            queues: HashMap::new(),
             invites: HashMap::new(),
+            channels: Vec::new(),
         }
     }
 }
@@ -87,8 +105,8 @@ pub(crate) fn load(data_dir: &Path) -> Result<StateFile, PersistError> {
     info!(
         path = %path.display(),
         tenants = parsed.tenants.len(),
-        queues = parsed.queues.len(),
         invites = parsed.invites.len(),
+        channels = parsed.channels.len(),
         "loaded relay state"
     );
     Ok(parsed)

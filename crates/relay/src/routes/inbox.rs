@@ -16,6 +16,7 @@ use axum::{
     Json,
 };
 use chrono::Utc;
+use secretariat_core::domain::QueueHandle;
 use secretariat_core::Did;
 use serde::{Deserialize, Serialize};
 
@@ -23,6 +24,14 @@ use crate::queue::QueuedEnvelope;
 use crate::state::AppState;
 
 const SENDER_HEADER: &str = "X-Sender-Did";
+
+/// DM transport routes through the channel index axis under this fixed
+/// handle (DM = channel-of-two whose owner is the recipient peer,
+/// handle `inbox:default` — see `tech.equanimi.secretariat.envelope`).
+/// Future channel routes will accept arbitrary handles on the URL path.
+fn dm_handle() -> QueueHandle {
+    QueueHandle::parse("inbox:default").expect("inbox:default is a valid handle")
+}
 
 #[derive(Serialize)]
 pub struct PostResponse {
@@ -76,7 +85,14 @@ pub async fn post(
         .and_then(|s| Did::parse(s).ok());
 
     let now = Utc::now();
-    let id = state.enqueue(recipient_did, body.to_vec(), content_type, sender_did, now);
+    let id = state.enqueue_channel(
+        recipient_did,
+        dm_handle(),
+        body.to_vec(),
+        content_type,
+        sender_did,
+        now,
+    );
 
     (
         StatusCode::ACCEPTED,
@@ -116,7 +132,7 @@ pub async fn get(
         );
     }
 
-    let envelopes = state.since(&recipient_did, q.after);
+    let envelopes = state.since_channel(&recipient_did, &dm_handle(), q.after);
     Json(PollResponse { envelopes }).into_response()
 }
 

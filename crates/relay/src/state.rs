@@ -11,6 +11,7 @@ use std::sync::{Arc, RwLock};
 use chrono::{DateTime, Utc};
 use ed25519_dalek::VerifyingKey;
 use secretariat_core::codec::{decode_ed25519_multibase, encode_ed25519_multibase};
+use secretariat_core::domain::QueueHandle;
 use secretariat_core::Did;
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
@@ -73,13 +74,23 @@ pub struct Invite {
     pub claimed_at: Option<DateTime<Utc>>,
 }
 
+/// Composite key for the channel-queue index — `(owner_did, channel_handle)`.
+/// The owner is the principal whose relay sequences the channel
+/// (owner-as-sequencer-per-channel invariant); the handle picks which channel
+/// on that owner's machine. DMs are `(peer_did, "inbox:default")` — the
+/// channel-of-two case of the same primitive (queues-as-primitive,
+/// [[project_namespace_symmetry]]).
+pub type ChannelKey = (Did, QueueHandle);
+
 #[derive(Default)]
 pub struct AppState {
     pub config: Config,
     pub auth: AuthState,
     registry: RwLock<HashMap<Did, RegisteredTenant>>,
-    queues: RwLock<HashMap<Did, TenantQueue>>,
     invites: RwLock<HashMap<String, Invite>>,
+    /// All queues, indexed by `(owner, handle)`. DMs are `(peer, "inbox:default")`;
+    /// org channels are `(org_did, "dev:secretariat")` etc. One axis, one primitive.
+    channels: RwLock<HashMap<ChannelKey, TenantQueue>>,
 }
 
 impl AppState {
@@ -90,16 +101,20 @@ impl AppState {
             return;
         };
         let registry = self.registry.read().unwrap();
-        let queues = self.queues.read().unwrap();
         let invites = self.invites.read().unwrap();
+        let channels = self.channels.read().unwrap();
         let snapshot = persist::StateFile {
-            version: 1,
+            version: persist::STATE_VERSION,
             tenants: registry.values().map(PersistedTenant::from).collect(),
-            queues: queues
-                .iter()
-                .map(|(d, q)| (d.clone(), clone_queue(q)))
-                .collect(),
             invites: invites.clone(),
+            channels: channels
+                .iter()
+                .map(|((owner, handle), q)| persist::PersistedChannelQueue {
+                    owner: owner.clone(),
+                    handle: handle.clone(),
+                    queue: clone_queue(q),
+                })
+                .collect(),
         };
         if let Err(e) = persist::save(dir, &snapshot) {
             warn!(error = %e, dir = %dir.display(), "could not persist relay state");
@@ -121,8 +136,8 @@ impl AppState {
             config,
             auth: AuthState::new(),
             registry: RwLock::new(HashMap::new()),
-            queues: RwLock::new(HashMap::new()),
             invites: RwLock::new(HashMap::new()),
+            channels: RwLock::new(HashMap::new()),
         })
     }
 
@@ -146,23 +161,23 @@ impl AppState {
         }
         drop(registry);
 
-        let mut queues = state.queues.write().unwrap();
-        for (did, queue) in snapshot.queues {
-            queues.insert(did, queue);
-        }
-        drop(queues);
-
         let mut invites = state.invites.write().unwrap();
         for (token, invite) in snapshot.invites {
             invites.insert(token, invite);
         }
         drop(invites);
 
+        let mut channels = state.channels.write().unwrap();
+        for entry in snapshot.channels {
+            channels.insert((entry.owner, entry.handle), entry.queue);
+        }
+        drop(channels);
+
         info!(
             dir = %state.config.data_dir.as_ref().unwrap().display(),
             tenants = state.registry.read().unwrap().len(),
-            queues = state.queues.read().unwrap().len(),
             invites = state.invites.read().unwrap().len(),
+            channels = state.channels.read().unwrap().len(),
             "rehydrated relay state"
         );
         Ok(state)
@@ -192,52 +207,69 @@ impl AppState {
         self.registry.read().unwrap().get(did).map(|t| t.pubkey)
     }
 
-    pub fn enqueue(
+    pub fn registered_count(&self) -> usize {
+        self.registry.read().unwrap().len()
+    }
+
+    /// Append `body` to the channel queue owned by `owner` under `handle`.
+    /// Assigns a monotonic per-channel seq via the underlying `TenantQueue`.
+    ///
+    /// `sender_did` carries the *author* of the message (must hold `publish`
+    /// on this channel — gate to be added in the roster slice). The relay
+    /// itself is the *sequencer*, not the author; the witness signature
+    /// over `seq` is a separate concern (see element 5 of the v0.8 pitch).
+    pub fn enqueue_channel(
         &self,
-        recipient: Did,
+        owner: Did,
+        handle: QueueHandle,
         body: Vec<u8>,
         content_type: String,
         sender_did: Option<Did>,
         now: DateTime<Utc>,
     ) -> u64 {
         let id = {
-            let mut q = self.queues.write().unwrap();
-            let queue = q.entry(recipient).or_default();
+            let mut channels = self.channels.write().unwrap();
+            let queue = channels.entry((owner, handle)).or_default();
             queue.push(body, content_type, sender_did, now)
         };
         self.save_snapshot();
         id
     }
 
-    pub fn since(&self, recipient: &Did, after: u64) -> Vec<crate::queue::QueuedEnvelope> {
-        self.queues
+    /// Return entries from the `(owner, handle)` channel queue with `id > after`.
+    pub fn since_channel(
+        &self,
+        owner: &Did,
+        handle: &QueueHandle,
+        after: u64,
+    ) -> Vec<crate::queue::QueuedEnvelope> {
+        // The two-step clone avoids holding the read guard while the caller
+        // iterates and avoids requiring `Did: Borrow<...>` on the lookup.
+        let key = (owner.clone(), handle.clone());
+        self.channels
             .read()
             .unwrap()
-            .get(recipient)
+            .get(&key)
             .map(|q| q.since(after))
             .unwrap_or_default()
     }
 
-    pub fn registered_count(&self) -> usize {
-        self.registry.read().unwrap().len()
-    }
-
-    pub fn queue_lengths(&self) -> Vec<(Did, usize)> {
-        self.queues
+    pub fn channel_queue_lengths(&self) -> Vec<(Did, QueueHandle, usize)> {
+        self.channels
             .read()
             .unwrap()
             .iter()
-            .map(|(d, q)| (d.clone(), q.len()))
+            .map(|((owner, handle), q)| (owner.clone(), handle.clone(), q.len()))
             .collect()
     }
 
-    /// Drop entries older than `cutoff` from every per-tenant queue.
-    /// Returns total entries pruned. Run periodically by the daemon's
+    /// Drop entries older than `cutoff` from every `(owner, handle)` channel
+    /// queue. Returns total entries pruned. Run periodically by the daemon's
     /// prune loop; see `crates/relay/src/main.rs::spawn_prune_loop`.
     pub fn prune_all(&self, cutoff: DateTime<Utc>) -> usize {
         let total = {
             let mut total = 0;
-            for queue in self.queues.write().unwrap().values_mut() {
+            for queue in self.channels.write().unwrap().values_mut() {
                 total += queue.prune_older_than(cutoff);
             }
             total
@@ -326,5 +358,129 @@ impl AppState {
             self.save_snapshot();
         }
         removed
+    }
+}
+
+#[cfg(test)]
+mod channel_index_tests {
+    use super::*;
+
+    fn fresh_did(seed: u8) -> Did {
+        Did::from_ed25519_public_key(&[seed; 32])
+    }
+
+    fn handle(s: &str) -> QueueHandle {
+        QueueHandle::parse(s).unwrap()
+    }
+
+    #[test]
+    fn enqueue_channel_then_since_returns_entry() {
+        let state = AppState::new(Config::default());
+        let owner = fresh_did(1);
+        let author = fresh_did(2);
+        let h = handle("dev:secretariat");
+
+        let id = state.enqueue_channel(
+            owner.clone(),
+            h.clone(),
+            b"hello channel".to_vec(),
+            "text/markdown".to_string(),
+            Some(author.clone()),
+            Utc::now(),
+        );
+        assert_eq!(id, 1);
+
+        let entries = state.since_channel(&owner, &h, 0);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].id, 1);
+        assert_eq!(entries[0].body, b"hello channel");
+        assert_eq!(entries[0].sender_did.as_ref(), Some(&author));
+    }
+
+    #[test]
+    fn distinct_owner_handle_pairs_are_independent_queues() {
+        let state = AppState::new(Config::default());
+        let rafa = fresh_did(1);
+        let themia = fresh_did(2);
+        let dev = handle("dev:secretariat");
+        let dc = handle("dommage-corporel:paris-cohort");
+
+        state.enqueue_channel(rafa.clone(), dev.clone(), b"a".to_vec(), "t".into(), None, Utc::now());
+        state.enqueue_channel(themia.clone(), dc.clone(), b"b".to_vec(), "t".into(), None, Utc::now());
+        state.enqueue_channel(rafa.clone(), dc.clone(), b"c".to_vec(), "t".into(), None, Utc::now());
+
+        // Per-(owner, handle) seq starts at 1 in each queue.
+        assert_eq!(state.since_channel(&rafa, &dev, 0).len(), 1);
+        assert_eq!(state.since_channel(&themia, &dc, 0).len(), 1);
+        assert_eq!(state.since_channel(&rafa, &dc, 0).len(), 1);
+        // No cross-key bleed.
+        assert!(state.since_channel(&themia, &dev, 0).is_empty());
+    }
+
+    #[test]
+    fn since_channel_cursor_excludes_seen_entries() {
+        let state = AppState::new(Config::default());
+        let owner = fresh_did(1);
+        let h = handle("dev:secretariat");
+
+        let _ = state.enqueue_channel(owner.clone(), h.clone(), b"a".to_vec(), "t".into(), None, Utc::now());
+        let _ = state.enqueue_channel(owner.clone(), h.clone(), b"b".to_vec(), "t".into(), None, Utc::now());
+        let id3 = state.enqueue_channel(owner.clone(), h.clone(), b"c".to_vec(), "t".into(), None, Utc::now());
+
+        let from_one = state.since_channel(&owner, &h, 1);
+        assert_eq!(from_one.len(), 2);
+        assert_eq!(from_one[1].id, id3);
+
+        assert!(state.since_channel(&owner, &h, id3).is_empty());
+    }
+
+    #[test]
+    fn channel_queue_survives_save_load_roundtrip() {
+        // The whole point of the second index axis is that it persists like
+        // the DM substrate does. Load → enqueue → drop → load again → verify.
+        let dir = tempfile::TempDir::new().unwrap();
+        let config = Config {
+            data_dir: Some(dir.path().to_path_buf()),
+            ..Config::default()
+        };
+        let owner = fresh_did(1);
+        let author = fresh_did(2);
+        let h = handle("dev:secretariat");
+
+        // Boot 1: enqueue triggers save_snapshot.
+        {
+            let state = AppState::load(config.clone()).expect("first load");
+            state.enqueue_channel(
+                owner.clone(),
+                h.clone(),
+                b"persisted channel post".to_vec(),
+                "text/markdown".to_string(),
+                Some(author.clone()),
+                Utc::now(),
+            );
+        }
+
+        // Boot 2: fresh state from same data_dir, channel entry must reappear.
+        let state2 = AppState::load(config).expect("second load");
+        let entries = state2.since_channel(&owner, &h, 0);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].body, b"persisted channel post");
+        assert_eq!(entries[0].sender_did.as_ref(), Some(&author));
+    }
+
+    #[test]
+    fn channel_queue_lengths_reports_all_keys() {
+        let state = AppState::new(Config::default());
+        let owner = fresh_did(1);
+        let h1 = handle("dev:secretariat");
+        let h2 = handle("triage");
+        state.enqueue_channel(owner.clone(), h1.clone(), b"a".to_vec(), "t".into(), None, Utc::now());
+        state.enqueue_channel(owner.clone(), h1.clone(), b"b".to_vec(), "t".into(), None, Utc::now());
+        state.enqueue_channel(owner.clone(), h2.clone(), b"c".to_vec(), "t".into(), None, Utc::now());
+
+        let lengths = state.channel_queue_lengths();
+        assert_eq!(lengths.len(), 2);
+        let total: usize = lengths.iter().map(|(_, _, n)| n).sum();
+        assert_eq!(total, 3);
     }
 }
