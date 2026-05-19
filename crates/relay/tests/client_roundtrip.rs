@@ -4,10 +4,15 @@
 
 use ed25519_dalek::SigningKey;
 use rand::rngs::OsRng;
+use secretariat_core::domain::QueueHandle;
 use secretariat_core::infrastructure::transport::RelayClient;
 use secretariat_core::Did;
 use secretariat_relay::{router, AppState, Config};
 use tokio::net::TcpListener;
+
+fn dm() -> QueueHandle {
+    QueueHandle::parse("inbox:default").unwrap()
+}
 
 async fn spawn_test_server() -> String {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -47,14 +52,17 @@ async fn rafa_sends_marcelo_receives() {
     let envelope_bytes =
         b"---\n$envelope:\n  $type: tech.equanimi.secretariat.envelope\n  from: did:web:rafa.equanimi.tech\n  encryption: x25519-xchacha20poly1305\n---\nx25519:fakeb64:fakeb64:fakeb64\n";
     let id = rafa_client
-        .send(&marcelo_did, envelope_bytes, "text/markdown")
+        .send_channel(&marcelo_did, &dm(), envelope_bytes, "text/markdown")
         .await
         .unwrap();
     assert!(id >= 1);
 
     // Marcelo authenticates and polls.
     let (token, _expires) = marcelo_client.authenticate().await.unwrap();
-    let inbound = marcelo_client.poll(&token, 0).await.unwrap();
+    let inbound = marcelo_client
+        .poll_channel(&marcelo_did, &dm(), &token, 0)
+        .await
+        .unwrap();
     assert_eq!(inbound.len(), 1);
     let env = &inbound[0];
     assert_eq!(env.body, envelope_bytes);
@@ -88,7 +96,7 @@ async fn poll_advances_via_cursor() {
     for i in 0..3 {
         let body = format!("envelope-{i}");
         rafa_client
-            .send(&marcelo_did, body.as_bytes(), "text/markdown")
+            .send_channel(&marcelo_did, &dm(), body.as_bytes(), "text/markdown")
             .await
             .unwrap();
     }
@@ -96,22 +104,31 @@ async fn poll_advances_via_cursor() {
     let (token, _) = marcelo_client.authenticate().await.unwrap();
 
     // First poll: get all three.
-    let first = marcelo_client.poll(&token, 0).await.unwrap();
+    let first = marcelo_client
+        .poll_channel(&marcelo_did, &dm(), &token, 0)
+        .await
+        .unwrap();
     assert_eq!(first.len(), 3);
     let last_id = first.iter().map(|e| e.id).max().unwrap();
 
     // Second poll: nothing new.
-    let second = marcelo_client.poll(&token, last_id).await.unwrap();
+    let second = marcelo_client
+        .poll_channel(&marcelo_did, &dm(), &token, last_id)
+        .await
+        .unwrap();
     assert!(second.is_empty());
 
     // Sender posts one more.
     rafa_client
-        .send(&marcelo_did, b"envelope-3", "text/markdown")
+        .send_channel(&marcelo_did, &dm(), b"envelope-3", "text/markdown")
         .await
         .unwrap();
 
     // Third poll: just the new one.
-    let third = marcelo_client.poll(&token, last_id).await.unwrap();
+    let third = marcelo_client
+        .poll_channel(&marcelo_did, &dm(), &token, last_id)
+        .await
+        .unwrap();
     assert_eq!(third.len(), 1);
     assert_eq!(third[0].body, b"envelope-3");
 }

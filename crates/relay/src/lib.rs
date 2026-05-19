@@ -32,10 +32,6 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/v0/auth/challenge", post(routes::auth::challenge))
         .route("/v0/auth/answer", post(routes::auth::answer))
         .route(
-            "/v0/inbox/:did",
-            post(routes::inbox::post).get(routes::inbox::get),
-        )
-        .route(
             "/v0/queue/:did/:handle",
             post(routes::queue::post).get(routes::queue::get),
         )

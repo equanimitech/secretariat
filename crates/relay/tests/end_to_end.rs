@@ -78,7 +78,7 @@ async fn full_register_auth_post_get_roundtrip() {
     let envelope_bytes =
         b"---\n$envelope:\n  $type: tech.equanimi.secretariat.envelope\n---\n# fake body\n";
     let r = reqwest::Client::new()
-        .post(format!("{url}/v0/inbox/{}", rafa_did.as_str()))
+        .post(format!("{url}/v0/queue/{}/inbox%3Adefault", rafa_did.as_str()))
         .header("content-type", "text/markdown")
         .header("x-sender-did", "did:web:marcelo.example")
         .body(envelope_bytes.to_vec())
@@ -119,7 +119,7 @@ async fn full_register_auth_post_get_roundtrip() {
 
     // Rafa polls the inbox with the bearer token.
     let r = reqwest::Client::new()
-        .get(format!("{url}/v0/inbox/{}", rafa_did.as_str()))
+        .get(format!("{url}/v0/queue/{}/inbox%3Adefault", rafa_did.as_str()))
         .header("authorization", format!("Bearer {token}"))
         .send()
         .await
@@ -187,7 +187,7 @@ async fn poll_with_wrong_token_is_forbidden() {
 
     // Try to poll without a token.
     let r = reqwest::Client::new()
-        .get(format!("{url}/v0/inbox/{}", rafa_did.as_str()))
+        .get(format!("{url}/v0/queue/{}/inbox%3Adefault", rafa_did.as_str()))
         .send()
         .await
         .unwrap();
@@ -195,7 +195,7 @@ async fn poll_with_wrong_token_is_forbidden() {
 
     // Try with a bogus token.
     let r = reqwest::Client::new()
-        .get(format!("{url}/v0/inbox/{}", rafa_did.as_str()))
+        .get(format!("{url}/v0/queue/{}/inbox%3Adefault", rafa_did.as_str()))
         .header("authorization", "Bearer not-a-real-token")
         .send()
         .await
@@ -209,7 +209,7 @@ async fn post_to_unregistered_recipient_returns_404() {
     let (_, ghost_did) = fresh_principal();
 
     let r = reqwest::Client::new()
-        .post(format!("{url}/v0/inbox/{}", ghost_did.as_str()))
+        .post(format!("{url}/v0/queue/{}/inbox%3Adefault", ghost_did.as_str()))
         .body(b"hello".to_vec())
         .send()
         .await

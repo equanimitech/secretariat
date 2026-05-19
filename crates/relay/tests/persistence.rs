@@ -8,9 +8,14 @@
 use ed25519_dalek::SigningKey;
 use rand::rngs::OsRng;
 use secretariat_core::application::{create_invite, view_invite};
+use secretariat_core::domain::QueueHandle;
 use secretariat_core::infrastructure::transport::RelayClient;
 use secretariat_core::Did;
 use secretariat_relay::{router, AppState, Config};
+
+fn dm() -> QueueHandle {
+    QueueHandle::parse("inbox:default").unwrap()
+}
 use std::sync::Arc;
 use tempfile::TempDir;
 use tokio::net::TcpListener;
@@ -101,7 +106,7 @@ async fn queued_envelope_survives_restart() {
 
     let envelope_bytes = b"---\n$envelope:\n  $type: tech.equanimi.secretariat.envelope\n---\nhello\n";
     rafa_client
-        .send(&marcelo_did, envelope_bytes, "text/markdown")
+        .send_channel(&marcelo_did, &dm(), envelope_bytes, "text/markdown")
         .await
         .unwrap();
     server1.shutdown().await;
@@ -111,7 +116,10 @@ async fn queued_envelope_survives_restart() {
     let marcelo_client2 =
         RelayClient::new(server2.url.clone(), marcelo_did.clone(), &marcelo_key);
     let (token, _) = marcelo_client2.authenticate().await.unwrap();
-    let inbound = marcelo_client2.poll(&token, 0).await.unwrap();
+    let inbound = marcelo_client2
+        .poll_channel(&marcelo_did, &dm(), &token, 0)
+        .await
+        .unwrap();
     assert_eq!(inbound.len(), 1);
     assert_eq!(inbound[0].body, envelope_bytes);
     server2.shutdown().await;

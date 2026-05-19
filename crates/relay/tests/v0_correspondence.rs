@@ -50,6 +50,10 @@ fn fresh_principal() -> (SigningKey, Did) {
     (key, did)
 }
 
+fn dm() -> QueueHandle {
+    QueueHandle::parse("inbox:default").unwrap()
+}
+
 /// Compose an encrypted envelope from rafa to marcelo, stamp it, return the
 /// markdown bytes ready for transport.
 fn compose_and_stamp(
@@ -155,14 +159,17 @@ async fn rafa_to_marcelo_full_correspondence_loop() {
     // 6. Sender's daemon (simulated): read stamped file, send via relay.
     let stamped_bytes = std::fs::read(&stamped_path).unwrap();
     let sent_id = rafa_client
-        .send(&marcelo_did, &stamped_bytes, "text/markdown")
+        .send_channel(&marcelo_did, &dm(), &stamped_bytes, "text/markdown")
         .await
         .unwrap();
     assert!(sent_id >= 1);
 
     // 7. Recipient's daemon (simulated): authenticate + poll.
     let (token, _expiry) = marcelo_client.authenticate().await.unwrap();
-    let inbound = marcelo_client.poll(&token, 0).await.unwrap();
+    let inbound = marcelo_client
+        .poll_channel(&marcelo_did, &dm(), &token, 0)
+        .await
+        .unwrap();
     assert_eq!(inbound.len(), 1, "marcelo should see exactly one envelope");
 
     let inbound_env = &inbound[0];
@@ -227,12 +234,15 @@ async fn tampered_in_transit_rejects_on_verify() {
     tampered[last] ^= 1;
 
     rafa_client
-        .send(&marcelo_did, &tampered, "text/markdown")
+        .send_channel(&marcelo_did, &dm(), &tampered, "text/markdown")
         .await
         .unwrap();
 
     let (token, _) = marcelo_client.authenticate().await.unwrap();
-    let inbound = marcelo_client.poll(&token, 0).await.unwrap();
+    let inbound = marcelo_client
+        .poll_channel(&marcelo_did, &dm(), &token, 0)
+        .await
+        .unwrap();
     assert_eq!(inbound.len(), 1);
     let raw_str = std::str::from_utf8(&inbound[0].body).unwrap();
     let parsed = parse_document(raw_str).unwrap();
@@ -272,12 +282,15 @@ async fn wrong_recipient_cannot_decrypt() {
     );
     let stamped_bytes = std::fs::read(&stamped_path).unwrap();
     rafa_client
-        .send(&marcelo_did, &stamped_bytes, "text/markdown")
+        .send_channel(&marcelo_did, &dm(), &stamped_bytes, "text/markdown")
         .await
         .unwrap();
 
     let (token, _) = marcelo_client.authenticate().await.unwrap();
-    let inbound = marcelo_client.poll(&token, 0).await.unwrap();
+    let inbound = marcelo_client
+        .poll_channel(&marcelo_did, &dm(), &token, 0)
+        .await
+        .unwrap();
     let raw_str = std::str::from_utf8(&inbound[0].body).unwrap();
     let parsed = parse_document(raw_str).unwrap();
 
@@ -316,13 +329,17 @@ async fn dm_with_non_default_handle_round_trips() {
         "inbox:work",
     );
     let stamped_bytes = std::fs::read(&stamped_path).unwrap();
+    let work = QueueHandle::parse("inbox:work").unwrap();
     rafa_client
-        .send(&marcelo_did, &stamped_bytes, "text/markdown")
+        .send_channel(&marcelo_did, &work, &stamped_bytes, "text/markdown")
         .await
         .unwrap();
 
     let (token, _) = marcelo_client.authenticate().await.unwrap();
-    let inbound = marcelo_client.poll(&token, 0).await.unwrap();
+    let inbound = marcelo_client
+        .poll_channel(&marcelo_did, &work, &token, 0)
+        .await
+        .unwrap();
     assert_eq!(inbound.len(), 1);
 
     let raw_str = std::str::from_utf8(&inbound[0].body).unwrap();
@@ -332,7 +349,17 @@ async fn dm_with_non_default_handle_round_trips() {
     assert_eq!(
         envelope.recipient.handle.as_str(),
         "inbox:work",
-        "non-default handle survives transit verbatim"
+        "non-default handle survives transit verbatim — wire address now agrees"
+    );
+
+    // And `inbox:default` for the same owner is empty — distinct stream.
+    let default_inbound = marcelo_client
+        .poll_channel(&marcelo_did, &dm(), &token, 0)
+        .await
+        .unwrap();
+    assert!(
+        default_inbound.is_empty(),
+        "inbox:work post must not bleed into inbox:default"
     );
 }
 
