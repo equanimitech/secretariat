@@ -15,6 +15,7 @@ pub mod did_web_resolver;
 pub mod ed25519_signer;
 pub mod keys;
 pub mod markdown;
+pub mod membership_store;
 pub mod org_store;
 pub mod preferences;
 pub mod queue_dir;
@@ -53,5 +54,8 @@ pub use identity_store::{
 };
 pub use queue_dir::{
     ciphertext_dir, envelopes_dir, outbox_dir, queue_dir, AliasMap, SELF_ALIAS,
+};
+pub use membership_store::{
+    load_membership, save_membership, MembershipStoreError, OrgMembership, MEMBERSHIP_FILENAME,
 };
 pub use native_biometric::NativeBiometricGate;

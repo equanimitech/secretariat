@@ -28,12 +28,14 @@ use ed25519_dalek::SigningKey;
 use thiserror::Error;
 
 use crate::application::{
-    process_correspondence_claims, send_stamped_envelope, ClaimProcessOutcome,
+    list_channels, process_correspondence_claims, send_stamped_envelope, ClaimProcessOutcome,
     CorrespondenceClaim, SendError,
 };
 use crate::infrastructure::contact_store::ContactBook;
 use crate::infrastructure::keys::KeyPaths;
 use crate::infrastructure::markdown::parse_document;
+use crate::infrastructure::membership_store::{load_membership, MEMBERSHIP_FILENAME};
+use crate::infrastructure::org_store::{list_org_dirs, org_channels_root};
 use crate::infrastructure::queue_dir::{envelopes_dir, AliasMap, AliasMapError};
 use crate::infrastructure::transport::{
     ClaimedInviteWire, RelayClient, RelayClientError, RelayInbound, RelayState,
@@ -181,6 +183,17 @@ pub struct SubscribedQueue {
     pub endpoint: String,
 }
 
+/// `pub(crate)` so the focused enumeration test below (and future
+/// integration tests) can call it directly without spinning up a relay.
+#[cfg(test)]
+pub(crate) fn enumerate_subscribed_queues_for_tests(
+    paths: &KeyPaths,
+    self_did: &Did,
+    state: &RelayState,
+) -> Vec<SubscribedQueue> {
+    enumerate_subscribed_queues(paths, self_did, state)
+}
+
 /// Enumerate every queue this principal currently syncs. Two sources:
 ///
 /// - **DM auto-subscription.** For every registered relay endpoint, the
@@ -212,12 +225,42 @@ fn enumerate_subscribed_queues(
         });
     }
 
-    // Source 2: org channel subscriptions. Hook lands when
-    // `accept_org_invite` writes `membership.local.md` files; for now
-    // walk the orgs dir to surface the structure, but emit nothing
-    // (no membership files = no subscriptions yet). Keeps the
-    // enumeration shape uniform across DM and org sources.
-    let _ = &paths.orgs_root; // walk wiring lands in org-membership slice
+    // Source 2: org channel subscriptions. Walk every org dir under
+    // `<root>/orgs/`. For each org that has a `membership.local.md`
+    // file (declares the principal joined this org with a role at a
+    // relay), enumerate its channels by walking the filesystem and
+    // emit one SubscribedQueue per channel found. Filesystem is
+    // authoritative — the membership file declares org-level facts;
+    // the presence of channel-dirs IS the channel subscription
+    // ([[project_filesystem_authoritative]]).
+    if let Ok(orgs) = list_org_dirs(&paths.orgs_root) {
+        for org in orgs {
+            let membership_path = paths
+                .orgs_root
+                .join(org.alias.as_str())
+                .join(MEMBERSHIP_FILENAME);
+            let Ok(Some(membership)) = load_membership(&membership_path) else {
+                // No membership file → not subscribed to this org's
+                // channels (the dir may exist for unrelated reasons,
+                // e.g. an org I created locally before federating).
+                continue;
+            };
+            let channels_root = org_channels_root(&paths.orgs_root, &org.alias);
+            let Ok(channels) = list_channels(&channels_root) else {
+                continue;
+            };
+            for ch in channels {
+                let Ok(handle) = QueueHandle::parse(&ch.handle) else {
+                    continue;
+                };
+                queues.push(SubscribedQueue {
+                    owner: membership.org_did.clone(),
+                    handle,
+                    endpoint: membership.relay_endpoint.as_str().to_string(),
+                });
+            }
+        }
+    }
 
     queues
 }
@@ -518,4 +561,191 @@ fn should_skip_for_drain(name: &str) -> bool {
             "_unsorted" | "_ciphertext" | "envelopes" | "deferred" | "archived" | "sent"
                 | "bin" | "logs" | "peers"
         )
+}
+
+#[cfg(test)]
+mod enumeration_tests {
+    use super::*;
+    use crate::infrastructure::membership_store::{save_membership, OrgMembership};
+    use crate::infrastructure::org_store::save_org;
+    use crate::domain::{Org, OrgAlias, RelayEndpoint};
+    use tempfile::TempDir;
+
+    fn self_did() -> Did {
+        Did::from_ed25519_public_key(&[1u8; 32])
+    }
+
+    fn org_did() -> Did {
+        Did::from_ed25519_public_key(&[2u8; 32])
+    }
+
+    fn paths_in(tmp: &TempDir) -> KeyPaths {
+        let kp = KeyPaths::under(tmp.path().to_path_buf());
+        kp.ensure_dirs().unwrap();
+        kp
+    }
+
+    #[test]
+    fn dm_only_when_no_orgs() {
+        let tmp = TempDir::new().unwrap();
+        let paths = paths_in(&tmp);
+
+        let mut state = RelayState::default();
+        let entry = state.entry_mut("https://relay.example");
+        entry.registered = true;
+
+        let queues = enumerate_subscribed_queues_for_tests(&paths, &self_did(), &state);
+        assert_eq!(queues.len(), 1, "exactly one DM queue per registered relay");
+        assert_eq!(queues[0].owner, self_did());
+        assert_eq!(queues[0].handle.as_str(), "inbox:default");
+        assert_eq!(queues[0].endpoint, "https://relay.example");
+    }
+
+    #[test]
+    fn skips_unregistered_relays_for_dm_source() {
+        let tmp = TempDir::new().unwrap();
+        let paths = paths_in(&tmp);
+
+        let mut state = RelayState::default();
+        state.entry_mut("https://registered.example").registered = true;
+        state.entry_mut("https://not-yet.example").registered = false;
+
+        let queues = enumerate_subscribed_queues_for_tests(&paths, &self_did(), &state);
+        assert_eq!(queues.len(), 1);
+        assert_eq!(queues[0].endpoint, "https://registered.example");
+    }
+
+    #[test]
+    fn org_with_membership_and_channels_emits_one_queue_per_channel() {
+        let tmp = TempDir::new().unwrap();
+        let paths = paths_in(&tmp);
+
+        // Build an org on disk: alias `equanimi.tech`, membership recorded,
+        // two channels marked with `channel.md`.
+        let alias = OrgAlias::parse("equanimi.tech").unwrap();
+        let org = Org::new(
+            alias.clone(),
+            Some(org_did()),
+            "EquanimiTech",
+            "Test org",
+            Utc::now(),
+        );
+        save_org(&paths.orgs_root, &org, false).unwrap();
+
+        let membership_path = paths
+            .orgs_root
+            .join(alias.as_str())
+            .join(MEMBERSHIP_FILENAME);
+        let membership = OrgMembership {
+            org_did: org_did(),
+            role: "publish".to_string(),
+            relay_endpoint: RelayEndpoint::parse("https://relay.equanimi.tech").unwrap(),
+            joined_at: Utc::now(),
+            inviter_did: None,
+            body: String::new(),
+        };
+        save_membership(&membership_path, &membership).unwrap();
+
+        // Create two channel-dirs with `channel.md` markers.
+        let channels_root = paths.orgs_root.join(alias.as_str()).join("channels");
+        for handle in ["dev/secretariat", "book"] {
+            let dir = channels_root.join(handle);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("channel.md"), "---\nname: x\n---\n").unwrap();
+        }
+
+        let state = RelayState::default();
+        let queues = enumerate_subscribed_queues_for_tests(&paths, &self_did(), &state);
+
+        // Two queues — one per channel — all owned by org_did at the
+        // org's relay endpoint.
+        assert_eq!(queues.len(), 2);
+        for q in &queues {
+            assert_eq!(q.owner, org_did());
+            assert_eq!(q.endpoint, "https://relay.equanimi.tech");
+        }
+        let handles: Vec<&str> = queues.iter().map(|q| q.handle.as_str()).collect();
+        assert!(handles.contains(&"dev:secretariat"));
+        assert!(handles.contains(&"book"));
+    }
+
+    #[test]
+    fn org_without_membership_is_skipped() {
+        // An org dir exists locally (e.g. one I created myself) but
+        // there's no membership.local.md → I'm not subscribed via the
+        // org-membership pathway; no queues from this org.
+        let tmp = TempDir::new().unwrap();
+        let paths = paths_in(&tmp);
+
+        let alias = OrgAlias::parse("local-only.test").unwrap();
+        let org = Org::new(
+            alias.clone(),
+            Some(org_did()),
+            "Local Only",
+            "no membership file",
+            Utc::now(),
+        );
+        save_org(&paths.orgs_root, &org, false).unwrap();
+
+        let channels_root = paths.orgs_root.join(alias.as_str()).join("channels");
+        let dir = channels_root.join("notes");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("channel.md"), "---\nname: x\n---\n").unwrap();
+
+        let state = RelayState::default();
+        let queues = enumerate_subscribed_queues_for_tests(&paths, &self_did(), &state);
+        assert!(queues.is_empty(), "no membership = no org subscriptions");
+    }
+
+    #[test]
+    fn dm_and_org_queues_coexist() {
+        let tmp = TempDir::new().unwrap();
+        let paths = paths_in(&tmp);
+
+        let mut state = RelayState::default();
+        state.entry_mut("https://self.relay").registered = true;
+
+        let alias = OrgAlias::parse("equanimi.tech").unwrap();
+        save_org(
+            &paths.orgs_root,
+            &Org::new(
+                alias.clone(),
+                Some(org_did()),
+                "EquanimiTech",
+                "",
+                Utc::now(),
+            ),
+            false,
+        )
+        .unwrap();
+        save_membership(
+            &paths.orgs_root.join(alias.as_str()).join(MEMBERSHIP_FILENAME),
+            &OrgMembership {
+                org_did: org_did(),
+                role: "publish".to_string(),
+                relay_endpoint: RelayEndpoint::parse("https://org.relay").unwrap(),
+                joined_at: Utc::now(),
+                inviter_did: None,
+                body: String::new(),
+            },
+        )
+        .unwrap();
+        let dev = paths
+            .orgs_root
+            .join(alias.as_str())
+            .join("channels")
+            .join("dev")
+            .join("secretariat");
+        std::fs::create_dir_all(&dev).unwrap();
+        std::fs::write(dev.join("channel.md"), "---\nname: x\n---\n").unwrap();
+
+        let queues = enumerate_subscribed_queues_for_tests(&paths, &self_did(), &state);
+        assert_eq!(queues.len(), 2, "1 DM + 1 org channel");
+        // DM is at self.relay; org is at org.relay — distinct endpoints.
+        let endpoints: std::collections::HashSet<&str> =
+            queues.iter().map(|q| q.endpoint.as_str()).collect();
+        assert_eq!(endpoints.len(), 2);
+        assert!(endpoints.contains("https://self.relay"));
+        assert!(endpoints.contains("https://org.relay"));
+    }
 }
