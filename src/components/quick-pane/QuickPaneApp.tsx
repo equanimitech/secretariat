@@ -16,11 +16,10 @@
 // contract as the legacy single-input form.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { getCurrentWindow } from '@tauri-apps/api/window'
+import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window'
 import { listen } from '@tauri-apps/api/event'
 import {
   Command,
-  CommandEmpty,
   CommandGroup,
   CommandInput,
   CommandItem,
@@ -155,8 +154,32 @@ export default function QuickPaneApp() {
   // we hand it raw rows and let it score against the user's typing.
   const channelRows = useMemo(() => channels, [channels])
 
+  // Resize the window to fit content. The pane is anchored on show; we
+  // just shrink/grow its height so there's no dead space below the last
+  // row and no clipping when many rows match. Capped to keep the pane
+  // from running off-screen.
+  const contentRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = contentRef.current
+    if (!el) return
+    const MIN_H = 140
+    const MAX_H = 600
+    const apply = () => {
+      const measured = Math.ceil(el.scrollHeight)
+      const next = Math.max(MIN_H, Math.min(MAX_H, measured))
+      void getCurrentWindow().setSize(new LogicalSize(620, next))
+    }
+    apply()
+    const ro = new ResizeObserver(apply)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [channels, text])
+
   return (
-    <div className="flex h-screen w-screen flex-col overflow-hidden rounded-[var(--app-corner-radius)] border border-border bg-background shadow-lg">
+    <div
+      ref={contentRef}
+      className="flex w-screen flex-col overflow-hidden rounded-[var(--app-corner-radius)] border border-border bg-background shadow-lg"
+    >
       <Command
         className={
           'flex h-full flex-col ' +
@@ -181,12 +204,6 @@ export default function QuickPaneApp() {
           autoFocus
         />
         <CommandList className="flex-1">
-          <CommandEmpty>
-            <div className="px-4 py-3 text-sm text-muted-foreground">
-              No matching channels.
-            </div>
-          </CommandEmpty>
-
           {channelRows.length > 0 && (
             <CommandGroup heading="Launch">
               {channelRows.map(ch => (
@@ -222,11 +239,16 @@ export default function QuickPaneApp() {
 
           <CommandSeparator />
 
-          <CommandGroup heading="Capture">
+          {/* Capture stays visible regardless of filter — it's the
+              universal fallback when no channel matches the query, and
+              the muscle-memory action when the principal just wants to
+              jot something. `forceMount` keeps it mounted even when cmdk
+              would otherwise filter it out. */}
+          <CommandGroup heading="Capture" forceMount>
             <CommandItem
               value="__capture_fallback__"
               onSelect={() => void handleCapture()}
-              keywords={text ? [text] : []}
+              forceMount
               className="flex items-center gap-3"
             >
               <span className="flex flex-col gap-0.5">
@@ -236,7 +258,7 @@ export default function QuickPaneApp() {
                     : 'Capture to inbox:triage'}
                 </span>
                 <span className="text-sm text-muted-foreground">
-                  Falls back when no channel matches · saves locally, never sent
+                  Saves locally, never sent
                 </span>
               </span>
             </CommandItem>
