@@ -156,17 +156,19 @@ async fn poll_one_relay(
 
     refresh_token_if_needed(state, endpoint, &client).await?;
 
+    // DMs are the two-party case of the queue primitive — `(self, inbox:default)`.
+    // Cursor is per-queue now (v0.8 per-queue cursor model); future channel
+    // subscriptions enumerate sibling queues here, polling each with its own
+    // cursor against the same relay endpoint.
+    let inbox_default = QueueHandle::parse("inbox:default").expect("inbox:default valid");
     let (token, cursor) = {
         let entry = state.entry(endpoint).expect("just refreshed");
-        (entry.token.clone().unwrap(), entry.cursor)
+        (
+            entry.token.clone().unwrap(),
+            entry.cursor_for(did, &inbox_default),
+        )
     };
 
-    // DMs are the two-party case of the queue primitive — `(self, inbox:default)`.
-    // The single index axis on the relay covers both DM and channel traffic;
-    // self-DM stream is just the channel keyed on the principal's own DID
-    // under `inbox:default`. When channel subscriptions land, this grows to
-    // a sibling per-`(owner, handle)` poll loop with its own cursors.
-    let inbox_default = QueueHandle::parse("inbox:default").expect("inbox:default valid");
     let inbound = client
         .poll(did, &inbox_default, &token, cursor)
         .await?;
@@ -185,7 +187,9 @@ async fn poll_one_relay(
             max_id = env.id;
         }
     }
-    state.entry_mut(endpoint).cursor = max_id;
+    state
+        .entry_mut(endpoint)
+        .set_cursor_for(did, &inbox_default, max_id);
     Ok(inbound.len())
 }
 

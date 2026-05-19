@@ -33,7 +33,11 @@ use crate::domain::{Did, QueueHandle};
 
 const REGISTER_DOMAIN: &[u8] = b"secretariat-relay-register:v0:";
 const AUTH_DOMAIN: &[u8] = b"secretariat-relay-auth:v0:";
-const STATE_VERSION: u32 = 1;
+/// v2 (2026-05-19): per-`(owner, handle)` cursors replace the single
+/// per-endpoint cursor. DM cursor now lives as a queue_cursor for
+/// `(self_did, "inbox:default")` like any other subscription. No migration
+/// code — nothing was in production.
+const STATE_VERSION: u32 = 2;
 
 // ---------------------------------------------------------------------------
 // Errors
@@ -69,18 +73,68 @@ pub enum RelayStateError {
 // Persistent state
 // ---------------------------------------------------------------------------
 
-/// Per-relay session + cursor state. One entry per relay we talk to.
+/// Per-relay session state. One entry per relay we talk to. Cursors live
+/// on `queue_cursors` (per `(owner, handle)`) — see [`QueueCursor`]. The
+/// legacy single-`cursor` field is gone; DMs ride as a queue cursor for
+/// `(self_did, "inbox:default")` like any other subscription.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct RelayEntry {
     pub endpoint: String,
     #[serde(default)]
     pub registered: bool,
-    #[serde(default)]
-    pub cursor: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub token: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub token_expires_at: Option<DateTime<Utc>>,
+    /// One cursor per queue this principal polls at this relay. Read
+    /// via [`RelayEntry::cursor_for`]; write via
+    /// [`RelayEntry::set_cursor_for`]. Cursor is `0` for queues the
+    /// daemon has never polled (then `since(0)` returns the full
+    /// stream on first sync).
+    #[serde(default)]
+    pub queue_cursors: Vec<QueueCursor>,
+}
+
+/// Per-`(owner, handle)` cursor — the highest envelope id we've ingested
+/// from this queue at this relay. Stored as a flat list rather than a
+/// HashMap because JSON map keys must be strings; the linear scan is
+/// fine at v0.8 scale (handfuls of queues per principal).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QueueCursor {
+    pub owner: Did,
+    pub handle: QueueHandle,
+    pub cursor: u64,
+}
+
+impl RelayEntry {
+    /// Highest envelope id we've ingested from `(owner, handle)` at this
+    /// relay. Returns `0` for queues we've never polled — first poll
+    /// then asks `since(0)` and ingests everything.
+    pub fn cursor_for(&self, owner: &Did, handle: &QueueHandle) -> u64 {
+        self.queue_cursors
+            .iter()
+            .find(|q| &q.owner == owner && &q.handle == handle)
+            .map(|q| q.cursor)
+            .unwrap_or(0)
+    }
+
+    /// Set the cursor for `(owner, handle)`. Inserts a new entry if this
+    /// queue isn't tracked yet.
+    pub fn set_cursor_for(&mut self, owner: &Did, handle: &QueueHandle, cursor: u64) {
+        if let Some(q) = self
+            .queue_cursors
+            .iter_mut()
+            .find(|q| &q.owner == owner && &q.handle == handle)
+        {
+            q.cursor = cursor;
+        } else {
+            self.queue_cursors.push(QueueCursor {
+                owner: owner.clone(),
+                handle: handle.clone(),
+                cursor,
+            });
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -493,17 +547,20 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("relay-state.json");
 
+        let owner = crate::Did::from_ed25519_public_key(&[1u8; 32]);
+        let handle = crate::domain::QueueHandle::parse("inbox:default").unwrap();
+
         let mut state = RelayState::default();
         let entry = state.entry_mut("wss://relay.rafa.equanimi.tech");
         entry.registered = true;
-        entry.cursor = 42;
+        entry.set_cursor_for(&owner, &handle, 42);
         entry.token = Some("abc".to_string());
         state.save(&path).unwrap();
 
         let reloaded = RelayState::load(&path).unwrap();
         let e = reloaded.entry("wss://relay.rafa.equanimi.tech").unwrap();
         assert!(e.registered);
-        assert_eq!(e.cursor, 42);
+        assert_eq!(e.cursor_for(&owner, &handle), 42);
         assert_eq!(e.token.as_deref(), Some("abc"));
     }
 
@@ -525,19 +582,43 @@ mod tests {
 
     #[test]
     fn relay_state_entry_mut_creates_and_updates() {
+        let owner = crate::Did::from_ed25519_public_key(&[1u8; 32]);
+        let handle = crate::domain::QueueHandle::parse("inbox:default").unwrap();
+
         let mut state = RelayState::default();
         {
             let e = state.entry_mut("wss://x");
-            e.cursor = 1;
+            e.set_cursor_for(&owner, &handle, 1);
         }
         {
             let e = state.entry_mut("wss://x");
-            assert_eq!(e.cursor, 1);
-            e.cursor = 2;
+            assert_eq!(e.cursor_for(&owner, &handle), 1);
+            e.set_cursor_for(&owner, &handle, 2);
         }
         let e = state.entry("wss://x").unwrap();
-        assert_eq!(e.cursor, 2);
+        assert_eq!(e.cursor_for(&owner, &handle), 2);
         assert_eq!(state.iter().count(), 1);
+    }
+
+    #[test]
+    fn per_queue_cursors_independent_within_one_entry() {
+        let did1 = crate::Did::from_ed25519_public_key(&[1u8; 32]);
+        let did2 = crate::Did::from_ed25519_public_key(&[2u8; 32]);
+        let dm = crate::domain::QueueHandle::parse("inbox:default").unwrap();
+        let dev = crate::domain::QueueHandle::parse("dev:secretariat").unwrap();
+
+        let mut state = RelayState::default();
+        let e = state.entry_mut("wss://relay.example");
+        e.set_cursor_for(&did1, &dm, 10);
+        e.set_cursor_for(&did1, &dev, 50);
+        e.set_cursor_for(&did2, &dev, 99);
+
+        assert_eq!(e.cursor_for(&did1, &dm), 10);
+        assert_eq!(e.cursor_for(&did1, &dev), 50);
+        assert_eq!(e.cursor_for(&did2, &dev), 99);
+        // Unknown (owner, handle) returns 0 — fresh subscription state.
+        assert_eq!(e.cursor_for(&did2, &dm), 0);
+        assert_eq!(e.queue_cursors.len(), 3);
     }
 
     #[test]

@@ -169,8 +169,17 @@ pub async fn report_status(paths: &KeyPaths) -> Result<()> {
         let count = state.iter().count();
         println!("registered relays:    {count}");
         for r in state.iter() {
-            let cursor = r.cursor;
-            println!("  {} (cursor={cursor})", r.endpoint);
+            let queue_count = r.queue_cursors.len();
+            let max_cursor = r
+                .queue_cursors
+                .iter()
+                .map(|q| q.cursor)
+                .max()
+                .unwrap_or(0);
+            println!(
+                "  {} (queues={queue_count}, max_cursor={max_cursor})",
+                r.endpoint
+            );
         }
     }
     Ok(())

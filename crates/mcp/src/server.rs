@@ -364,8 +364,13 @@ pub struct DaemonStatusOutput {
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct DaemonRelayStatus {
     pub endpoint: String,
-    pub cursor: u64,
     pub registered: bool,
+    /// Number of `(owner, handle)` queues this relay is tracking for the
+    /// principal. v0.8+ per-queue cursor model.
+    pub queues_tracked: usize,
+    /// Maximum cursor across all tracked queues — a summary for at-a-glance
+    /// "is the daemon making progress" reads. `0` if no queues tracked.
+    pub max_cursor: u64,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -1688,8 +1693,9 @@ impl SecretariatServer {
             .iter()
             .map(|r| DaemonRelayStatus {
                 endpoint: r.endpoint.clone(),
-                cursor: r.cursor,
                 registered: r.registered,
+                queues_tracked: r.queue_cursors.len(),
+                max_cursor: r.queue_cursors.iter().map(|q| q.cursor).max().unwrap_or(0),
             })
             .collect();
         Ok(Json(DaemonStatusOutput {
