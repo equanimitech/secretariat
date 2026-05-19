@@ -30,8 +30,18 @@ use uuid::Uuid;
 
 use crate::state::{AppState, Invite};
 
-const CREATE_DOMAIN: &[u8] = b"secretariat-relay-invite-create:v0:";
+/// v1 (2026-05-19): signature canonicalization extended to cover org-flavored
+/// fields (org_did, org_alias, role, channel_handles, channel_relay_endpoint).
+/// All fields are signed even when empty so bilateral peer invites and
+/// org invites use the same scheme — empty strings / empty lists are
+/// canonicalized as zero-length tokens between unit separators.
+const CREATE_DOMAIN: &[u8] = b"secretariat-relay-invite-create:v1:";
 const CLAIM_DOMAIN: &[u8] = b"secretariat-relay-invite-claim:v0:";
+
+/// Unit separator (US, 0x1F) — joins fields in the signature preimage.
+const FIELD_SEP: u8 = 0x1F;
+/// Record separator (RS, 0x1E) — joins items inside list fields.
+const LIST_SEP: u8 = 0x1E;
 
 const DEFAULT_TTL_HOURS: i64 = 168; // 7 days
 const MAX_TTL_HOURS: i64 = 720; // 30 days
@@ -47,7 +57,27 @@ pub struct CreateRequest {
     pub expires_at: String,
     #[serde(default)]
     pub purpose: Option<String>,
-    /// `ed25519:<base64>` over `CREATE_DOMAIN || inviter_did_bytes || expires_at_bytes || purpose_bytes`.
+    /// Org DID this invite grants membership in. `None` for bilateral peer
+    /// invites (legacy [[project_invite_is_correspondence]]).
+    #[serde(default)]
+    pub org_did: Option<String>,
+    /// Human-readable org alias (e.g. `equanimi.tech`). Used by the
+    /// invitee's local `accept_org_invite` to name the on-disk org dir.
+    #[serde(default)]
+    pub org_alias: Option<String>,
+    /// Role granted on the org's channels. `subscribe` | `publish` | `admin`.
+    #[serde(default)]
+    pub role: Option<String>,
+    /// Explicit channel handle list. Empty means "all channels advertised
+    /// by the org's orgDoc" (resolved at accept time).
+    #[serde(default)]
+    pub channel_handles: Vec<String>,
+    /// Relay where the org's channels live. Defaults to the relay
+    /// receiving the invite when absent.
+    #[serde(default)]
+    pub channel_relay_endpoint: Option<String>,
+    /// `ed25519:<base64>` over the canonical signature preimage. See
+    /// `signature_preimage` for the exact byte sequence.
     pub signature: String,
 }
 
@@ -66,6 +96,16 @@ pub struct ViewResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub claimed_by: Option<String>,
     pub install_url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub org_did: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub org_alias: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub channel_handles: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub channel_relay_endpoint: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -84,6 +124,19 @@ pub struct ClaimResponse {
     /// Whether the relay just registered the claimant as a tenant during
     /// claim (saves them a separate `sec daemon register` call).
     pub registered: bool,
+    /// Org context returned to the claimant so the client can act on it
+    /// (mirror the org dir, write membership.local.md, subscribe). Absent
+    /// for bilateral peer invites.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub org_did: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub org_alias: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub channel_handles: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub channel_relay_endpoint: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -133,18 +186,20 @@ pub async fn create(
     };
     let dalek_sig = DalekSig::from_bytes(&sig_bytes);
 
-    let mut to_verify = CREATE_DOMAIN.to_vec();
-    to_verify.extend_from_slice(inviter.as_str().as_bytes());
-    to_verify.extend_from_slice(b":");
-    to_verify.extend_from_slice(req.expires_at.as_bytes());
-    to_verify.extend_from_slice(b":");
-    if let Some(p) = req.purpose.as_deref() {
-        to_verify.extend_from_slice(p.as_bytes());
-    }
+    let to_verify = create_signature_preimage(&req);
 
     if pubkey.verify(&to_verify, &dalek_sig).is_err() {
         return error(StatusCode::UNAUTHORIZED, "invite signature invalid".into());
     }
+
+    // Parse org_did if present — must be a valid DID syntactically.
+    let org_did = match req.org_did.as_deref() {
+        None => None,
+        Some(s) => match Did::parse(s) {
+            Ok(d) => Some(d),
+            Err(e) => return error(StatusCode::BAD_REQUEST, format!("invalid org_did: {e}")),
+        },
+    };
 
     let token = Uuid::new_v4().simple().to_string();
     let invite = Invite {
@@ -155,6 +210,11 @@ pub async fn create(
         purpose: req.purpose,
         claimed_by: None,
         claimed_at: None,
+        org_did,
+        org_alias: req.org_alias,
+        role: req.role,
+        channel_handles: req.channel_handles,
+        channel_relay_endpoint: req.channel_relay_endpoint,
     };
     state.create_invite(invite);
     info!(token = %token, inviter = %inviter, "invite created");
@@ -209,6 +269,11 @@ pub async fn view(
         purpose: invite.purpose,
         claimed_by: invite.claimed_by.map(|d| d.as_str().to_string()),
         install_url: "https://github.com/equanimitech/secretariat/releases/latest".into(),
+        org_did: invite.org_did.map(|d| d.as_str().to_string()),
+        org_alias: invite.org_alias,
+        role: invite.role,
+        channel_handles: invite.channel_handles,
+        channel_relay_endpoint: invite.channel_relay_endpoint,
     })
     .into_response()
 }
@@ -431,6 +496,11 @@ pub async fn claim(
         claimant_did: claimant.as_str().to_string(),
         claimed_at: now.to_rfc3339(),
         registered,
+        org_did: claimed.org_did.map(|d| d.as_str().to_string()),
+        org_alias: claimed.org_alias,
+        role: claimed.role,
+        channel_handles: claimed.channel_handles,
+        channel_relay_endpoint: claimed.channel_relay_endpoint,
     })
     .into_response()
 }
@@ -512,6 +582,69 @@ pub fn create_input(inviter_did: &Did, expires_at: &str, purpose: Option<&str>) 
 }
 
 /// Bytes a client signs to claim an invite.
+/// Canonical signature preimage for v1 create-invite. Same scheme used by
+/// both the relay verifier and the application-side signer in
+/// `crates/core/src/application/invite_ops.rs`. Order + separators MUST
+/// match exactly across both sides.
+///
+/// Format (all fields included, even when empty — keeps the scheme uniform
+/// across bilateral peer invites and org invites):
+///
+/// `CREATE_DOMAIN || inviter_did || US || expires_at || US || purpose ||
+/// US || org_did || US || org_alias || US || role || US || channel_handles
+/// joined by RS || US || channel_relay_endpoint`
+///
+/// Where `US` = 0x1F (unit separator), `RS` = 0x1E (record separator).
+/// Empty optional fields → zero-length tokens. Empty channel_handles list
+/// → zero bytes between the two surrounding `US`.
+#[allow(clippy::too_many_arguments)]
+pub fn create_signature_preimage_parts(
+    inviter_did: &str,
+    expires_at: &str,
+    purpose: Option<&str>,
+    org_did: Option<&str>,
+    org_alias: Option<&str>,
+    role: Option<&str>,
+    channel_handles: &[String],
+    channel_relay_endpoint: Option<&str>,
+) -> Vec<u8> {
+    let mut v = CREATE_DOMAIN.to_vec();
+    v.extend_from_slice(inviter_did.as_bytes());
+    v.push(FIELD_SEP);
+    v.extend_from_slice(expires_at.as_bytes());
+    v.push(FIELD_SEP);
+    v.extend_from_slice(purpose.unwrap_or("").as_bytes());
+    v.push(FIELD_SEP);
+    v.extend_from_slice(org_did.unwrap_or("").as_bytes());
+    v.push(FIELD_SEP);
+    v.extend_from_slice(org_alias.unwrap_or("").as_bytes());
+    v.push(FIELD_SEP);
+    v.extend_from_slice(role.unwrap_or("").as_bytes());
+    v.push(FIELD_SEP);
+    for (i, h) in channel_handles.iter().enumerate() {
+        if i > 0 {
+            v.push(LIST_SEP);
+        }
+        v.extend_from_slice(h.as_bytes());
+    }
+    v.push(FIELD_SEP);
+    v.extend_from_slice(channel_relay_endpoint.unwrap_or("").as_bytes());
+    v
+}
+
+fn create_signature_preimage(req: &CreateRequest) -> Vec<u8> {
+    create_signature_preimage_parts(
+        &req.inviter_did,
+        &req.expires_at,
+        req.purpose.as_deref(),
+        req.org_did.as_deref(),
+        req.org_alias.as_deref(),
+        req.role.as_deref(),
+        &req.channel_handles,
+        req.channel_relay_endpoint.as_deref(),
+    )
+}
+
 pub fn claim_input(token: &str, claimant_did: &Did, claimant_pubkey: &[u8; 32]) -> Vec<u8> {
     let mut v = CLAIM_DOMAIN.to_vec();
     v.extend_from_slice(token.as_bytes());

@@ -84,7 +84,7 @@ fn run_create(purpose: Option<&str>, ttl_hours: Option<i64>, endpoint_override: 
         None => first_registered_relay(&paths.relay_state)?,
     };
 
-    let invite = create_invite(&endpoint, &did, &key, purpose, ttl_hours)
+    let invite = create_invite(&endpoint, &did, &key, purpose, ttl_hours, None)
         .context("creating invite at relay")?;
 
     eprintln!("[sec] invite created");

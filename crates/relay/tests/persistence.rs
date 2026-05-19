@@ -141,7 +141,7 @@ async fn invite_token_survives_restart() {
     let did1 = rafa_did.clone();
     let key1 = rafa_key.clone();
     let invite =
-        tokio::task::spawn_blocking(move || create_invite(&url1, &did1, &key1, Some("hi"), Some(24)))
+        tokio::task::spawn_blocking(move || create_invite(&url1, &did1, &key1, Some("hi"), Some(24), None))
             .await
             .unwrap()
             .unwrap();

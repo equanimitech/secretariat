@@ -8,7 +8,7 @@
 
 use ed25519_dalek::SigningKey;
 use rand::rngs::OsRng;
-use secretariat_core::application::{claim_invite, create_invite, view_invite};
+use secretariat_core::application::{claim_invite, create_invite, view_invite, OrgInviteContext};
 use secretariat_core::infrastructure::transport::RelayClient;
 use secretariat_core::Did;
 use secretariat_relay::{router, AppState, Config};
@@ -54,6 +54,7 @@ async fn create_view_claim_roundtrip() {
             &rafa_key,
             Some("first-contact"),
             Some(24),
+            None,
         )
     })
     .await
@@ -104,7 +105,7 @@ async fn double_claim_is_rejected() {
 
     let endpoint_for_create = endpoint.clone();
     let invite = tokio::task::spawn_blocking(move || {
-        create_invite(&endpoint_for_create, &rafa_did, &rafa_key, None, Some(1))
+        create_invite(&endpoint_for_create, &rafa_did, &rafa_key, None, Some(1), None)
     })
     .await
     .unwrap()
@@ -128,6 +129,71 @@ async fn double_claim_is_rejected() {
 }
 
 #[tokio::test]
+async fn org_invite_roundtrips_with_context() {
+    // Org-flavored invite carries org_did + role + channel handles through
+    // the full create → view → claim cycle. v1 signature canonicalization
+    // covers the new fields; both ends compute identical preimages.
+    let endpoint = spawn_relay().await;
+    let (rafa_key, rafa_did) = fresh_principal();
+    let (marcelo_key, marcelo_did) = fresh_principal();
+
+    let rafa_client = RelayClient::new(endpoint.clone(), rafa_did.clone(), &rafa_key);
+    rafa_client.register().await.unwrap();
+
+    // Synthetic org DID — would be did:web:equanimi.tech in production.
+    let (_, org_did) = fresh_principal();
+
+    let org_ctx = OrgInviteContext {
+        org_did: org_did.clone(),
+        org_alias: "equanimi.tech".to_string(),
+        role: "publish".to_string(),
+        channel_handles: vec!["dev:secretariat".to_string(), "book".to_string()],
+        channel_relay_endpoint: Some(endpoint.clone()),
+    };
+
+    let endpoint_for_create = endpoint.clone();
+    let org_ctx_for_create = org_ctx.clone();
+    let invite = tokio::task::spawn_blocking(move || {
+        create_invite(
+            &endpoint_for_create,
+            &rafa_did,
+            &rafa_key,
+            Some("join equanimi.tech"),
+            Some(24),
+            Some(&org_ctx_for_create),
+        )
+    })
+    .await
+    .unwrap()
+    .unwrap();
+
+    // View should surface the org context.
+    let claim_url_view = invite.claim_url.clone();
+    let view = tokio::task::spawn_blocking(move || view_invite(&claim_url_view))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(view.org_did.as_ref().unwrap(), &org_did);
+    assert_eq!(view.org_alias.as_deref(), Some("equanimi.tech"));
+    assert_eq!(view.role.as_deref(), Some("publish"));
+    assert_eq!(view.channel_handles, vec!["dev:secretariat", "book"]);
+    assert!(view.channel_relay_endpoint.is_some());
+
+    // Claim should surface the same org context.
+    let claim_url = invite.claim_url.clone();
+    let did_for_claim = marcelo_did.clone();
+    let claim = tokio::task::spawn_blocking(move || {
+        claim_invite(&claim_url, &did_for_claim, &marcelo_key)
+    })
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(claim.org_did.as_ref().unwrap(), &org_did);
+    assert_eq!(claim.role.as_deref(), Some("publish"));
+    assert_eq!(claim.channel_handles, vec!["dev:secretariat", "book"]);
+}
+
+#[tokio::test]
 async fn unregistered_inviter_cannot_create() {
     let endpoint = spawn_relay().await;
     let (rafa_key, rafa_did) = fresh_principal();
@@ -135,7 +201,7 @@ async fn unregistered_inviter_cannot_create() {
 
     let endpoint_for_create = endpoint.clone();
     let r = tokio::task::spawn_blocking(move || {
-        create_invite(&endpoint_for_create, &rafa_did, &rafa_key, None, Some(1))
+        create_invite(&endpoint_for_create, &rafa_did, &rafa_key, None, Some(1), None)
     })
     .await
     .unwrap();

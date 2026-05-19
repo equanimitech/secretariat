@@ -1141,6 +1141,7 @@ impl SecretariatServer {
             &key,
             params.purpose.as_deref(),
             params.ttl_hours,
+            None,
         )
         .map_err(|e| invalid_request(format!("create_invite failed: {e}")))?;
 

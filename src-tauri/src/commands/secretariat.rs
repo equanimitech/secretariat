@@ -555,6 +555,7 @@ pub async fn create_invite(purpose: Option<String>) -> Result<String, String> {
             &key_clone,
             purpose_clone.as_deref(),
             Some(DEFAULT_INVITE_TTL_HOURS),
+            None,
         )
     })
     .await

@@ -63,6 +63,17 @@ impl TryFrom<PersistedTenant> for RegisteredTenant {
 }
 
 /// A pending invite. Created by an inviter, claimed by exactly one peer.
+///
+/// **Two flavors carried in the same record** (v0.8 — org-flavored invites).
+///
+/// - When `org_did` is `None`, the invite is a bilateral peer-add (legacy
+///   `[[project_invite_is_correspondence]]`) — claim creates a `Contact`
+///   on the inviter's side, period.
+/// - When `org_did` is `Some`, the invite grants org membership with a
+///   role. Claim triggers org-clone on the invitee's machine and a
+///   `rosterUpdate` publish on the inviter's machine. The relay's job is
+///   unchanged — it persists the invite record and serves it; the
+///   application layer interprets the org context.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Invite {
     pub token: String,
@@ -72,6 +83,30 @@ pub struct Invite {
     pub purpose: Option<String>,
     pub claimed_by: Option<Did>,
     pub claimed_at: Option<DateTime<Utc>>,
+    /// Org DID this invite grants membership in. `None` for legacy
+    /// bilateral peer invites.
+    #[serde(default)]
+    pub org_did: Option<Did>,
+    /// Human-readable org alias (e.g. `equanimi.tech`). Mirror of the
+    /// invitee's local `~/.secretariat/orgs/<alias>/` directory name.
+    #[serde(default)]
+    pub org_alias: Option<String>,
+    /// Role granted to the claimant on this org's channels. One of
+    /// `subscribe` / `publish` / `admin` per the `rosterUpdate` lexicon.
+    /// `None` when `org_did` is `None`.
+    #[serde(default)]
+    pub role: Option<String>,
+    /// Channel handles this membership covers. Empty list means "all
+    /// channels advertised by the org's orgDoc" (resolved at accept
+    /// time). Explicit list overrides — useful when granting access to
+    /// a subset.
+    #[serde(default)]
+    pub channel_handles: Vec<String>,
+    /// Relay endpoint where the org's channels live. Typically the same
+    /// host as this relay; explicit value allows cross-relay org
+    /// structure (org metadata here, channels elsewhere).
+    #[serde(default)]
+    pub channel_relay_endpoint: Option<String>,
 }
 
 /// Composite key for the queue index — `(owner_did, handle)`. The owner is the
