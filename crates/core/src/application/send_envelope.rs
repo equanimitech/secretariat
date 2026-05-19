@@ -100,7 +100,7 @@ pub async fn send_stamped_envelope(
 
     let client = RelayClient::new(endpoint.as_str(), envelope.from.clone(), key);
     let id = client
-        .send_channel(
+        .send(
             &envelope.recipient.owner,
             &envelope.recipient.handle,
             &raw,

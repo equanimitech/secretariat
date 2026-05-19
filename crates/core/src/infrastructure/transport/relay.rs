@@ -329,14 +329,14 @@ impl<'a> RelayClient<'a> {
     // Channel queue (v0.8) — `(owner, handle)` index axis.
     // ---------------------------------------------------------------------
 
-    /// POST an envelope to an `(owner, handle)` channel queue. Generalizes
-    /// `send` (which is the channel-of-two case with handle `inbox:default`,
+    /// POST an envelope to an `(owner, handle)` queue. Generalizes
+    /// `send` (which is the two-party case with handle `inbox:default`,
     /// addressed through the legacy `/v0/inbox/:did` route). Body is opaque
     /// bytes; relay queues by `(owner, handle)` and assigns the per-channel seq.
     ///
     /// Handle is percent-encoded into the path segment (colons → `%3A`); the
     /// `reqwest::Url` builder handles this for path segments automatically.
-    pub async fn send_channel(
+    pub async fn send(
         &self,
         owner: &Did,
         handle: &QueueHandle,
@@ -374,7 +374,7 @@ impl<'a> RelayClient<'a> {
 
     /// Pull entries with `id > after` from the `(owner, handle)` channel
     /// queue. Caller must hold a valid bearer token (we send our own DID's).
-    pub async fn poll_channel(
+    pub async fn poll(
         &self,
         owner: &Did,
         handle: &QueueHandle,

@@ -159,7 +159,7 @@ async fn rafa_to_marcelo_full_correspondence_loop() {
     // 6. Sender's daemon (simulated): read stamped file, send via relay.
     let stamped_bytes = std::fs::read(&stamped_path).unwrap();
     let sent_id = rafa_client
-        .send_channel(&marcelo_did, &dm(), &stamped_bytes, "text/markdown")
+        .send(&marcelo_did, &dm(), &stamped_bytes, "text/markdown")
         .await
         .unwrap();
     assert!(sent_id >= 1);
@@ -167,7 +167,7 @@ async fn rafa_to_marcelo_full_correspondence_loop() {
     // 7. Recipient's daemon (simulated): authenticate + poll.
     let (token, _expiry) = marcelo_client.authenticate().await.unwrap();
     let inbound = marcelo_client
-        .poll_channel(&marcelo_did, &dm(), &token, 0)
+        .poll(&marcelo_did, &dm(), &token, 0)
         .await
         .unwrap();
     assert_eq!(inbound.len(), 1, "marcelo should see exactly one envelope");
@@ -234,13 +234,13 @@ async fn tampered_in_transit_rejects_on_verify() {
     tampered[last] ^= 1;
 
     rafa_client
-        .send_channel(&marcelo_did, &dm(), &tampered, "text/markdown")
+        .send(&marcelo_did, &dm(), &tampered, "text/markdown")
         .await
         .unwrap();
 
     let (token, _) = marcelo_client.authenticate().await.unwrap();
     let inbound = marcelo_client
-        .poll_channel(&marcelo_did, &dm(), &token, 0)
+        .poll(&marcelo_did, &dm(), &token, 0)
         .await
         .unwrap();
     assert_eq!(inbound.len(), 1);
@@ -282,13 +282,13 @@ async fn wrong_recipient_cannot_decrypt() {
     );
     let stamped_bytes = std::fs::read(&stamped_path).unwrap();
     rafa_client
-        .send_channel(&marcelo_did, &dm(), &stamped_bytes, "text/markdown")
+        .send(&marcelo_did, &dm(), &stamped_bytes, "text/markdown")
         .await
         .unwrap();
 
     let (token, _) = marcelo_client.authenticate().await.unwrap();
     let inbound = marcelo_client
-        .poll_channel(&marcelo_did, &dm(), &token, 0)
+        .poll(&marcelo_did, &dm(), &token, 0)
         .await
         .unwrap();
     let raw_str = std::str::from_utf8(&inbound[0].body).unwrap();
@@ -331,13 +331,13 @@ async fn dm_with_non_default_handle_round_trips() {
     let stamped_bytes = std::fs::read(&stamped_path).unwrap();
     let work = QueueHandle::parse("inbox:work").unwrap();
     rafa_client
-        .send_channel(&marcelo_did, &work, &stamped_bytes, "text/markdown")
+        .send(&marcelo_did, &work, &stamped_bytes, "text/markdown")
         .await
         .unwrap();
 
     let (token, _) = marcelo_client.authenticate().await.unwrap();
     let inbound = marcelo_client
-        .poll_channel(&marcelo_did, &work, &token, 0)
+        .poll(&marcelo_did, &work, &token, 0)
         .await
         .unwrap();
     assert_eq!(inbound.len(), 1);
@@ -354,7 +354,7 @@ async fn dm_with_non_default_handle_round_trips() {
 
     // And `inbox:default` for the same owner is empty — distinct stream.
     let default_inbound = marcelo_client
-        .poll_channel(&marcelo_did, &dm(), &token, 0)
+        .poll(&marcelo_did, &dm(), &token, 0)
         .await
         .unwrap();
     assert!(
@@ -365,8 +365,8 @@ async fn dm_with_non_default_handle_round_trips() {
 
 #[tokio::test]
 async fn channel_route_carries_owner_and_handle_on_the_wire() {
-    // v0.8 channel route — `(owner, handle)` is on the URL path, not just
-    // in the envelope body. Sender posts to a channel queue; subscriber
+    // v0.8 queue route — `(owner, handle)` is on the URL path, not just
+    // in the envelope body. Sender posts to a queue; subscriber
     // pulls. The relay's single index axis stores by `(owner, handle)`,
     // so two distinct handles owned by the same DID are independent
     // streams.
@@ -385,26 +385,26 @@ async fn channel_route_carries_owner_and_handle_on_the_wire() {
 
     // Two posts to dev:secretariat, one to dommage-corporel:paris-cohort.
     themia_client
-        .send_channel(&themia_did, &dev, b"first dev post", "text/markdown")
+        .send(&themia_did, &dev, b"first dev post", "text/markdown")
         .await
         .unwrap();
     themia_client
-        .send_channel(&themia_did, &dev, b"second dev post", "text/markdown")
+        .send(&themia_did, &dev, b"second dev post", "text/markdown")
         .await
         .unwrap();
     themia_client
-        .send_channel(&themia_did, &dc, b"paris cohort post", "text/markdown")
+        .send(&themia_did, &dc, b"paris cohort post", "text/markdown")
         .await
         .unwrap();
 
     // Marcelo authenticates and pulls both channels independently.
     let (token, _) = marcelo_client.authenticate().await.unwrap();
     let dev_inbound = marcelo_client
-        .poll_channel(&themia_did, &dev, &token, 0)
+        .poll(&themia_did, &dev, &token, 0)
         .await
         .unwrap();
     let dc_inbound = marcelo_client
-        .poll_channel(&themia_did, &dc, &token, 0)
+        .poll(&themia_did, &dc, &token, 0)
         .await
         .unwrap();
 
@@ -417,7 +417,7 @@ async fn channel_route_carries_owner_and_handle_on_the_wire() {
     // Cursor advance: second pull from cursor returns nothing.
     let after_cursor = dev_inbound[1].id;
     let empty = marcelo_client
-        .poll_channel(&themia_did, &dev, &token, after_cursor)
+        .poll(&themia_did, &dev, &token, after_cursor)
         .await
         .unwrap();
     assert!(empty.is_empty(), "cursor past tail returns empty");
@@ -433,7 +433,7 @@ async fn channel_post_to_unregistered_owner_is_rejected() {
     // No one ever registered `stranger_did` with this relay.
     let h = QueueHandle::parse("dev:secretariat").unwrap();
     let r = client
-        .send_channel(&stranger_did, &h, b"hello", "text/markdown")
+        .send(&stranger_did, &h, b"hello", "text/markdown")
         .await;
     let err = r.expect_err("post to unregistered owner must fail");
     match err {

@@ -106,7 +106,7 @@ async fn queued_envelope_survives_restart() {
 
     let envelope_bytes = b"---\n$envelope:\n  $type: tech.equanimi.secretariat.envelope\n---\nhello\n";
     rafa_client
-        .send_channel(&marcelo_did, &dm(), envelope_bytes, "text/markdown")
+        .send(&marcelo_did, &dm(), envelope_bytes, "text/markdown")
         .await
         .unwrap();
     server1.shutdown().await;
@@ -117,7 +117,7 @@ async fn queued_envelope_survives_restart() {
         RelayClient::new(server2.url.clone(), marcelo_did.clone(), &marcelo_key);
     let (token, _) = marcelo_client2.authenticate().await.unwrap();
     let inbound = marcelo_client2
-        .poll_channel(&marcelo_did, &dm(), &token, 0)
+        .poll(&marcelo_did, &dm(), &token, 0)
         .await
         .unwrap();
     assert_eq!(inbound.len(), 1);

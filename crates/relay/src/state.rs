@@ -74,13 +74,13 @@ pub struct Invite {
     pub claimed_at: Option<DateTime<Utc>>,
 }
 
-/// Composite key for the channel-queue index — `(owner_did, channel_handle)`.
-/// The owner is the principal whose relay sequences the channel
-/// (owner-as-sequencer-per-channel invariant); the handle picks which channel
-/// on that owner's machine. DMs are `(peer_did, "inbox:default")` — the
-/// channel-of-two case of the same primitive (queues-as-primitive,
-/// [[project_namespace_symmetry]]).
-pub type ChannelKey = (Did, QueueHandle);
+/// Composite key for the queue index — `(owner_did, handle)`. The owner is the
+/// principal whose relay sequences this queue (owner-as-sequencer invariant);
+/// the handle picks which queue on that owner's machine. DMs are
+/// `(peer_did, "inbox:default")` — same primitive (queues-as-primitive,
+/// [[project_namespace_symmetry]]). Multi-subscriber org channels are queues
+/// with rosters > 2; the relay treats them identically.
+pub type QueueKey = (Did, QueueHandle);
 
 #[derive(Default)]
 pub struct AppState {
@@ -90,7 +90,7 @@ pub struct AppState {
     invites: RwLock<HashMap<String, Invite>>,
     /// All queues, indexed by `(owner, handle)`. DMs are `(peer, "inbox:default")`;
     /// org channels are `(org_did, "dev:secretariat")` etc. One axis, one primitive.
-    channels: RwLock<HashMap<ChannelKey, TenantQueue>>,
+    queues: RwLock<HashMap<QueueKey, TenantQueue>>,
 }
 
 impl AppState {
@@ -102,14 +102,14 @@ impl AppState {
         };
         let registry = self.registry.read().unwrap();
         let invites = self.invites.read().unwrap();
-        let channels = self.channels.read().unwrap();
+        let queues = self.queues.read().unwrap();
         let snapshot = persist::StateFile {
             version: persist::STATE_VERSION,
             tenants: registry.values().map(PersistedTenant::from).collect(),
             invites: invites.clone(),
-            channels: channels
+            queues: queues
                 .iter()
-                .map(|((owner, handle), q)| persist::PersistedChannelQueue {
+                .map(|((owner, handle), q)| persist::PersistedQueue {
                     owner: owner.clone(),
                     handle: handle.clone(),
                     queue: clone_queue(q),
@@ -137,7 +137,7 @@ impl AppState {
             auth: AuthState::new(),
             registry: RwLock::new(HashMap::new()),
             invites: RwLock::new(HashMap::new()),
-            channels: RwLock::new(HashMap::new()),
+            queues: RwLock::new(HashMap::new()),
         })
     }
 
@@ -167,17 +167,17 @@ impl AppState {
         }
         drop(invites);
 
-        let mut channels = state.channels.write().unwrap();
-        for entry in snapshot.channels {
-            channels.insert((entry.owner, entry.handle), entry.queue);
+        let mut queues = state.queues.write().unwrap();
+        for entry in snapshot.queues {
+            queues.insert((entry.owner, entry.handle), entry.queue);
         }
-        drop(channels);
+        drop(queues);
 
         info!(
             dir = %state.config.data_dir.as_ref().unwrap().display(),
             tenants = state.registry.read().unwrap().len(),
             invites = state.invites.read().unwrap().len(),
-            channels = state.channels.read().unwrap().len(),
+            queues = state.queues.read().unwrap().len(),
             "rehydrated relay state"
         );
         Ok(state)
@@ -211,14 +211,14 @@ impl AppState {
         self.registry.read().unwrap().len()
     }
 
-    /// Append `body` to the channel queue owned by `owner` under `handle`.
+    /// Append `body` to the queue owned by `owner` under `handle`.
     /// Assigns a monotonic per-channel seq via the underlying `TenantQueue`.
     ///
     /// `sender_did` carries the *author* of the message (must hold `publish`
     /// on this channel — gate to be added in the roster slice). The relay
     /// itself is the *sequencer*, not the author; the witness signature
     /// over `seq` is a separate concern (see element 5 of the v0.8 pitch).
-    pub fn enqueue_channel(
+    pub fn enqueue(
         &self,
         owner: Did,
         handle: QueueHandle,
@@ -228,16 +228,16 @@ impl AppState {
         now: DateTime<Utc>,
     ) -> u64 {
         let id = {
-            let mut channels = self.channels.write().unwrap();
-            let queue = channels.entry((owner, handle)).or_default();
+            let mut queues = self.queues.write().unwrap();
+            let queue = queues.entry((owner, handle)).or_default();
             queue.push(body, content_type, sender_did, now)
         };
         self.save_snapshot();
         id
     }
 
-    /// Return entries from the `(owner, handle)` channel queue with `id > after`.
-    pub fn since_channel(
+    /// Return entries from the `(owner, handle)` queue with `id > after`.
+    pub fn since(
         &self,
         owner: &Did,
         handle: &QueueHandle,
@@ -246,7 +246,7 @@ impl AppState {
         // The two-step clone avoids holding the read guard while the caller
         // iterates and avoids requiring `Did: Borrow<...>` on the lookup.
         let key = (owner.clone(), handle.clone());
-        self.channels
+        self.queues
             .read()
             .unwrap()
             .get(&key)
@@ -254,8 +254,8 @@ impl AppState {
             .unwrap_or_default()
     }
 
-    pub fn channel_queue_lengths(&self) -> Vec<(Did, QueueHandle, usize)> {
-        self.channels
+    pub fn queue_lengths(&self) -> Vec<(Did, QueueHandle, usize)> {
+        self.queues
             .read()
             .unwrap()
             .iter()
@@ -269,7 +269,7 @@ impl AppState {
     pub fn prune_all(&self, cutoff: DateTime<Utc>) -> usize {
         let total = {
             let mut total = 0;
-            for queue in self.channels.write().unwrap().values_mut() {
+            for queue in self.queues.write().unwrap().values_mut() {
                 total += queue.prune_older_than(cutoff);
             }
             total
@@ -362,7 +362,7 @@ impl AppState {
 }
 
 #[cfg(test)]
-mod channel_index_tests {
+mod queue_index_tests {
     use super::*;
 
     fn fresh_did(seed: u8) -> Did {
@@ -374,13 +374,13 @@ mod channel_index_tests {
     }
 
     #[test]
-    fn enqueue_channel_then_since_returns_entry() {
+    fn enqueue_then_since_returns_entry() {
         let state = AppState::new(Config::default());
         let owner = fresh_did(1);
         let author = fresh_did(2);
         let h = handle("dev:secretariat");
 
-        let id = state.enqueue_channel(
+        let id = state.enqueue(
             owner.clone(),
             h.clone(),
             b"hello channel".to_vec(),
@@ -390,7 +390,7 @@ mod channel_index_tests {
         );
         assert_eq!(id, 1);
 
-        let entries = state.since_channel(&owner, &h, 0);
+        let entries = state.since(&owner, &h, 0);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].id, 1);
         assert_eq!(entries[0].body, b"hello channel");
@@ -405,33 +405,33 @@ mod channel_index_tests {
         let dev = handle("dev:secretariat");
         let dc = handle("dommage-corporel:paris-cohort");
 
-        state.enqueue_channel(rafa.clone(), dev.clone(), b"a".to_vec(), "t".into(), None, Utc::now());
-        state.enqueue_channel(themia.clone(), dc.clone(), b"b".to_vec(), "t".into(), None, Utc::now());
-        state.enqueue_channel(rafa.clone(), dc.clone(), b"c".to_vec(), "t".into(), None, Utc::now());
+        state.enqueue(rafa.clone(), dev.clone(), b"a".to_vec(), "t".into(), None, Utc::now());
+        state.enqueue(themia.clone(), dc.clone(), b"b".to_vec(), "t".into(), None, Utc::now());
+        state.enqueue(rafa.clone(), dc.clone(), b"c".to_vec(), "t".into(), None, Utc::now());
 
         // Per-(owner, handle) seq starts at 1 in each queue.
-        assert_eq!(state.since_channel(&rafa, &dev, 0).len(), 1);
-        assert_eq!(state.since_channel(&themia, &dc, 0).len(), 1);
-        assert_eq!(state.since_channel(&rafa, &dc, 0).len(), 1);
+        assert_eq!(state.since(&rafa, &dev, 0).len(), 1);
+        assert_eq!(state.since(&themia, &dc, 0).len(), 1);
+        assert_eq!(state.since(&rafa, &dc, 0).len(), 1);
         // No cross-key bleed.
-        assert!(state.since_channel(&themia, &dev, 0).is_empty());
+        assert!(state.since(&themia, &dev, 0).is_empty());
     }
 
     #[test]
-    fn since_channel_cursor_excludes_seen_entries() {
+    fn since_cursor_excludes_seen_entries() {
         let state = AppState::new(Config::default());
         let owner = fresh_did(1);
         let h = handle("dev:secretariat");
 
-        let _ = state.enqueue_channel(owner.clone(), h.clone(), b"a".to_vec(), "t".into(), None, Utc::now());
-        let _ = state.enqueue_channel(owner.clone(), h.clone(), b"b".to_vec(), "t".into(), None, Utc::now());
-        let id3 = state.enqueue_channel(owner.clone(), h.clone(), b"c".to_vec(), "t".into(), None, Utc::now());
+        let _ = state.enqueue(owner.clone(), h.clone(), b"a".to_vec(), "t".into(), None, Utc::now());
+        let _ = state.enqueue(owner.clone(), h.clone(), b"b".to_vec(), "t".into(), None, Utc::now());
+        let id3 = state.enqueue(owner.clone(), h.clone(), b"c".to_vec(), "t".into(), None, Utc::now());
 
-        let from_one = state.since_channel(&owner, &h, 1);
+        let from_one = state.since(&owner, &h, 1);
         assert_eq!(from_one.len(), 2);
         assert_eq!(from_one[1].id, id3);
 
-        assert!(state.since_channel(&owner, &h, id3).is_empty());
+        assert!(state.since(&owner, &h, id3).is_empty());
     }
 
     #[test]
@@ -450,7 +450,7 @@ mod channel_index_tests {
         // Boot 1: enqueue triggers save_snapshot.
         {
             let state = AppState::load(config.clone()).expect("first load");
-            state.enqueue_channel(
+            state.enqueue(
                 owner.clone(),
                 h.clone(),
                 b"persisted channel post".to_vec(),
@@ -462,23 +462,23 @@ mod channel_index_tests {
 
         // Boot 2: fresh state from same data_dir, channel entry must reappear.
         let state2 = AppState::load(config).expect("second load");
-        let entries = state2.since_channel(&owner, &h, 0);
+        let entries = state2.since(&owner, &h, 0);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].body, b"persisted channel post");
         assert_eq!(entries[0].sender_did.as_ref(), Some(&author));
     }
 
     #[test]
-    fn channel_queue_lengths_reports_all_keys() {
+    fn queue_lengths_reports_all_keys() {
         let state = AppState::new(Config::default());
         let owner = fresh_did(1);
         let h1 = handle("dev:secretariat");
         let h2 = handle("triage");
-        state.enqueue_channel(owner.clone(), h1.clone(), b"a".to_vec(), "t".into(), None, Utc::now());
-        state.enqueue_channel(owner.clone(), h1.clone(), b"b".to_vec(), "t".into(), None, Utc::now());
-        state.enqueue_channel(owner.clone(), h2.clone(), b"c".to_vec(), "t".into(), None, Utc::now());
+        state.enqueue(owner.clone(), h1.clone(), b"a".to_vec(), "t".into(), None, Utc::now());
+        state.enqueue(owner.clone(), h1.clone(), b"b".to_vec(), "t".into(), None, Utc::now());
+        state.enqueue(owner.clone(), h2.clone(), b"c".to_vec(), "t".into(), None, Utc::now());
 
-        let lengths = state.channel_queue_lengths();
+        let lengths = state.queue_lengths();
         assert_eq!(lengths.len(), 2);
         let total: usize = lengths.iter().map(|(_, _, n)| n).sum();
         assert_eq!(total, 3);

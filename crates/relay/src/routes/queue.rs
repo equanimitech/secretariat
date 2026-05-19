@@ -1,9 +1,9 @@
 //! `POST /v0/queue/{owner_did}/{handle}` — anyone may publish an envelope
-//! to a channel queue owned by a registered DID.
+//! to a queue owned by a registered DID.
 //! `GET  /v0/queue/{owner_did}/{handle}?after=<cursor>` — a registered
 //! caller pulls the channel's stream (bearer-auth on the caller).
 //!
-//! Generalizes `/v0/inbox/:did`, which is the channel-of-two case (handle
+//! Generalizes `/v0/inbox/:did`, which is the two-party case (handle
 //! `inbox:default`). The handle path-param is single-segment + URL-encoded
 //! (axum decodes percent-encoding into the extracted `String`); colons in
 //! handles travel as `%3A` on the wire.
@@ -91,7 +91,7 @@ pub async fn post(
         .and_then(|s| Did::parse(s).ok());
 
     let now = Utc::now();
-    let id = state.enqueue_channel(owner_did, handle, body.to_vec(), content_type, sender_did, now);
+    let id = state.enqueue(owner_did, handle, body.to_vec(), content_type, sender_did, now);
 
     (
         StatusCode::ACCEPTED,
@@ -132,7 +132,7 @@ pub async fn get(
         return error(StatusCode::FORBIDDEN, "caller is not registered".into());
     }
 
-    let envelopes = state.since_channel(&owner_did, &handle, q.after);
+    let envelopes = state.since(&owner_did, &handle, q.after);
     Json(PollResponse { envelopes }).into_response()
 }
 

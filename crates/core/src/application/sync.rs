@@ -161,14 +161,14 @@ async fn poll_one_relay(
         (entry.token.clone().unwrap(), entry.cursor)
     };
 
-    // DMs are the channel-of-two case of the queue primitive — `(self, inbox:default)`.
+    // DMs are the two-party case of the queue primitive — `(self, inbox:default)`.
     // The single index axis on the relay covers both DM and channel traffic;
     // self-DM stream is just the channel keyed on the principal's own DID
     // under `inbox:default`. When channel subscriptions land, this grows to
     // a sibling per-`(owner, handle)` poll loop with its own cursors.
     let inbox_default = QueueHandle::parse("inbox:default").expect("inbox:default valid");
     let inbound = client
-        .poll_channel(did, &inbox_default, &token, cursor)
+        .poll(did, &inbox_default, &token, cursor)
         .await?;
     let mut max_id = cursor;
     for env in &inbound {

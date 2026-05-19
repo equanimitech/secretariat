@@ -52,7 +52,7 @@ async fn rafa_sends_marcelo_receives() {
     let envelope_bytes =
         b"---\n$envelope:\n  $type: tech.equanimi.secretariat.envelope\n  from: did:web:rafa.equanimi.tech\n  encryption: x25519-xchacha20poly1305\n---\nx25519:fakeb64:fakeb64:fakeb64\n";
     let id = rafa_client
-        .send_channel(&marcelo_did, &dm(), envelope_bytes, "text/markdown")
+        .send(&marcelo_did, &dm(), envelope_bytes, "text/markdown")
         .await
         .unwrap();
     assert!(id >= 1);
@@ -60,7 +60,7 @@ async fn rafa_sends_marcelo_receives() {
     // Marcelo authenticates and polls.
     let (token, _expires) = marcelo_client.authenticate().await.unwrap();
     let inbound = marcelo_client
-        .poll_channel(&marcelo_did, &dm(), &token, 0)
+        .poll(&marcelo_did, &dm(), &token, 0)
         .await
         .unwrap();
     assert_eq!(inbound.len(), 1);
@@ -96,7 +96,7 @@ async fn poll_advances_via_cursor() {
     for i in 0..3 {
         let body = format!("envelope-{i}");
         rafa_client
-            .send_channel(&marcelo_did, &dm(), body.as_bytes(), "text/markdown")
+            .send(&marcelo_did, &dm(), body.as_bytes(), "text/markdown")
             .await
             .unwrap();
     }
@@ -105,7 +105,7 @@ async fn poll_advances_via_cursor() {
 
     // First poll: get all three.
     let first = marcelo_client
-        .poll_channel(&marcelo_did, &dm(), &token, 0)
+        .poll(&marcelo_did, &dm(), &token, 0)
         .await
         .unwrap();
     assert_eq!(first.len(), 3);
@@ -113,20 +113,20 @@ async fn poll_advances_via_cursor() {
 
     // Second poll: nothing new.
     let second = marcelo_client
-        .poll_channel(&marcelo_did, &dm(), &token, last_id)
+        .poll(&marcelo_did, &dm(), &token, last_id)
         .await
         .unwrap();
     assert!(second.is_empty());
 
     // Sender posts one more.
     rafa_client
-        .send_channel(&marcelo_did, &dm(), b"envelope-3", "text/markdown")
+        .send(&marcelo_did, &dm(), b"envelope-3", "text/markdown")
         .await
         .unwrap();
 
     // Third poll: just the new one.
     let third = marcelo_client
-        .poll_channel(&marcelo_did, &dm(), &token, last_id)
+        .poll(&marcelo_did, &dm(), &token, last_id)
         .await
         .unwrap();
     assert_eq!(third.len(), 1);
