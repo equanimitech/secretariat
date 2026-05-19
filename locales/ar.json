@@ -8,9 +8,11 @@
   "menu.hideOthers": "إخفاء الآخرين",
   "menu.showAll": "إظهار الكل",
   "menu.quit": "إنهاء {{appName}}",
+  "menu.edit": "تحرير",
   "menu.view": "عرض",
   "menu.toggleLeftSidebar": "تبديل الشريط الجانبي الأيسر",
   "menu.toggleRightSidebar": "تبديل الشريط الجانبي الأيمن",
+  "menu.window": "نافذة",
 
   "preferences.title": "التفضيلات",
   "preferences.description": "تخصيص تفضيلات التطبيق الخاص بك هنا.",

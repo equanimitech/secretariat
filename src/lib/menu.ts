@@ -70,6 +70,23 @@ export async function buildAppMenu(): Promise<Menu> {
       ],
     })
 
+    // Build the Edit submenu — predefined items so macOS routes the
+    // classic text-editing shortcuts (Cmd+Z/Shift+Z/X/C/V/A) to the
+    // focused web view. Without this submenu the WKWebView never sees
+    // those accelerators.
+    const editSubmenu = await Submenu.new({
+      text: t('menu.edit'),
+      items: [
+        await PredefinedMenuItem.new({ item: 'Undo' }),
+        await PredefinedMenuItem.new({ item: 'Redo' }),
+        await PredefinedMenuItem.new({ item: 'Separator' }),
+        await PredefinedMenuItem.new({ item: 'Cut' }),
+        await PredefinedMenuItem.new({ item: 'Copy' }),
+        await PredefinedMenuItem.new({ item: 'Paste' }),
+        await PredefinedMenuItem.new({ item: 'SelectAll' }),
+      ],
+    })
+
     // Build the View submenu
     const viewSubmenu = await Submenu.new({
       text: t('menu.view'),
@@ -89,9 +106,22 @@ export async function buildAppMenu(): Promise<Menu> {
       ],
     })
 
+    // Build the Window submenu — predefined items so macOS gets the
+    // classic Minimize / Zoom / Fullscreen / Close shortcuts.
+    const windowSubmenu = await Submenu.new({
+      text: t('menu.window'),
+      items: [
+        await PredefinedMenuItem.new({ item: 'Minimize' }),
+        await PredefinedMenuItem.new({ item: 'Maximize' }),
+        await PredefinedMenuItem.new({ item: 'Fullscreen' }),
+        await PredefinedMenuItem.new({ item: 'Separator' }),
+        await PredefinedMenuItem.new({ item: 'CloseWindow' }),
+      ],
+    })
+
     // Build the complete menu
     const menu = await Menu.new({
-      items: [appSubmenu, viewSubmenu],
+      items: [appSubmenu, editSubmenu, viewSubmenu, windowSubmenu],
     })
 
     // Set as the application menu

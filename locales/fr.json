@@ -8,9 +8,11 @@
   "menu.hideOthers": "Masquer les autres",
   "menu.showAll": "Tout afficher",
   "menu.quit": "Quitter {{appName}}",
+  "menu.edit": "Édition",
   "menu.view": "Affichage",
   "menu.toggleLeftSidebar": "Afficher/Masquer la barre latérale gauche",
   "menu.toggleRightSidebar": "Afficher/Masquer la barre latérale droite",
+  "menu.window": "Fenêtre",
 
   "preferences.title": "Préférences",
   "preferences.description": "Personnalisez les préférences de votre application ici.",

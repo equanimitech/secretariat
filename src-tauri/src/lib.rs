@@ -211,7 +211,11 @@ pub fn run() {
                             ..
                         } = event
                         {
-                            toggle_main_window(tray.app_handle());
+                            if let Err(e) = commands::quick_pane::toggle_quick_pane(
+                                tray.app_handle().clone(),
+                            ) {
+                                log::error!("Tray quick-pane toggle failed: {e}");
+                            }
                         }
                     })
                     .build(app)?;
@@ -432,17 +436,6 @@ fn surface_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     }
 }
 
-/// Toggle main window visibility — the tray's left-click semantics.
-fn toggle_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
-    if let Some(window) = app.get_webview_window("main") {
-        match window.is_visible() {
-            Ok(true) => {
-                let _ = window.hide();
-            }
-            _ => surface_main_window(app),
-        }
-    }
-}
 
 /// Resolve the bundled `sec` and `sec-mcp` sidecars next to the running
 /// Tauri exe (e.g. `Secretariat.app/Contents/MacOS/`). Returns `Err` for

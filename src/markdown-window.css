@@ -12,8 +12,11 @@ body,
   color: var(--foreground);
 }
 
-/* Constrain the editor column for readability; let Crepe handle internal padding. */
+/* Wide cap — Secretariat is substrate, not a typographic reading
+   surface (memory: infrastructure_not_typography). 820px was prose-
+   measure; 1200px gives breathing room on big monitors without going
+   edge-to-edge. */
 .prose-host .milkdown {
-  max-width: 820px;
+  max-width: 1200px;
   margin: 0 auto;
 }
