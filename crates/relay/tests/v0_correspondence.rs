@@ -335,3 +335,104 @@ async fn dm_with_non_default_handle_round_trips() {
         "non-default handle survives transit verbatim"
     );
 }
+
+#[tokio::test]
+async fn channel_route_carries_owner_and_handle_on_the_wire() {
+    // v0.8 channel route — `(owner, handle)` is on the URL path, not just
+    // in the envelope body. Sender posts to a channel queue; subscriber
+    // pulls. The relay's single index axis stores by `(owner, handle)`,
+    // so two distinct handles owned by the same DID are independent
+    // streams.
+    let relay_url = spawn_relay().await;
+    let (themia_key, themia_did) = fresh_principal();
+    let (marcelo_key, marcelo_did) = fresh_principal();
+
+    // Themia (channel owner) registers; Marcelo (subscriber) registers.
+    let themia_client = RelayClient::new(relay_url.clone(), themia_did.clone(), &themia_key);
+    let marcelo_client = RelayClient::new(relay_url.clone(), marcelo_did.clone(), &marcelo_key);
+    themia_client.register().await.unwrap();
+    marcelo_client.register().await.unwrap();
+
+    let dev = QueueHandle::parse("dev:secretariat").unwrap();
+    let dc = QueueHandle::parse("dommage-corporel:paris-cohort").unwrap();
+
+    // Two posts to dev:secretariat, one to dommage-corporel:paris-cohort.
+    themia_client
+        .send_channel(&themia_did, &dev, b"first dev post", "text/markdown")
+        .await
+        .unwrap();
+    themia_client
+        .send_channel(&themia_did, &dev, b"second dev post", "text/markdown")
+        .await
+        .unwrap();
+    themia_client
+        .send_channel(&themia_did, &dc, b"paris cohort post", "text/markdown")
+        .await
+        .unwrap();
+
+    // Marcelo authenticates and pulls both channels independently.
+    let (token, _) = marcelo_client.authenticate().await.unwrap();
+    let dev_inbound = marcelo_client
+        .poll_channel(&themia_did, &dev, &token, 0)
+        .await
+        .unwrap();
+    let dc_inbound = marcelo_client
+        .poll_channel(&themia_did, &dc, &token, 0)
+        .await
+        .unwrap();
+
+    assert_eq!(dev_inbound.len(), 2, "dev channel has two posts");
+    assert_eq!(dc_inbound.len(), 1, "dc channel has one post");
+    assert_eq!(dev_inbound[0].body, b"first dev post");
+    assert_eq!(dev_inbound[1].body, b"second dev post");
+    assert_eq!(dc_inbound[0].body, b"paris cohort post");
+
+    // Cursor advance: second pull from cursor returns nothing.
+    let after_cursor = dev_inbound[1].id;
+    let empty = marcelo_client
+        .poll_channel(&themia_did, &dev, &token, after_cursor)
+        .await
+        .unwrap();
+    assert!(empty.is_empty(), "cursor past tail returns empty");
+}
+
+#[tokio::test]
+async fn channel_post_to_unregistered_owner_is_rejected() {
+    let relay_url = spawn_relay().await;
+    let (rando_key, _) = fresh_principal();
+    let (_, stranger_did) = fresh_principal();
+    let client = RelayClient::new(relay_url.clone(), stranger_did.clone(), &rando_key);
+
+    // No one ever registered `stranger_did` with this relay.
+    let h = QueueHandle::parse("dev:secretariat").unwrap();
+    let r = client
+        .send_channel(&stranger_did, &h, b"hello", "text/markdown")
+        .await;
+    let err = r.expect_err("post to unregistered owner must fail");
+    match err {
+        secretariat_core::infrastructure::transport::RelayClientError::BadStatus {
+            status, ..
+        } => assert_eq!(status, 404),
+        other => panic!("expected 404, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn channel_poll_without_bearer_is_unauthorized() {
+    // GET requires bearer auth. Without it, 401.
+    let relay_url = spawn_relay().await;
+    let (owner_key, owner_did) = fresh_principal();
+    let owner_client = RelayClient::new(relay_url.clone(), owner_did.clone(), &owner_key);
+    owner_client.register().await.unwrap();
+
+    let h = QueueHandle::parse("dev:secretariat").unwrap();
+    // Hand-roll the GET to skip the bearer header.
+    let url = format!(
+        "{}/v0/queue/{}/{}",
+        relay_url,
+        owner_did.as_str(),
+        h.as_str().replace(':', "%3A"),
+    );
+    let r = reqwest::get(url).await.unwrap();
+    assert_eq!(r.status().as_u16(), 401);
+}

@@ -29,7 +29,7 @@ use tempfile::NamedTempFile;
 use thiserror::Error;
 
 use crate::codec::encode_ed25519_multibase;
-use crate::domain::Did;
+use crate::domain::{Did, QueueHandle};
 
 const REGISTER_DOMAIN: &[u8] = b"secretariat-relay-register:v0:";
 const AUTH_DOMAIN: &[u8] = b"secretariat-relay-auth:v0:";
@@ -397,6 +397,100 @@ impl<'a> RelayClient<'a> {
             .collect()
     }
 
+    // ---------------------------------------------------------------------
+    // Channel queue (v0.8) — `(owner, handle)` index axis.
+    // ---------------------------------------------------------------------
+
+    /// POST an envelope to an `(owner, handle)` channel queue. Generalizes
+    /// `send` (which is the channel-of-two case with handle `inbox:default`,
+    /// addressed through the legacy `/v0/inbox/:did` route). Body is opaque
+    /// bytes; relay queues by `(owner, handle)` and assigns the per-channel seq.
+    ///
+    /// Handle is percent-encoded into the path segment (colons → `%3A`); the
+    /// `reqwest::Url` builder handles this for path segments automatically.
+    pub async fn send_channel(
+        &self,
+        owner: &Did,
+        handle: &QueueHandle,
+        body: &[u8],
+        content_type: &str,
+    ) -> Result<u64, RelayClientError> {
+        let url = format!(
+            "{}/v0/queue/{}/{}",
+            self.endpoint,
+            owner.as_str(),
+            encode_handle(handle),
+        );
+        let r = self
+            .http
+            .post(url)
+            .header("content-type", content_type)
+            .header("x-sender-did", self.did.as_str())
+            .body(body.to_vec())
+            .send()
+            .await?;
+        let status = r.status();
+        if !status.is_success() {
+            let body = r.text().await.unwrap_or_default();
+            return Err(RelayClientError::BadStatus {
+                status: status.as_u16(),
+                body,
+            });
+        }
+        let parsed: serde_json::Value = r.json().await?;
+        let id = parsed["id"]
+            .as_u64()
+            .ok_or_else(|| RelayClientError::BadResponse("post response missing id".into()))?;
+        Ok(id)
+    }
+
+    /// Pull entries with `id > after` from the `(owner, handle)` channel
+    /// queue. Caller must hold a valid bearer token (we send our own DID's).
+    pub async fn poll_channel(
+        &self,
+        owner: &Did,
+        handle: &QueueHandle,
+        token: &str,
+        after: u64,
+    ) -> Result<Vec<RelayInbound>, RelayClientError> {
+        let url = format!(
+            "{}/v0/queue/{}/{}",
+            self.endpoint,
+            owner.as_str(),
+            encode_handle(handle),
+        );
+        let r = self
+            .http
+            .get(url)
+            .query(&[("after", after)])
+            .header("authorization", format!("Bearer {token}"))
+            .send()
+            .await?;
+        let status = r.status();
+        if !status.is_success() {
+            let body = r.text().await.unwrap_or_default();
+            return Err(RelayClientError::BadStatus {
+                status: status.as_u16(),
+                body,
+            });
+        }
+        let parsed: PollResponseWire = r.json().await?;
+        parsed
+            .envelopes
+            .into_iter()
+            .map(|w| {
+                let body = B64.decode(w.body)?;
+                Ok(RelayInbound {
+                    id: w.id,
+                    queued_at: w.queued_at,
+                    sender_did: w.sender_did,
+                    body,
+                    content_type: w.content_type,
+                })
+            })
+            .collect()
+    }
+
     /// Pull every claimed invite where this principal is the inviter.
     /// Used by the daemon to discover claim events and auto-add the
     /// claimer as a contact (bidirectional contact-add — the defining
@@ -426,6 +520,13 @@ impl<'a> RelayClient<'a> {
         let parsed: ClaimedListWire = r.json().await?;
         Ok(parsed.invites)
     }
+}
+
+/// Percent-encode a [`QueueHandle`] for a URL path segment. Grammar
+/// (`[a-z0-9_-:]`) means only `:` needs encoding for path-safety —
+/// no need to pull in `percent-encoding` for one char.
+fn encode_handle(h: &QueueHandle) -> String {
+    h.as_str().replace(':', "%3A")
 }
 
 #[derive(serde::Deserialize, Debug, Clone)]
