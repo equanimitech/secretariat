@@ -97,6 +97,13 @@ pub struct KeyPaths {
     /// for every newly-created channel; otherwise the built-in fallback
     /// applies. Lives at `<self_root>/contract-stub.md`.
     pub contract_stub: PathBuf,
+    /// User intent for which queues to sync. List of
+    /// `{owner_did, handle, relay_endpoint, subscribed_at}` triples persisted
+    /// at `<root>/subscriptions.json`. Daemon enumerates this every tick
+    /// and polls each queue via `RelayClient::poll(owner, handle, token, cursor)`.
+    /// DMs are subscriptions like any other — `(self_did, "inbox:default",
+    /// self_relay)` is auto-added on init when the principal has a relay.
+    pub subscriptions: PathBuf,
 }
 
 impl KeyPaths {
@@ -128,6 +135,7 @@ impl KeyPaths {
             legacy_cadence: root.join("cadence.toml"),
             contextification_log: self_root.join(".contextification.log"),
             contract_stub: self_root.join("contract-stub.md"),
+            subscriptions: root.join("subscriptions.json"),
             identity_dir,
             self_root,
             root,
