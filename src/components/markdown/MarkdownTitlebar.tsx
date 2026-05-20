@@ -1,7 +1,9 @@
-import { FolderOpen, PanelRight } from 'lucide-react'
+import { FolderOpen, PanelRight, Terminal } from 'lucide-react'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { useSidebar } from '@/components/ui/sidebar'
+import { commands } from '@/lib/bindings'
 
 interface MarkdownTitlebarProps {
   title: string
@@ -24,6 +26,13 @@ export function MarkdownTitlebar({
     }
   }
 
+  const onLaunchClaude = async () => {
+    const res = await commands.launchClaudeAt(filePath, null)
+    if (res.status === 'error') {
+      toast.error(`Launch Claude failed: ${res.error}`)
+    }
+  }
+
   return (
     <header
       data-tauri-drag-region
@@ -41,6 +50,14 @@ export function MarkdownTitlebar({
         )}
       </div>
       <div className="flex items-center gap-1">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onLaunchClaude}
+          title="Launch Claude in this channel"
+        >
+          <Terminal size={14} />
+        </Button>
         <Button
           variant="ghost"
           size="sm"

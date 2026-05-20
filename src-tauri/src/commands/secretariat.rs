@@ -937,6 +937,146 @@ pub async fn list_launchable_channels() -> Result<Vec<LaunchableChannel>, String
     Ok(out)
 }
 
+/// Delete a channel hard-tree. Idempotent (no-ops if absent).
+#[tauri::command]
+#[specta::specta]
+pub async fn delete_channel(handle: String, org: Option<String>) -> Result<(), String> {
+    use secretariat_core::application::delete_channel as app_delete_channel;
+    use secretariat_core::domain::{OrgAlias, QueueHandle};
+    use secretariat_core::infrastructure::org_store::org_channels_root;
+
+    let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
+    let parsed_handle =
+        QueueHandle::parse(&handle).map_err(|e| format!("invalid handle `{handle}`: {e}"))?;
+    let channels_root = match org.as_deref() {
+        None => paths.personal_channels_root(),
+        Some(s) => {
+            let alias =
+                OrgAlias::parse(s).map_err(|e| format!("invalid org alias `{s}`: {e}"))?;
+            org_channels_root(&paths.orgs_root, &alias)
+        }
+    };
+    app_delete_channel(&channels_root, &parsed_handle)
+        .map_err(|e| format!("delete_channel: {e}"))
+}
+
+/// Launch Claude at the channel-dir enclosing the given path. Walks up
+/// until it finds the nearest `channel.md`; derives handle + org from
+/// the path; then calls `launch_channel_from_pane` semantics.
+#[tauri::command]
+#[specta::specta]
+pub async fn launch_claude_at(
+    path: String,
+    terminal: Option<String>,
+) -> Result<(), String> {
+    let start = std::path::PathBuf::from(&path);
+    let channel_dir = find_enclosing_channel_dir(&start)
+        .ok_or_else(|| format!("no enclosing channel.md found for `{path}`"))?;
+
+    // Walk up from channel_dir to find the `channels` segment; the
+    // parent of `channels` is either the org root (alias dir under
+    // `<root>/orgs/`) or the `_self` dir.
+    let (org, handle) = derive_org_and_handle(&channel_dir)
+        .ok_or_else(|| format!("could not derive handle from `{}`", channel_dir.display()))?;
+
+    launch_channel_from_pane(handle, org, terminal).await
+}
+
+fn find_enclosing_channel_dir(start: &std::path::Path) -> Option<std::path::PathBuf> {
+    let start = if start.is_file() {
+        start.parent()?.to_path_buf()
+    } else {
+        start.to_path_buf()
+    };
+    let mut cur = start.as_path();
+    loop {
+        if cur.join("channel.md").is_file() {
+            return Some(cur.to_path_buf());
+        }
+        cur = cur.parent()?;
+    }
+}
+
+fn derive_org_and_handle(
+    channel_dir: &std::path::Path,
+) -> Option<(Option<String>, String)> {
+    let mut segments: Vec<String> = Vec::new();
+    let mut cur = channel_dir;
+    loop {
+        let name = cur.file_name()?.to_string_lossy().into_owned();
+        if name == "channels" {
+            // Parent of `channels` is the alias dir (e.g. `_self` or `<org-alias>`).
+            let alias_dir = cur.parent()?;
+            let alias = alias_dir.file_name()?.to_string_lossy().into_owned();
+            segments.reverse();
+            let handle = segments.join(":");
+            let org = if alias == "_self" { None } else { Some(alias) };
+            return Some((org, handle));
+        }
+        segments.push(name);
+        cur = cur.parent()?;
+    }
+}
+
+/// Create a new channel. Private (`_self`) when `org` is None;
+/// org-scoped when supplied. Returns the resolved channel root path so
+/// the caller can pop it open as a session tab immediately.
+#[tauri::command]
+#[specta::specta]
+pub async fn create_channel(
+    handle: String,
+    name: String,
+    description: String,
+    org: Option<String>,
+) -> Result<LaunchableChannel, String> {
+    use chrono::Utc;
+    use secretariat_core::application::create_channel as app_create_channel;
+    use secretariat_core::domain::{OrgAlias, QueueHandle};
+    use secretariat_core::infrastructure::channel_def_store::channel_dir;
+    use secretariat_core::infrastructure::{load_channel_binding, org_store::org_channels_root};
+
+    let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
+    let parsed_handle =
+        QueueHandle::parse(&handle).map_err(|e| format!("invalid handle `{handle}`: {e}"))?;
+    let channels_root = match org.as_deref() {
+        None => paths.personal_channels_root(),
+        Some(s) => {
+            let alias =
+                OrgAlias::parse(s).map_err(|e| format!("invalid org alias `{s}`: {e}"))?;
+            org_channels_root(&paths.orgs_root, &alias)
+        }
+    };
+    let def = app_create_channel(
+        &channels_root,
+        parsed_handle.clone(),
+        name.clone(),
+        description,
+        Utc::now(),
+        None,
+    )
+    .map_err(|e| format!("create_channel: {e}"))?;
+
+    let resolved_dir = channel_dir(&channels_root, &def.handle);
+    let binding = load_channel_binding(&resolved_dir).unwrap_or_default();
+    let root = binding
+        .root_path
+        .clone()
+        .unwrap_or(resolved_dir)
+        .to_string_lossy()
+        .to_string();
+    let has_override = binding.launch_command.is_some()
+        || !binding.launch_args.is_empty()
+        || !binding.launch_env.is_empty();
+
+    Ok(LaunchableChannel {
+        handle: def.handle.as_str().to_string(),
+        org,
+        name,
+        root_path: root,
+        has_cognition_override: has_override,
+    })
+}
+
 /// Launch a channel from the quick-pane via `sec launch` semantics
 /// (binding-aware cwd + per-channel cognition overrides applied).
 #[tauri::command]

@@ -28,7 +28,10 @@ const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7
 const SIDEBAR_WIDTH = '16rem'
 const SIDEBAR_WIDTH_MOBILE = '18rem'
 const SIDEBAR_WIDTH_ICON = '3rem'
-const SIDEBAR_KEYBOARD_SHORTCUT = 'b'
+// Was `'b'` — collided with Cmd+B (bold) inside the Crepe markdown editor,
+// toggling the frontmatter sidebar every time the user tried to bold text.
+// Moved to Cmd+\ to stay out of editor keymap territory.
+const SIDEBAR_KEYBOARD_SHORTCUT = '\\'
 
 interface SidebarContextProps {
   state: 'expanded' | 'collapsed'

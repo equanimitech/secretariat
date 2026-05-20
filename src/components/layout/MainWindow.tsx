@@ -1,43 +1,27 @@
-// Sidebars + command palette stay commented out for v0.3 (no sidebars
-// rendered; quick-pane handles capture). PreferencesDialog is restored
-// in v0.2.14 — without it mounted, the gear button + Cmd+, toggle the
-// preferencesOpen state but no UI ever surfaces.
-//
-// import {
-//   ResizablePanelGroup,
-//   ResizablePanel,
-//   ResizableHandle,
-// } from '@/components/ui/resizable'
-// import { LeftSideBar } from './LeftSideBar'
-// import { RightSideBar } from './RightSideBar'
-// import { CommandPalette } from '@/components/command-palette/CommandPalette'
-// import { useUIStore } from '@/store/ui-store'
-// import { cn } from '@/lib/utils'
-
+import {
+  ResizablePanelGroup,
+  ResizablePanel,
+  ResizableHandle,
+} from '@/components/ui/resizable'
+import { LeftSideBar } from './LeftSideBar'
 import { PreferencesDialog } from '@/components/preferences/PreferencesDialog'
 import { TitleBar } from '@/components/titlebar/TitleBar'
 import { MainWindowContent } from './MainWindowContent'
 import { Toaster } from 'sonner'
 import { useTheme } from '@/hooks/use-theme'
 import { useMainWindowEventListeners } from '@/hooks/useMainWindowEventListeners'
+import { useUIStore } from '@/store/ui-store'
+import { cn } from '@/lib/utils'
 
-// Layout sizing for the resizable panels — kept here for when the
-// chrome comes back. Currently unused.
-//
-// const LAYOUT = {
-//   leftSidebar: { default: 20, min: 15, max: 40 },
-//   rightSidebar: { default: 20, min: 15, max: 40 },
-//   main: { min: 30 },
-// } as const
-// const MAIN_CONTENT_DEFAULT =
-//   100 - LAYOUT.leftSidebar.default - LAYOUT.rightSidebar.default
+const LAYOUT = {
+  leftSidebar: { default: 22, min: 15, max: 40 },
+  main: { min: 40 },
+} as const
 
 export function MainWindow() {
   const { theme } = useTheme()
-  // const leftSidebarVisible = useUIStore(state => state.leftSidebarVisible)
-  // const rightSidebarVisible = useUIStore(state => state.rightSidebarVisible)
+  const leftSidebarVisible = useUIStore(state => state.leftSidebarVisible)
 
-  // Set up global event listeners (keyboard shortcuts, etc.)
   useMainWindowEventListeners()
 
   return (
@@ -45,12 +29,6 @@ export function MainWindow() {
       <TitleBar />
 
       <div className="flex w-full flex-1 overflow-hidden">
-        <div className="flex w-full flex-1">
-          <MainWindowContent />
-        </div>
-        {/* Resizable sidebars commented out — restore by reinstating
-            `<ResizablePanelGroup direction="horizontal">` etc.
-
         <ResizablePanelGroup direction="horizontal">
           <ResizablePanel
             defaultSize={LAYOUT.leftSidebar.default}
@@ -64,29 +42,15 @@ export function MainWindow() {
           <ResizableHandle className={cn(!leftSidebarVisible && 'hidden')} />
 
           <ResizablePanel
-            defaultSize={MAIN_CONTENT_DEFAULT}
+            defaultSize={100 - LAYOUT.leftSidebar.default}
             minSize={LAYOUT.main.min}
           >
             <MainWindowContent />
           </ResizablePanel>
-
-          <ResizableHandle className={cn(!rightSidebarVisible && 'hidden')} />
-
-          <ResizablePanel
-            defaultSize={LAYOUT.rightSidebar.default}
-            minSize={LAYOUT.rightSidebar.min}
-            maxSize={LAYOUT.rightSidebar.max}
-            className={cn(!rightSidebarVisible && 'hidden')}
-          >
-            <RightSideBar />
-          </ResizablePanel>
         </ResizablePanelGroup>
-        */}
       </div>
 
       <PreferencesDialog />
-      {/* CommandPalette stays commented out for v0.3 — no command-palette
-          surface today. Restore by adding the import above and a line here. */}
       <Toaster
         position="bottom-right"
         theme={

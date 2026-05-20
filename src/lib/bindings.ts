@@ -263,8 +263,9 @@ async syncNow() : Promise<Result<SyncReport, string>> {
 }
 },
 /**
- * Read the principal's profile. Returns null when no profile has been
- * set yet (fresh install pre-onboarding).
+ * Read the principal's profile. Returns null when no identity is set
+ * yet (fresh install pre-onboarding). Backed by `identity.md`
+ * frontmatter (v0.7+).
  */
 async getProfile() : Promise<Result<Profile | null, string>> {
     try {
@@ -399,6 +400,19 @@ async listLaunchableChannels() : Promise<Result<LaunchableChannel[], string>> {
 }
 },
 /**
+ * Create a new channel. Private (`_self`) when `org` is None;
+ * org-scoped when supplied. Returns the resolved channel root path so
+ * the caller can pop it open as a session tab immediately.
+ */
+async createChannel(handle: string, name: string, description: string, org: string | null) : Promise<Result<LaunchableChannel, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("create_channel", { handle, name, description, org }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Launch a channel from the quick-pane via `sec launch` semantics
  * (binding-aware cwd + per-channel cognition overrides applied).
  */
@@ -411,11 +425,86 @@ async launchChannelFromPane(handle: string, org: string | null, terminal: string
 }
 },
 /**
- * Capture an arbitrary blob of text to `inbox:triage` from the quick-pane.
+ * Launch Claude at the channel-dir enclosing the given path. Walks up
+ * until it finds the nearest `channel.md`; derives handle + org from
+ * the path; then calls `launch_channel_from_pane` semantics.
+ */
+async launchClaudeAt(path: string, terminal: string | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("launch_claude_at", { path, terminal }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Delete a channel hard-tree. Idempotent (no-ops if absent).
+ */
+async deleteChannel(handle: string, org: string | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_channel", { handle, org }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Capture an arbitrary blob of text to the `triage` queue from the quick-pane.
  */
 async quickCapture(text: string) : Promise<Result<string, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("quick_capture", { text }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Send one user message into a channel-scoped Claude session.
+ * 
+ * `session_id` is the caller-supplied stable handle. First turn for a
+ * new conversation passes `is_first_turn=true`; the adapter generates
+ * substrate state. Subsequent turns reuse the same `session_id` with
+ * `is_first_turn=false` to resume.
+ */
+async sessionSend(tabId: string, channelPath: string, sessionId: string, message: string, isFirstTurn: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("session_send", { tabId, channelPath, sessionId, message, isFirstTurn }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Cancel an in-flight turn. Idempotent.
+ */
+async sessionCancel(tabId: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("session_cancel", { tabId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listExplorerRoots() : Promise<Result<TreeEntry[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_explorer_roots") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listDir(path: string) : Promise<Result<TreeEntry[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_dir", { path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async readChannelEnvelopes(channelPath: string, limit: number) : Promise<Result<EnvelopePreview[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("read_channel_envelopes", { channelPath, limit }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -621,6 +710,29 @@ export type CognitionSettingsDto = { provider: string; api_key: string | null; a
 export type CompositionSettingsDto = { closing_line: string; style_notes: string }
 export type ContactListing = { did: string; display_name: string }
 export type DeliverySettingsDto = { poll_interval_minutes: number }
+export type EntryKind = 
+/**
+ * Top-level "Private" entry pointing at `_self`.
+ */
+"private" | 
+/**
+ * Top-level org root.
+ */
+"org" | 
+/**
+ * Directory containing a `channel.md` — clickable to open a session tab.
+ */
+"channel_leaf" | 
+/**
+ * Directory inside the channel tree without a `channel.md` (a non-leaf
+ * handle segment, or a child dir like `envelopes/`, `outbox/`).
+ */
+"dir" | 
+/**
+ * Regular file. The extension is exposed so the renderer can decide
+ * how to open it (markdown editor for `.md`, Finder for others).
+ */
+"file"
 export type EnvelopeListing = { file_path: string; from: string | null; 
 /**
  * DID of the queue *owner* (recipient). Always set on well-formed
@@ -634,6 +746,43 @@ to: string | null;
  * conventionally use `inbox:default`.
  */
 queue: string | null; stamped: boolean; encrypted: boolean }
+export type EnvelopePreview = { 
+/**
+ * Absolute path to the `.md` file — caller uses this to open the
+ * envelope in a markdown tab.
+ */
+file_path: string; 
+/**
+ * Sender DID, when parseable from frontmatter.
+ */
+from: string | null; 
+/**
+ * Captured-at timestamp parsed from the filename (RFC 3339).
+ */
+at: string | null; 
+/**
+ * Free-form source tag, e.g. `idea-skill`, `mcp-capture`. Empty if
+ * no envelope frontmatter.
+ */
+source: string; 
+/**
+ * True if a `$attestation` frontmatter block is present (stamped).
+ */
+stamped: boolean; 
+/**
+ * True if the body is a sealed wire form (cannot show plaintext
+ * preview).
+ */
+encrypted: boolean; 
+/**
+ * First few lines of the body, plain text. Empty for encrypted
+ * envelopes.
+ */
+preview: string; 
+/**
+ * Filename basename — useful as a card title when no headline.
+ */
+filename: string }
 export type EnvelopeRead = { body: string; from: string | null; 
 /**
  * DID of the queue *owner* (recipient).
@@ -755,6 +904,26 @@ export type StampReport = { stamped_path: string; doc_hash: string; stamped_at: 
  */
 relay_assigned_id: string | null; delivery_warning: string | null }
 export type SyncReport = { per_relay: RelaySyncReport[]; sent_envelopes: number; outbox_warnings: string[] }
+export type TreeEntry = { name: string; path: string; kind: EntryKind; 
+/**
+ * Cheap to compute; true for dirs that have at least one visible
+ * child. Lets the tree render disclosure triangles without expanding.
+ */
+has_children: boolean; 
+/**
+ * Extension without the dot. Empty for dirs and extension-less files.
+ */
+ext: string; 
+/**
+ * For channel leaves: the handle string (joined by `:`). None
+ * otherwise.
+ */
+handle: string | null; 
+/**
+ * For channel leaves under an org: the org alias. None for `_self`
+ * or non-channel entries.
+ */
+org: string | null }
 export type UpdateInfo = { 
 /**
  * Version available on the update server.

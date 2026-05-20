@@ -23,11 +23,15 @@ import { MarkdownTitlebar } from './MarkdownTitlebar'
 
 interface MarkdownWindowProps {
   filePath: string
+  /** When true, layout fills the parent (`h-full`) instead of `h-screen`,
+   * the titlebar is omitted (the host's tab strip names the document),
+   * and we do not mutate the webview window's title. */
+  embedded?: boolean
 }
 
 type PendingSave = { frontmatter: Frontmatter; body: string }
 
-export function MarkdownWindow({ filePath }: MarkdownWindowProps) {
+export function MarkdownWindow({ filePath, embedded = false }: MarkdownWindowProps) {
   const [frontmatter, setFrontmatter] = useState<Frontmatter>({})
   const [body, setBody] = useState('')
   const [sha256, setSha256] = useState('')
@@ -70,11 +74,12 @@ export function MarkdownWindow({ filePath }: MarkdownWindowProps) {
   )
 
   useEffect(() => {
+    if (embedded) return
     document.title = title
     void getCurrentWebviewWindow()
       .setTitle(title)
       .catch(err => console.warn('setTitle failed', err))
-  }, [title])
+  }, [title, embedded])
 
   const performSave = useCallback(
     async (next: PendingSave): Promise<boolean> => {
