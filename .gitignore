@@ -46,3 +46,6 @@ journals/
 daily-notes/
 *.private.md
 *.journal.md
+
+# Superpowers brainstorming substrate — local to each clone.
+.superpowers/

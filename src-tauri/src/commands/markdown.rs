@@ -68,8 +68,9 @@ pub async fn open_markdown_window(app: AppHandle, path: String) -> Result<String
     }
     let encoded = urlencoding::encode(&path);
     let url = format!("markdown-window.html?path={encoded}");
+    let initial_title = initial_title_from_path(&path);
     WebviewWindowBuilder::new(&app, &label, WebviewUrl::App(url.into()))
-        .title("Markdown")
+        .title(&initial_title)
         .inner_size(1100.0, 820.0)
         .min_inner_size(560.0, 420.0)
         .resizable(true)
@@ -97,6 +98,23 @@ fn window_label(path: &str) -> String {
     format!("md:{}", &hex[..12])
 }
 
+fn initial_title_from_path(path: &str) -> String {
+    let p = std::path::Path::new(path);
+    let stem = p.file_stem().and_then(|s| s.to_str());
+    let ext = p
+        .extension()
+        .and_then(|s| s.to_str())
+        .map(|s| s.to_ascii_lowercase());
+    match (stem, ext.as_deref()) {
+        (Some(s), Some("md" | "markdown" | "mdown" | "mkd")) => s.to_string(),
+        _ => p
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or(path)
+            .to_string(),
+    }
+}
+
 /// Server-side spawn — bypasses the frontend round-trip. Called from
 /// `RunEvent::Opened` and the single-instance argv callback so a freshly
 /// arrived path opens its window even when the main webview is dormant
@@ -114,8 +132,9 @@ pub fn spawn_markdown_window<R: tauri::Runtime>(
     }
     let encoded = urlencoding::encode(&path_str);
     let url = format!("markdown-window.html?path={encoded}");
+    let initial_title = initial_title_from_path(&path_str);
     tauri::WebviewWindowBuilder::new(app, &label, WebviewUrl::App(url.into()))
-        .title("Markdown")
+        .title(&initial_title)
         .inner_size(1100.0, 820.0)
         .min_inner_size(560.0, 420.0)
         .resizable(true)
