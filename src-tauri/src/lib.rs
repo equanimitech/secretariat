@@ -5,6 +5,7 @@
 //! and shared types are in the `types` module.
 
 mod bindings;
+mod cognition;
 mod commands;
 pub mod markdown;
 mod types;
@@ -49,6 +50,7 @@ pub fn run() {
     // frontend webview has registered its listener, drained on frontend ready
     // (and on every single-instance reentry).
     app_builder = app_builder.manage(crate::markdown::pending::PendingOpens::default());
+    app_builder = app_builder.manage(crate::commands::sessions::SessionState::default());
 
     // Single instance plugin must be registered FIRST
     // When user tries to open a second instance, focus the existing window instead
@@ -152,6 +154,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_shell::init())
         .setup(|app| {
             log::info!("Application starting up");
             log::debug!(
@@ -252,6 +255,13 @@ pub fn run() {
 
             // NOTE: Application menu is built from JavaScript for i18n support
             // See src/lib/menu.ts for the menu implementation
+
+            // Spawn the cognition sidecar (Bun-compiled @anthropic-ai/claude-agent-sdk
+            // wrapper). Singleton; multiplexes all tab sessions. Managed as
+            // `Arc<ClaudeCodeSdkAdapter>` Tauri state.
+            if let Err(e) = crate::cognition::claude_code_sdk::install_into(app.handle()) {
+                log::error!("cognition sidecar install failed: {e}");
+            }
 
             // First-launch plumbing — Tauri app owns wiring the bundled
             // `sec` + `sec-mcp` sidecars into the principal's environment so

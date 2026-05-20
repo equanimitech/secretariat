@@ -25,5 +25,20 @@ mkdir -p "$DEST"
 cp "target/$TARGET/release/sec"     "$DEST/sec-$TARGET"
 cp "target/$TARGET/release/sec-mcp" "$DEST/sec-mcp-$TARGET"
 
+# Cognition sidecar — Bun-compiled TS wrapping @anthropic-ai/claude-agent-sdk.
+# Drives the in-process streaming chat for the Tauri tab strip
+# (CognitionSession port).
+COG_DIR="$WORKSPACE_ROOT/crates/cognition-claude-sdk"
+if [ -d "$COG_DIR" ]; then
+  echo "[sidecars] building cognition-claude-sdk via bun"
+  (
+    cd "$COG_DIR"
+    if [ ! -d node_modules ]; then bun install; fi
+    bun build --compile --minify --target=bun \
+      --outfile "dist/cognition-claude-sdk" index.ts
+  )
+  cp "$COG_DIR/dist/cognition-claude-sdk" "$DEST/cognition-claude-sdk-$TARGET"
+fi
+
 echo "[sidecars] staged:"
 ls -1 "$DEST"

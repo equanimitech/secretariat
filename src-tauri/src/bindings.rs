@@ -2,7 +2,8 @@ use tauri_specta::{collect_commands, Builder};
 
 pub fn generate_bindings() -> Builder<tauri::Wry> {
     use crate::commands::{
-        markdown, notifications, preferences, quick_pane, recovery, secretariat, settings, updater,
+        explorer, markdown, notifications, preferences, quick_pane, recovery, secretariat,
+        sessions, settings, timeline, updater,
     };
 
     Builder::<tauri::Wry>::new().commands(collect_commands![
@@ -37,8 +38,16 @@ pub fn generate_bindings() -> Builder<tauri::Wry> {
         secretariat::list_reviewable_orgs,
         secretariat::review_org,
         secretariat::list_launchable_channels,
+        secretariat::create_channel,
         secretariat::launch_channel_from_pane,
+        secretariat::launch_claude_at,
+        secretariat::delete_channel,
         secretariat::quick_capture,
+        sessions::session_send,
+        sessions::session_cancel,
+        explorer::list_explorer_roots,
+        explorer::list_dir,
+        timeline::read_channel_envelopes,
         settings::reveal_in_finder,
         settings::list_relays,
         settings::add_relay,
