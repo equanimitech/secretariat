@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use tracing::debug;
 
 use crate::domain::QueueHandle;
-use crate::ports::{CognitionError, CognitionPort, RouteSuggestion};
+use crate::ports::{CognitionError, CognitionRouting, RouteSuggestion};
 
 use super::config::CognitionConfig;
 
@@ -199,7 +199,7 @@ pub(crate) fn routing_payload_to_suggestion(
     })
 }
 
-impl CognitionPort for ClaudeCognitionAdapter {
+impl CognitionRouting for ClaudeCognitionAdapter {
     async fn route_capture(
         &self,
         body: &str,

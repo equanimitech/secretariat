@@ -1,4 +1,4 @@
-//! [`CognitionLauncher`] adapter — builds a [`LaunchPlan`] from the
+//! [`CognitionLaunching`] adapter — builds a [`LaunchPlan`] from the
 //! principal's `CognitionPrefs::launch_*` fields.
 //!
 //! Today the only shipped substrate is Claude Code (`claude`), but the
@@ -34,7 +34,7 @@ use std::path::Path;
 
 use crate::domain::ChannelBinding;
 use crate::infrastructure::preferences::CognitionPrefs;
-use crate::ports::{CognitionLauncher, LaunchPlan, LauncherError};
+use crate::ports::{CognitionLaunching, LaunchPlan, LauncherError};
 
 #[derive(Debug, Clone)]
 pub struct PrefsLauncher {
@@ -81,7 +81,7 @@ impl PrefsLauncher {
     }
 }
 
-impl CognitionLauncher for PrefsLauncher {
+impl CognitionLaunching for PrefsLauncher {
     fn plan_launch(&self, cwd: &Path) -> Result<LaunchPlan, LauncherError> {
         if self.command.is_empty() {
             return Err(LauncherError::EmptyCommand);

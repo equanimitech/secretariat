@@ -19,7 +19,7 @@ use crate::infrastructure::channel_def_store::channel_dir;
 use crate::infrastructure::{
     channel_def_path, load_channel_binding, resolve_channel_path, ChannelDefStoreError,
 };
-use crate::ports::{CognitionLauncher, LaunchPlan, LauncherError};
+use crate::ports::{CognitionLaunching, LaunchPlan, LauncherError};
 
 #[derive(Debug, Error)]
 pub enum LaunchChannelError {
@@ -53,7 +53,7 @@ pub enum LaunchChannelError {
 pub fn launch_channel(
     channels_root: &Path,
     handle: &QueueHandle,
-    launcher: &dyn CognitionLauncher,
+    launcher: &dyn CognitionLaunching,
 ) -> Result<LaunchPlan, LaunchChannelError> {
     Ok(launch_channel_with_binding(channels_root, handle, launcher)?.0)
 }
@@ -64,7 +64,7 @@ pub fn launch_channel(
 pub fn launch_channel_with_binding(
     channels_root: &Path,
     handle: &QueueHandle,
-    launcher: &dyn CognitionLauncher,
+    launcher: &dyn CognitionLaunching,
 ) -> Result<(LaunchPlan, ChannelBinding), LaunchChannelError> {
     let default = channel_dir(channels_root, handle);
     let channel_def_file = channel_def_path(channels_root, handle);

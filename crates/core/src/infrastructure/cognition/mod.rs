@@ -1,6 +1,6 @@
 //! Cognition adapters + audit ledger.
 //!
-//! Implements `ports::CognitionPort` for concrete substrates and stores
+//! Implements `ports::CognitionRouting` for concrete substrates and stores
 //! the per-decision audit trail. Domain + application import only the
 //! port; everything substrate-specific lives here so swapping the brain
 //! is a one-file change.
@@ -32,12 +32,12 @@ use std::path::Path;
 
 use crate::domain::QueueHandle;
 use crate::infrastructure::preferences::{CognitionPrefs, CognitionProvider};
-use crate::ports::{CognitionError, CognitionPort, RouteSuggestion};
+use crate::ports::{CognitionError, CognitionRouting, RouteSuggestion};
 
 /// Enum-dispatched cognition adapter. Built by `try_load`, picks the
 /// concrete implementation based on `CognitionConfig::provider`.
 ///
-/// Enum dispatch (rather than `Box<dyn CognitionPort>`) because the
+/// Enum dispatch (rather than `Box<dyn CognitionRouting>`) because the
 /// trait uses native `async fn`, which is not dyn-compatible without
 /// `async-trait`. Two variants is fine; if we add a third we revisit.
 #[derive(Debug, Clone)]
@@ -118,7 +118,7 @@ impl AnyCognitionAdapter {
     }
 }
 
-impl CognitionPort for AnyCognitionAdapter {
+impl CognitionRouting for AnyCognitionAdapter {
     async fn route_capture(
         &self,
         body: &str,

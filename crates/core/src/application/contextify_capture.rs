@@ -1,4 +1,4 @@
-//! Use case: ask a `CognitionPort` where this capture belongs and, if
+//! Use case: ask a `CognitionRouting` where this capture belongs and, if
 //! the suggestion is confident enough, re-file it.
 //!
 //! Background pass invoked after `capture_to_queue` writes a capture to
@@ -36,7 +36,7 @@ use crate::infrastructure::cognition::{
 };
 use crate::infrastructure::preferences::CognitionPrefs;
 use crate::infrastructure::markdown::{embed_stamp, parse_document, MarkdownError};
-use crate::ports::{CognitionError, CognitionPort, RouteSuggestion};
+use crate::ports::{CognitionError, CognitionRouting, RouteSuggestion};
 
 /// Whose queue handle is the wedge — only captures filed here are
 /// candidates for re-routing. Explicit-queue captures (filed by an MCP
@@ -96,7 +96,7 @@ pub enum ContextifySkipReason {
 
 /// Run one contextification pass on a single capture file. Always
 /// writes a ledger row (success or skip) so the principal can audit.
-pub async fn contextify_capture<P: CognitionPort>(
+pub async fn contextify_capture<P: CognitionRouting>(
     capture_path: &Path,
     queues_root: &Path,
     ledger_path: &Path,
@@ -409,7 +409,7 @@ mod tests {
         answer: Result<RouteSuggestion, CognitionError>,
     }
 
-    impl CognitionPort for ScriptedAdapter {
+    impl CognitionRouting for ScriptedAdapter {
         async fn route_capture(
             &self,
             _body: &str,

@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 use tracing::debug;
 
 use crate::domain::QueueHandle;
-use crate::ports::{CognitionError, CognitionPort, RouteSuggestion};
+use crate::ports::{CognitionError, CognitionRouting, RouteSuggestion};
 
 use super::claude::{build_system_prompt, routing_payload_to_suggestion};
 use super::config::CognitionConfig;
@@ -192,7 +192,7 @@ fn strip_code_fence(s: &str) -> String {
     without_close.trim().to_string()
 }
 
-impl CognitionPort for OpenAICompatibleAdapter {
+impl CognitionRouting for OpenAICompatibleAdapter {
     async fn route_capture(
         &self,
         body: &str,
