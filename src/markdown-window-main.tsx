@@ -6,6 +6,9 @@ import './markdown-window.css'
 import { ThemeProvider } from './components/ThemeProvider'
 import { MarkdownWindow } from './components/markdown/MarkdownWindow'
 import { queryClient } from './lib/query-client'
+import { installExternalLinkHandler } from './lib/external-links'
+
+installExternalLinkHandler()
 
 const params = new URLSearchParams(window.location.search)
 const rawPath = params.get('path') ?? ''
@@ -22,5 +25,5 @@ ReactDOM.createRoot(rootEl).render(
         <Toaster />
       </ThemeProvider>
     </QueryClientProvider>
-  </React.StrictMode>,
+  </React.StrictMode>
 )

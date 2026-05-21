@@ -4,6 +4,9 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import './i18n'
 import App from './App'
 import { queryClient } from './lib/query-client'
+import { installExternalLinkHandler } from './lib/external-links'
+
+installExternalLinkHandler()
 
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <QueryClientProvider client={queryClient}>

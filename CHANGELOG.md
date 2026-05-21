@@ -4,7 +4,13 @@ All notable changes to Secretariat are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased](https://github.com/equanimitech/secretariat/compare/v0.10.1...HEAD)
+## [Unreleased](https://github.com/equanimitech/secretariat/compare/v0.10.2...HEAD)
+
+## [0.10.2](https://github.com/equanimitech/secretariat/compare/v0.10.1...v0.10.2) — 2026-05-21
+
+### Fixed
+
+* External links in the markdown editor now open in the system browser instead of trapping the user inside the Tauri webview. A capture-phase document listener intercepts clicks on `<a>` tags whose protocol is `http(s)`, `mailto`, or `tel` and dispatches them to the Tauri opener plugin; in-app schemes (`secretariat:`, `file:`, fragment `#…`) are left to their existing handlers. Installed across the main window, markdown reader/editor window, and quick-pane; `opener:default` permission added to the quick-pane capability so the call resolves there too.
 
 ## [0.10.1](https://github.com/equanimitech/secretariat/compare/v0.10.0...v0.10.1) — 2026-05-21
 
