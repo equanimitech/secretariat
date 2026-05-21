@@ -66,6 +66,14 @@ jobs:
         with:
           version: 8
 
+      # Required by src-tauri/scripts/build-sidecars.sh to produce the
+      # cognition-claude-sdk sidecar (Bun-compiled @anthropic-ai/claude-agent-sdk
+      # wrapper) staged into src-tauri/binaries/.
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
