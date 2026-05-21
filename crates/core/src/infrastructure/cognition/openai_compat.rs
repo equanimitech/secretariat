@@ -22,9 +22,11 @@ use serde::{Deserialize, Serialize};
 use tracing::debug;
 
 use crate::domain::QueueHandle;
-use crate::ports::{CognitionError, CognitionRouting, RouteSuggestion};
+use crate::ports::{AgFields, CognitionAg, CognitionError, CognitionRouting, RouteSuggestion};
 
-use super::claude::{build_system_prompt, routing_payload_to_suggestion};
+use super::claude::{
+    ag_payload_to_fields, build_ag_system_prompt, build_system_prompt, routing_payload_to_suggestion,
+};
 use super::config::CognitionConfig;
 
 const HTTP_TIMEOUT: Duration = Duration::from_secs(60);
@@ -192,6 +194,89 @@ fn strip_code_fence(s: &str) -> String {
     without_close.trim().to_string()
 }
 
+/// Pull the assistant text out of a Chat-Completions response and parse it
+/// into `AgFields`. Mirrors `parse_chat_response` for the routing path.
+pub(crate) fn parse_chat_ag_response(
+    raw: &str,
+    model: &str,
+    prompt_version: &str,
+) -> Result<AgFields, CognitionError> {
+    let parsed: ChatResponse = serde_json::from_str(raw)
+        .map_err(|e| CognitionError::InvalidResponse(format!("envelope parse: {e}")))?;
+    let content = parsed
+        .choices
+        .into_iter()
+        .next()
+        .ok_or_else(|| CognitionError::InvalidResponse("no choices in response".into()))?
+        .message
+        .content;
+    let unfenced = strip_code_fence(&content);
+    ag_payload_to_fields(&unfenced, model, prompt_version)
+}
+
+impl CognitionAg for OpenAICompatibleAdapter {
+    async fn extract_ag(&self, body: &str) -> Result<AgFields, CognitionError> {
+        let base = self
+            .api_base()
+            .ok_or(CognitionError::NotConfigured)?
+            .trim_end_matches('/');
+        let system = build_ag_system_prompt();
+        debug!(
+            model = self.model_or_default(),
+            api_base = base,
+            prompt_version = self.prompt_version,
+            body_len = body.len(),
+            "calling OpenAI-compat Chat Completions for AG extraction"
+        );
+
+        let request = ChatRequest {
+            model: self.model_or_default(),
+            messages: vec![
+                ChatMessage {
+                    role: "system",
+                    content: system,
+                },
+                ChatMessage {
+                    role: "user",
+                    content: body,
+                },
+            ],
+            max_tokens: 512,
+            temperature: 0.0,
+        };
+
+        let mut req = reqwest::Client::builder()
+            .timeout(HTTP_TIMEOUT)
+            .build()
+            .map_err(|e| CognitionError::Network(e.to_string()))?
+            .post(format!("{base}/chat/completions"))
+            .header("content-type", "application/json")
+            .json(&request);
+        if let Some(key) = self.config.api_key.as_deref() {
+            if !key.is_empty() {
+                req = req.bearer_auth(key);
+            }
+        }
+        let resp = req
+            .send()
+            .await
+            .map_err(|e| CognitionError::Network(e.to_string()))?;
+
+        let status = resp.status();
+        if status.as_u16() == 429 {
+            return Err(CognitionError::RateLimited);
+        }
+        let text = resp
+            .text()
+            .await
+            .map_err(|e| CognitionError::Network(format!("reading response body: {e}")))?;
+        if !status.is_success() {
+            return Err(CognitionError::Network(format!("HTTP {status}: {text}")));
+        }
+        parse_chat_ag_response(&text, self.model_or_default(), self.prompt_version)
+    }
+}
+
 impl CognitionRouting for OpenAICompatibleAdapter {
     async fn route_capture(
         &self,
@@ -328,6 +413,25 @@ mod tests {
         let raw = r#"{"choices":[]}"#;
         let err = parse_chat_response(raw, "m", "v1").unwrap_err();
         assert!(matches!(err, CognitionError::InvalidResponse(_)));
+    }
+
+    #[test]
+    fn parse_chat_ag_response_happy_path() {
+        let raw = r#"{
+            "choices":[{"index":0,"message":{"role":"assistant","content":"{\"title\":\"Topic\",\"lede\":\"One line.\",\"summary\":\"Two sentences here. Plus a second.\"}"}}]
+        }"#;
+        let fields = parse_chat_ag_response(raw, "llama3.1:8b", "v1").unwrap();
+        assert_eq!(fields.title, "Topic");
+        assert_eq!(fields.model, "llama3.1:8b");
+    }
+
+    #[test]
+    fn parse_chat_ag_response_strips_code_fence() {
+        let raw = r#"{
+            "choices":[{"message":{"role":"assistant","content":"```json\n{\"title\":\"T\",\"lede\":\"L\",\"summary\":\"S\"}\n```"}}]
+        }"#;
+        let fields = parse_chat_ag_response(raw, "m", "v1").unwrap();
+        assert_eq!(fields.title, "T");
     }
 
     #[test]

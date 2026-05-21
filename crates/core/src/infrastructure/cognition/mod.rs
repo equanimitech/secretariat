@@ -32,7 +32,7 @@ use std::path::Path;
 
 use crate::domain::QueueHandle;
 use crate::infrastructure::preferences::{CognitionPrefs, CognitionProvider};
-use crate::ports::{CognitionError, CognitionRouting, RouteSuggestion};
+use crate::ports::{AgFields, CognitionAg, CognitionError, CognitionRouting, RouteSuggestion};
 
 /// Enum-dispatched cognition adapter. Built by `try_load`, picks the
 /// concrete implementation based on `CognitionConfig::provider`.
@@ -127,6 +127,15 @@ impl CognitionRouting for AnyCognitionAdapter {
         match self {
             Self::Anthropic(a) => a.route_capture(body, existing_queues).await,
             Self::OpenAiCompat(a) => a.route_capture(body, existing_queues).await,
+        }
+    }
+}
+
+impl CognitionAg for AnyCognitionAdapter {
+    async fn extract_ag(&self, body: &str) -> Result<AgFields, CognitionError> {
+        match self {
+            Self::Anthropic(a) => a.extract_ag(body).await,
+            Self::OpenAiCompat(a) => a.extract_ag(body).await,
         }
     }
 }

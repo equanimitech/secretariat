@@ -379,6 +379,9 @@ mod tests {
             queue: q,
             body: body.to_string(),
             source: "test".to_string(),
+            title: None,
+            lede: None,
+            summary: None,
         };
         capture_to_queue(req, vault_root, &Root::Self_, now).unwrap();
     }

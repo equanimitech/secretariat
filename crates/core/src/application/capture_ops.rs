@@ -28,10 +28,14 @@ use rand::Rng;
 use thiserror::Error;
 
 use crate::domain::{
-    Did, Envelope, EnvelopeBuilder, EnvelopeDepth, EnvelopeUrgency, QueueHandle, Recipient, Root,
+    AgSource, Did, Envelope, EnvelopeBuilder, EnvelopeDepth, EnvelopeUrgency, QueueHandle,
+    Recipient, Root,
 };
 use crate::infrastructure::channel_def_store::{channel_def_exists_in_dir, channel_dir};
 use crate::infrastructure::markdown::{embed_stamp, MarkdownError};
+use crate::infrastructure::preferences::CognitionPrefs;
+
+use super::ag_extract::{try_extract_ag, AgExtractOutcome, AuthorAgFields};
 
 #[derive(Debug, Error)]
 pub enum CaptureError {
@@ -66,6 +70,12 @@ pub struct CaptureRequest {
     /// `"mcp-capture"`). Lets the review session group by source if it
     /// wants.
     pub source: String,
+    /// Optional author-supplied AG fields. When any is set, the envelope
+    /// is written with the author's values verbatim and the AI auto-fill
+    /// pass stands down (see `capture_to_queue_with_ag`).
+    pub title: Option<String>,
+    pub lede: Option<String>,
+    pub summary: Option<String>,
 }
 
 /// Compute the channels root for a queue-root under a vault.
@@ -90,7 +100,65 @@ pub fn capture_to_queue(
     root: &Root,
     now: DateTime<Utc>,
 ) -> Result<PathBuf, CaptureError> {
-    let envelope = build_envelope(&request);
+    capture_to_queue_inner(request, vault_root, root, now, None)
+}
+
+/// Async wrapper that runs an AG-extraction pass before capturing.
+///
+/// When `request.title` / `lede` / `summary` are all `None` and the
+/// body is substantive (see [`super::ag_extract::body_warrants_ag`]),
+/// call the configured cognition adapter; populate the request with
+/// the result; tag `ag_source = "ai"` so receivers can tell.
+///
+/// Falls through to a normal [`capture_to_queue`] write when the
+/// author supplied any AG field, the body is too short, no adapter is
+/// configured, or the adapter call fails. Never crashes a capture.
+pub async fn capture_to_queue_with_ag(
+    request: CaptureRequest,
+    vault_root: &Path,
+    root: &Root,
+    cognition_prefs: &CognitionPrefs,
+    now: DateTime<Utc>,
+) -> Result<PathBuf, CaptureError> {
+    let (request, ag_source) = enrich_with_ag(request, cognition_prefs).await;
+    capture_to_queue_inner(request, vault_root, root, now, ag_source)
+}
+
+async fn enrich_with_ag(
+    mut request: CaptureRequest,
+    cognition_prefs: &CognitionPrefs,
+) -> (CaptureRequest, Option<AgSource>) {
+    let author = AuthorAgFields {
+        title: request.title.clone(),
+        lede: request.lede.clone(),
+        summary: request.summary.clone(),
+    };
+    if author.any_set() {
+        return (request, None);
+    }
+    let outcome = try_extract_ag(&request.body, &author, cognition_prefs).await;
+    match outcome {
+        AgExtractOutcome::Generated(fields) => {
+            request.title = Some(fields.title);
+            request.lede = Some(fields.lede);
+            request.summary = Some(fields.summary);
+            (request, Some(AgSource::Ai))
+        }
+        _ => (request, None),
+    }
+}
+
+fn capture_to_queue_inner(
+    request: CaptureRequest,
+    vault_root: &Path,
+    root: &Root,
+    now: DateTime<Utc>,
+    ag_source: Option<AgSource>,
+) -> Result<PathBuf, CaptureError> {
+    let mut envelope = build_envelope(&request);
+    if let Some(src) = ag_source {
+        envelope.ag_source = Some(src);
+    }
     let target_dir = resolve_target_dir(&request.queue, vault_root, root, now)?;
 
     fs::create_dir_all(&target_dir).map_err(|e| CaptureError::Io {
@@ -136,14 +204,23 @@ fn resolve_target_dir(
 }
 
 fn build_envelope(req: &CaptureRequest) -> Envelope {
-    EnvelopeBuilder::new(
+    let mut b = EnvelopeBuilder::new(
         req.from.clone(),
         Recipient::new(req.from.clone(), req.queue.clone()),
     )
     .depth(EnvelopeDepth::Subtle)
     .urgency(EnvelopeUrgency::Whenever)
-    .source(req.source.clone())
-    .build()
+    .source(req.source.clone());
+    if let Some(t) = &req.title {
+        b = b.title(t.clone());
+    }
+    if let Some(l) = &req.lede {
+        b = b.lede(l.clone());
+    }
+    if let Some(s) = &req.summary {
+        b = b.summary(s.clone());
+    }
+    b.build()
 }
 
 /// Same shape as `compose_envelope`: `<utc-iso8601>-<6-char-base32>.md`.
@@ -192,6 +269,9 @@ mod tests {
             queue: QueueHandle::parse("triage").unwrap(),
             body: "tell dad chapter 3 needs more pressure\n".to_string(),
             source: "idea-skill".to_string(),
+            title: None,
+            lede: None,
+            summary: None,
         };
 
         let now = Utc.with_ymd_and_hms(2026, 5, 5, 10, 0, 0).unwrap();
@@ -230,6 +310,9 @@ mod tests {
             queue: QueueHandle::parse("articles:equanimitech").unwrap(),
             body: "UI navigates; MCP CRUDs".into(),
             source: "test".into(),
+            title: None,
+            lede: None,
+            summary: None,
         };
         let now = Utc.with_ymd_and_hms(2026, 5, 12, 3, 25, 37).unwrap();
         let path = capture_to_queue(req, dir.path(), &root, now).unwrap();
@@ -255,6 +338,9 @@ mod tests {
             queue: QueueHandle::parse("dommage-corporel:paris-cohort").unwrap(),
             body: "first dossier review note".into(),
             source: "idea-skill".into(),
+            title: None,
+            lede: None,
+            summary: None,
         };
 
         let now = Utc.with_ymd_and_hms(2026, 1, 9, 8, 5, 0).unwrap();
@@ -279,6 +365,9 @@ mod tests {
             queue: QueueHandle::parse("does-not:exist").unwrap(),
             body: "should be rejected".into(),
             source: "test".into(),
+            title: None,
+            lede: None,
+            summary: None,
         };
         let now = Utc.with_ymd_and_hms(2026, 5, 14, 9, 0, 0).unwrap();
         let err = capture_to_queue(req, dir.path(), &root, now).unwrap_err();

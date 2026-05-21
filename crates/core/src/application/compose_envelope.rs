@@ -1,11 +1,13 @@
-//! Use case: scaffold an AG-shaped envelope into a per-queue outbox.
+//! Use case: scaffold an AG-shaped envelope as a draft on a per-queue tree.
 //!
 //! Reads the user's customizable template at `~/.secretariat/template.md`,
 //! prepends a `$envelope:` frontmatter block, and writes the result to
-//! `<root>/<alias-of-to>/<namespace>/<segments>/outbox/<timestamp>.md` —
-//! one outbox per queue, derived from the recipient via the
+//! `<root>/<alias-of-to>/channels/<segments>/_drafts/<timestamp>.md` —
+//! the per-queue drafts dir, derived from the recipient via the
 //! `queue_dir` resolver. No stamp is added — the principal stamps
-//! later via `sec stamp`.
+//! later via `sec stamp`, which atomically renames the file out of
+//! `_drafts/` into `envelopes/YYYY/MM/DD/` (per the drop-outbox pitch,
+//! `docs/pitches/2026-05-18-drop-outbox.md`).
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -15,10 +17,13 @@ use rand::Rng;
 use thiserror::Error;
 
 use crate::domain::{
-    Did, Envelope, EnvelopeBuilder, EnvelopeDepth, EnvelopeUrgency, Recipient,
+    AgSource, Did, Envelope, EnvelopeBuilder, EnvelopeDepth, EnvelopeUrgency, Recipient,
 };
 use crate::infrastructure::markdown::{embed_stamp, MarkdownError};
+use crate::infrastructure::preferences::CognitionPrefs;
 use crate::infrastructure::queue_dir::AliasMap;
+
+use super::ag_extract::{try_extract_ag, AgExtractOutcome, AuthorAgFields};
 
 #[derive(Debug, Error)]
 pub enum ComposeError {
@@ -44,6 +49,12 @@ pub struct ComposeRequest {
     /// caller is responsible for shape. When `None`, the user's template at
     /// `~/.secretariat/template.md` is used as a scaffold.
     pub body: Option<String>,
+    /// Optional author-supplied AG fields. When any is set, the envelope is
+    /// written with the author's values verbatim and the AI auto-fill pass
+    /// stands down (see `compose_envelope_with_ag`).
+    pub title: Option<String>,
+    pub lede: Option<String>,
+    pub summary: Option<String>,
 }
 
 pub fn compose_envelope(
@@ -53,9 +64,26 @@ pub fn compose_envelope(
     aliases: &AliasMap,
     now: DateTime<Utc>,
 ) -> Result<PathBuf, ComposeError> {
-    let envelope = build_envelope(&request);
+    compose_envelope_inner(request, template_path, root, aliases, now, None)
+}
+
+/// Inner write — same shape as `compose_envelope`, threads an explicit
+/// `ag_source` so the async wrapper can mark scribe-generated AG
+/// triplets without duplicating the file-IO body.
+fn compose_envelope_inner(
+    request: ComposeRequest,
+    template_path: &Path,
+    root: &Path,
+    aliases: &AliasMap,
+    now: DateTime<Utc>,
+    ag_source: Option<AgSource>,
+) -> Result<PathBuf, ComposeError> {
+    let mut envelope = build_envelope(&request);
+    if let Some(src) = ag_source {
+        envelope.ag_source = Some(src);
+    }
     let queue_root = crate::infrastructure::queue_dir::queue_dir(aliases, &request.recipient, root);
-    let target_dir = queue_root.join("outbox");
+    let target_dir = queue_root.join("_drafts");
     fs::create_dir_all(&target_dir).map_err(|e| ComposeError::Io {
         path: target_dir.clone(),
         source: e,
@@ -101,7 +129,87 @@ fn build_envelope(req: &ComposeRequest) -> Envelope {
     if let Some(hint) = &req.cadence_hint {
         b = b.cadence_hint(hint.clone());
     }
+    if let Some(t) = &req.title {
+        b = b.title(t.clone());
+    }
+    if let Some(l) = &req.lede {
+        b = b.lede(l.clone());
+    }
+    if let Some(s) = &req.summary {
+        b = b.summary(s.clone());
+    }
     b.build()
+}
+
+/// Async wrapper that runs an AG-extraction pass before composing.
+///
+/// When `request.title` / `lede` / `summary` are all `None` and the
+/// effective body is plaintext and substantive (see
+/// [`super::ag_extract::body_warrants_ag`]), call the configured
+/// cognition adapter; populate the request with the result; tag
+/// `ag_source = "ai"` so receivers can tell. When any of the AG fields
+/// is already set, or the adapter is unconfigured, the body is too
+/// short, or the adapter fails, this falls through to a normal
+/// [`compose_envelope`] call. Never crashes a compose — the
+/// correspondence path is not blocked by the cognition substrate.
+pub async fn compose_envelope_with_ag(
+    request: ComposeRequest,
+    template_path: &Path,
+    root: &Path,
+    aliases: &AliasMap,
+    cognition_prefs: &CognitionPrefs,
+    now: DateTime<Utc>,
+) -> Result<PathBuf, ComposeError> {
+    let (request, ag_source) =
+        enrich_with_ag(request, template_path, root, aliases, cognition_prefs).await?;
+    compose_envelope_inner(request, template_path, root, aliases, now, ag_source)
+}
+
+async fn enrich_with_ag(
+    mut request: ComposeRequest,
+    template_path: &Path,
+    root: &Path,
+    aliases: &AliasMap,
+    cognition_prefs: &CognitionPrefs,
+) -> Result<(ComposeRequest, Option<AgSource>), ComposeError> {
+    let author = AuthorAgFields {
+        title: request.title.clone(),
+        lede: request.lede.clone(),
+        summary: request.summary.clone(),
+    };
+    if author.any_set() {
+        return Ok((request, None));
+    }
+    // Read the body we'd actually write so the AG pass sees real content.
+    let body_string = match &request.body {
+        Some(b) => b.clone(),
+        None => {
+            let queue_root =
+                crate::infrastructure::queue_dir::queue_dir(aliases, &request.recipient, root);
+            let channel_template = queue_root.join("template.md");
+            let chosen = if channel_template.is_file() {
+                channel_template
+            } else {
+                template_path.to_path_buf()
+            };
+            match fs::read_to_string(&chosen) {
+                Ok(raw) => strip_existing_frontmatter(&raw).to_string(),
+                // Don't crash AG enrichment on template-read failure; the
+                // sync compose path will surface it.
+                Err(_) => return Ok((request, None)),
+            }
+        }
+    };
+    let outcome = try_extract_ag(&body_string, &author, cognition_prefs).await;
+    match outcome {
+        AgExtractOutcome::Generated(fields) => {
+            request.title = Some(fields.title);
+            request.lede = Some(fields.lede);
+            request.summary = Some(fields.summary);
+            Ok((request, Some(AgSource::Ai)))
+        }
+        _ => Ok((request, None)),
+    }
 }
 
 /// Decision log #7: `<utc-iso8601>-<6-char-base32-suffix>.md`.
@@ -162,7 +270,7 @@ mod tests {
     }
 
     #[test]
-    fn composes_to_peer_queue_outbox() {
+    fn composes_to_peer_queue_drafts() {
         let dir = TempDir::new().unwrap();
         let template = dir.path().join("template.md");
         fs::write(&template, "# Title\n\nBody.\n").unwrap();
@@ -181,15 +289,18 @@ mod tests {
             source: "test".into(),
             cadence_hint: None,
             body: None,
+            title: None,
+            lede: None,
+            summary: None,
         };
 
         let now = Utc.with_ymd_and_hms(2026, 4, 30, 14, 25, 0).unwrap();
         let path = compose_envelope(req, &template, root, &aliases, now).unwrap();
 
-        // Lives under <root>/marcelo/channels/inbox/default/outbox/.
+        // Lives under <root>/marcelo/channels/inbox/default/_drafts/.
         assert_eq!(
             path.parent().unwrap(),
-            root.join("marcelo/channels/inbox/default/outbox"),
+            root.join("marcelo/channels/inbox/default/_drafts"),
         );
         assert!(path
             .file_name()
@@ -207,7 +318,7 @@ mod tests {
     fn composes_self_letter_under_self_alias() {
         // Self-addressed envelope — owner == from. The resolver maps
         // to `_self`, the handle's namespace + segments give the
-        // rest, and the file lands in that queue's `outbox/`.
+        // rest, and the file lands in that queue's `_drafts/`.
         let dir = TempDir::new().unwrap();
         let template = dir.path().join("template.md");
         fs::write(&template, "# Self\n").unwrap();
@@ -225,13 +336,16 @@ mod tests {
             source: "test".into(),
             cadence_hint: None,
             body: None,
+            title: None,
+            lede: None,
+            summary: None,
         };
 
         let now = Utc.with_ymd_and_hms(2026, 4, 30, 9, 0, 0).unwrap();
         let path = compose_envelope(req, &template, root, &aliases, now).unwrap();
         assert_eq!(
             path.parent().unwrap(),
-            root.join("_self/channels/inbox/default/outbox"),
+            root.join("_self/channels/inbox/default/_drafts"),
         );
     }
 
@@ -263,6 +377,9 @@ mod tests {
             source: "test".into(),
             cadence_hint: None,
             body: None,
+            title: None,
+            lede: None,
+            summary: None,
         };
 
         let now = Utc.with_ymd_and_hms(2026, 5, 18, 12, 0, 0).unwrap();
@@ -295,6 +412,9 @@ mod tests {
             source: "test".into(),
             cadence_hint: None,
             body: None,
+            title: None,
+            lede: None,
+            summary: None,
         };
 
         let now = Utc.with_ymd_and_hms(2026, 4, 30, 9, 0, 0).unwrap();

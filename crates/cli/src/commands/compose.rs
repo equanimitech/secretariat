@@ -1,10 +1,11 @@
-//! `sec compose` — scaffold an envelope into the outbox.
+//! `sec compose` — scaffold a draft envelope into the recipient queue's `_drafts/`.
 
 use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
 use clap::Parser;
 
-use secretariat_core::application::{compose_envelope, ComposeRequest};
+use secretariat_core::application::{compose_envelope_with_ag, ComposeRequest};
+use secretariat_core::infrastructure::preferences::load_or_migrate as load_or_migrate_preferences;
 use secretariat_core::infrastructure::queue_dir::AliasMap;
 use secretariat_core::domain::{
     Did, EnvelopeDepth, EnvelopeUrgency, QueueHandle, Recipient,
@@ -51,6 +52,25 @@ pub struct Args {
     /// `~/.secretariat/template.md` scaffold is used.
     #[arg(long)]
     body: Option<String>,
+
+    /// Optional headline (AG gross signal — 2-6 words). When supplied,
+    /// the AI auto-fill pass stands down for the envelope. When all
+    /// three AG flags are omitted and a cognition adapter is configured,
+    /// the scribe drafts `title` / `lede` / `summary` and tags
+    /// `ag_source = "ai"`.
+    #[arg(long)]
+    title: Option<String>,
+
+    /// Optional one-line lede (AG subtle layer). Supplying any one of
+    /// `--title` / `--lede` / `--summary` makes the envelope
+    /// author-attributed and disables auto-fill.
+    #[arg(long)]
+    lede: Option<String>,
+
+    /// Optional multi-sentence summary (AG deepening pathway). See
+    /// `--lede` for the auto-fill interaction.
+    #[arg(long)]
+    summary: Option<String>,
 }
 
 #[derive(clap::ValueEnum, Debug, Clone, Copy)]
@@ -106,11 +126,29 @@ pub fn run(args: Args) -> Result<()> {
         source: args.source,
         cadence_hint: args.cadence_hint,
         body: args.body,
+        title: args.title,
+        lede: args.lede,
+        summary: args.summary,
     };
 
     let self_did = load_did(&paths)?;
     let aliases = AliasMap::load(self_did, &paths).context("loading alias map")?;
-    let path = compose_envelope(req, &paths.template, &paths.root, &aliases, Utc::now())
+    let prefs = load_or_migrate_preferences(
+        &paths.preferences,
+        &paths.legacy_cognition_config,
+        &paths.legacy_cadence,
+    )
+    .unwrap_or_default();
+    let runtime = tokio::runtime::Runtime::new().context("starting tokio runtime")?;
+    let path = runtime
+        .block_on(compose_envelope_with_ag(
+            req,
+            &paths.template,
+            &paths.root,
+            &aliases,
+            &prefs.cognition,
+            Utc::now(),
+        ))
         .context("composing envelope")?;
     println!("{}", path.display());
     Ok(())

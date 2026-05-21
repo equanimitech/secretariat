@@ -63,7 +63,7 @@ pub trait DidResolver {
 
 pub mod cognition;
 pub use cognition::{
-    CognitionError, CognitionLaunching, CognitionRouting, CognitionSession,
-    LaunchPlan, LauncherError, RouteSuggestion, SessionError, SessionEvent,
-    SessionRef,
+    AgFields, CognitionAg, CognitionError, CognitionLaunching, CognitionRouting,
+    CognitionSession, LaunchPlan, LauncherError, RouteSuggestion, SessionError,
+    SessionEvent, SessionRef,
 };

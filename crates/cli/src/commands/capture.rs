@@ -10,8 +10,9 @@ use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
 use clap::Parser;
 
-use secretariat_core::application::{capture_to_queue, show_org, CaptureRequest};
+use secretariat_core::application::{capture_to_queue_with_ag, show_org, CaptureRequest};
 use secretariat_core::domain::{OrgAlias, QueueHandle, Root};
+use secretariat_core::infrastructure::preferences::load_or_migrate as load_or_migrate_preferences;
 
 use super::paths::{key_paths, load_did};
 
@@ -42,6 +43,20 @@ pub struct Args {
     /// captures (under `_self`).
     #[arg(long)]
     org: Option<String>,
+
+    /// Optional headline (AG gross signal). Suppresses the AI auto-fill
+    /// pass when supplied. See `sec compose --help` for the AG fields'
+    /// purpose.
+    #[arg(long)]
+    title: Option<String>,
+
+    /// Optional one-line lede (AG subtle layer).
+    #[arg(long)]
+    lede: Option<String>,
+
+    /// Optional multi-sentence summary (AG deepening pathway).
+    #[arg(long)]
+    summary: Option<String>,
 }
 
 pub fn run(args: Args) -> Result<()> {
@@ -75,6 +90,9 @@ pub fn run(args: Args) -> Result<()> {
         queue,
         body,
         source: args.source,
+        title: args.title,
+        lede: args.lede,
+        summary: args.summary,
     };
 
     let root = match args.org.as_deref() {
@@ -95,7 +113,21 @@ pub fn run(args: Args) -> Result<()> {
             Root::Org(alias)
         }
     };
-    let path = capture_to_queue(req, &paths.root, &root, Utc::now())
+    let prefs = load_or_migrate_preferences(
+        &paths.preferences,
+        &paths.legacy_cognition_config,
+        &paths.legacy_cadence,
+    )
+    .unwrap_or_default();
+    let runtime = tokio::runtime::Runtime::new().context("starting tokio runtime")?;
+    let path = runtime
+        .block_on(capture_to_queue_with_ag(
+            req,
+            &paths.root,
+            &root,
+            &prefs.cognition,
+            Utc::now(),
+        ))
         .context("writing capture into local queue")?;
     println!("{}", path.display());
     Ok(())

@@ -26,7 +26,7 @@ pub use channel_def::ChannelDef;
 pub use contact::{
     Contact, DisplayName, DisplayNameParseError, RelayEndpoint, RelayEndpointParseError,
 };
-pub use envelope::{EncryptionScheme, Envelope, EnvelopeBuilder};
+pub use envelope::{AgSource, EncryptionScheme, Envelope, EnvelopeBuilder};
 pub use identity::{Did, DidMethod, DidParseError, DocHash, Signature, SignatureParseError};
 pub use org::Org;
 pub use org_alias::{OrgAlias, OrgAliasError};

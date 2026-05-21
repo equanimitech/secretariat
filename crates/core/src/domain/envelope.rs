@@ -60,6 +60,46 @@ impl<'de> Deserialize<'de> for EncryptionScheme {
     }
 }
 
+/// Provenance of the `title` / `lede` / `summary` AG triplet.
+///
+/// `Human` (default) — the author wrote them. Serialized as `"human"` on
+/// the wire when explicit; usually omitted since the field is absent on
+/// legacy v0.3 envelopes too. `Ai` — the scribe auto-populated them at
+/// envelope-write time because the author left them empty.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum AgSource {
+    Human,
+    Ai,
+}
+
+impl AgSource {
+    pub fn as_wire_str(&self) -> &'static str {
+        match self {
+            Self::Human => "human",
+            Self::Ai => "ai",
+        }
+    }
+}
+
+impl Serialize for AgSource {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_wire_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for AgSource {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(d)?;
+        match s.as_str() {
+            "human" => Ok(Self::Human),
+            "ai" => Ok(Self::Ai),
+            other => Err(serde::de::Error::custom(format!(
+                "unknown agSource `{other}`"
+            ))),
+        }
+    }
+}
+
 /// Lexicon: `tech.equanimi.secretariat.envelope`.
 ///
 /// Queues are the primitive: every envelope addresses a `(owner, handle)`
@@ -101,6 +141,11 @@ pub struct Envelope {
     /// Optional multi-sentence abstract (deepening pathway). Author-populated
     /// in v0.3. Renderers MAY surface this in expanded card / detail views.
     pub summary: Option<String>,
+    /// Provenance of the `title` / `lede` / `summary` triplet. `None` =
+    /// absent on wire (legacy v0.3 envelopes; equivalent to `Human`).
+    /// `Some(Ai)` = scribe auto-populated at write time. Receivers MAY
+    /// render the distinction.
+    pub ag_source: Option<AgSource>,
 }
 
 impl Envelope {
@@ -149,6 +194,8 @@ struct EnvelopeWire {
     lede: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     summary: Option<String>,
+    #[serde(rename = "agSource", default, skip_serializing_if = "Option::is_none")]
+    ag_source: Option<AgSource>,
 }
 
 impl Serialize for Envelope {
@@ -168,6 +215,7 @@ impl Serialize for Envelope {
             title: self.title.clone(),
             lede: self.lede.clone(),
             summary: self.summary.clone(),
+            ag_source: self.ag_source,
         }
         .serialize(s)
     }
@@ -206,6 +254,7 @@ impl<'de> Deserialize<'de> for Envelope {
             title: w.title,
             lede: w.lede,
             summary: w.summary,
+            ag_source: w.ag_source,
         })
     }
 }
@@ -230,6 +279,7 @@ pub struct EnvelopeBuilder {
     title: Option<String>,
     lede: Option<String>,
     summary: Option<String>,
+    ag_source: Option<AgSource>,
 }
 
 impl EnvelopeBuilder {
@@ -246,6 +296,7 @@ impl EnvelopeBuilder {
             title: None,
             lede: None,
             summary: None,
+            ag_source: None,
         }
     }
 
@@ -294,6 +345,11 @@ impl EnvelopeBuilder {
         self
     }
 
+    pub fn ag_source(mut self, src: AgSource) -> Self {
+        self.ag_source = Some(src);
+        self
+    }
+
     pub fn build(self) -> Envelope {
         Envelope {
             from: self.from,
@@ -307,6 +363,7 @@ impl EnvelopeBuilder {
             title: self.title,
             lede: self.lede,
             summary: self.summary,
+            ag_source: self.ag_source,
         }
     }
 }
@@ -505,6 +562,73 @@ mod tests {
                     source: legacy-test\n";
         let env: Envelope = serde_yaml::from_str(yaml).unwrap();
         assert!(env.reply_to.is_none());
+    }
+
+    #[test]
+    fn envelope_omits_ag_source_when_absent() {
+        let e = fixture();
+        assert!(e.ag_source.is_none());
+        let yaml = serde_yaml::to_string(&e).unwrap();
+        assert!(!yaml.contains("agSource"));
+    }
+
+    #[test]
+    fn envelope_emits_ag_source_ai_when_set() {
+        let e = Envelope::builder(rafa(), peer_to_marcelo())
+            .source("test")
+            .title("Chapter 3 pressure")
+            .lede("Marcelo wants more pressure in chapter 3.")
+            .summary("Notes on chapter 3 revisions for the book.")
+            .ag_source(AgSource::Ai)
+            .build();
+        let yaml = serde_yaml::to_string(&e).unwrap();
+        assert!(yaml.contains("agSource: ai"));
+    }
+
+    #[test]
+    fn envelope_ag_source_roundtrip_yaml() {
+        let e = Envelope::builder(rafa(), peer_to_marcelo())
+            .source("test")
+            .title("t")
+            .lede("l")
+            .summary("s")
+            .ag_source(AgSource::Ai)
+            .build();
+        let yaml = serde_yaml::to_string(&e).unwrap();
+        let back: Envelope = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(e, back);
+        assert_eq!(back.ag_source, Some(AgSource::Ai));
+    }
+
+    #[test]
+    fn legacy_envelope_without_ag_source_reads_as_none() {
+        // Author-populated AG triplets on pre-AI-fill envelopes have no
+        // `agSource` field. Readers MUST treat the absence as `human`
+        // (i.e. `None` in the domain).
+        let yaml = "$type: tech.equanimi.secretariat.envelope\n\
+                    from: did:web:rafa.equanimi.tech\n\
+                    to: did:web:marcelo.ballestiero.com\n\
+                    handle: inbox:default\n\
+                    depth: subtle\n\
+                    urgency: whenever\n\
+                    source: legacy-test\n\
+                    title: Author chose this\n";
+        let env: Envelope = serde_yaml::from_str(yaml).unwrap();
+        assert!(env.ag_source.is_none());
+        assert_eq!(env.title.as_deref(), Some("Author chose this"));
+    }
+
+    #[test]
+    fn envelope_rejects_unknown_ag_source() {
+        let yaml = "$type: tech.equanimi.secretariat.envelope\n\
+                    from: did:web:rafa.equanimi.tech\n\
+                    to: did:web:marcelo.ballestiero.com\n\
+                    depth: subtle\n\
+                    urgency: whenever\n\
+                    source: x\n\
+                    agSource: bot\n";
+        let r: Result<Envelope, _> = serde_yaml::from_str(yaml);
+        assert!(r.is_err());
     }
 
     #[test]
