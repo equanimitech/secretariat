@@ -8,6 +8,7 @@ import {
   SidebarInset,
   SidebarProvider,
 } from '@/components/ui/sidebar'
+import { cn } from '@/lib/utils'
 import { commands } from '@/lib/tauri-bindings'
 import {
   parseMarkdown,
@@ -181,9 +182,19 @@ export function MarkdownWindow({
   }
 
   return (
-    <SidebarProvider defaultOpen={false} className="h-screen min-h-0">
-      <SidebarInset className="bg-background text-foreground flex h-screen flex-col">
-        <MarkdownTitlebar title={title} saving={saving} filePath={filePath} />
+    <SidebarProvider
+      defaultOpen={false}
+      className={cn('min-h-0', embedded ? 'h-full' : 'h-screen')}
+    >
+      <SidebarInset
+        className={cn(
+          'bg-background text-foreground flex min-h-0 flex-col',
+          embedded ? 'h-full' : 'h-screen'
+        )}
+      >
+        {!embedded && (
+          <MarkdownTitlebar title={title} saving={saving} filePath={filePath} />
+        )}
         <div className="flex-1 overflow-y-auto">
           <main>
             <CrepeEditor

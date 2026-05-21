@@ -12,6 +12,7 @@
 //! | `secretariat://contacts` | Known peers — resource |
 //! | `defer` | Move a capture envelope out of its active queue ('remind me later') |
 //! | `archive` | Move a capture envelope to its queue's `archived/` ('handled') |
+//! | `unarchive` | Reverse of `archive` — move from `archived/` back into `envelopes/` |
 //! | `read` | Decrypt + return body of an envelope |
 //! | `verify` | Check a stamped artifact |
 //! | `list_contacts` | Known peers |
@@ -61,9 +62,10 @@ use secretariat_core::application::{
     list_draft_files, list_orgs as app_list_orgs, read_channel, read_envelope,
     resolve_channel_contract as app_resolve_channel_contract,
     set_channel_contract as app_set_channel_contract, set_org_contract as app_set_org_contract,
-    show_org as app_show_org, stamp_document, try_contextify_after_capture, verify_document,
-    view_invite, CaptureRequest, ComposeRequest, ContractLevel, ContractPatch,
-    ContractView, PatchField, ResolvedContract, StampError, VerifyOutcome,
+    show_org as app_show_org, stamp_document, try_contextify_after_capture,
+    unarchive_envelope, verify_document, view_invite, CaptureRequest, ComposeRequest,
+    ContractLevel, ContractPatch, ContractView, PatchField, ResolvedContract, StampError,
+    VerifyOutcome,
 };
 use secretariat_core::domain::{OrgAlias, QueueHandle, Recipient, Root, StampAct, TrustGate};
 use secretariat_core::infrastructure::org_store::org_channels_root;
@@ -1130,6 +1132,33 @@ impl SecretariatServer {
             moved_to: moved.display().to_string(),
             note: "Envelope archived. Out of the active queue; kept on disk for history."
                 .to_string(),
+        }))
+    }
+
+    #[tool(
+        name = "unarchive",
+        annotations(
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        ),
+        description = "Reverse of `archive` — move an envelope from its queue's \
+        `archived/` directory back into `envelopes/`. Use when the principal \
+        revisits an archived item and wants it back in the active queue. \
+        Destination is flat under `envelopes/` (date shard not reconstructed). \
+        Idempotent."
+    )]
+    async fn unarchive(
+        &self,
+        Parameters(params): Parameters<InboxActionParams>,
+    ) -> Result<Json<InboxActionOutput>, ErrorData> {
+        let path = PathBuf::from(&params.file_path);
+        let moved = unarchive_envelope(&path)
+            .map_err(|e| invalid_request(format!("unarchive failed: {e}")))?;
+        info!(file = %path.display(), to = %moved.display(), "unarchived envelope via MCP");
+        Ok(Json(InboxActionOutput {
+            moved_to: moved.display().to_string(),
+            note: "Envelope unarchived. Back in the active queue under `envelopes/`.".to_string(),
         }))
     }
 

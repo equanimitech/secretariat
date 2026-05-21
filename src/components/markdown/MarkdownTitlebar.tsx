@@ -1,7 +1,22 @@
-import { FolderOpen, PanelRight } from 'lucide-react'
+import {
+  Archive,
+  ArchiveRestore,
+  FolderOpen,
+  MoreHorizontal,
+  PanelRight,
+} from 'lucide-react'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { useSidebar } from '@/components/ui/sidebar'
+import { commands } from '@/lib/bindings'
+import { classifyEnvelopePath } from '@/lib/envelope-path'
 
 interface MarkdownTitlebarProps {
   title: string
@@ -26,6 +41,24 @@ export function MarkdownTitlebar({
     } catch (err) {
       console.warn('revealItemInDir failed', err)
     }
+  }
+
+  const { isEnvelope, isArchived } = classifyEnvelopePath(filePath)
+  const onArchive = async () => {
+    const res = await commands.archiveInboxEnvelope(filePath)
+    if (res.status === 'error') {
+      toast.error(`Archive failed: ${res.error}`)
+      return
+    }
+    toast.success('Archived')
+  }
+  const onUnarchive = async () => {
+    const res = await commands.unarchiveInboxEnvelope(filePath)
+    if (res.status === 'error') {
+      toast.error(`Unarchive failed: ${res.error}`)
+      return
+    }
+    toast.success('Unarchived')
   }
 
   return (
@@ -61,6 +94,28 @@ export function MarkdownTitlebar({
         >
           <PanelRight size={14} />
         </Button>
+        {(isEnvelope || isArchived) && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" title="More actions">
+                <MoreHorizontal size={14} />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {isArchived ? (
+                <DropdownMenuItem onSelect={onUnarchive}>
+                  <ArchiveRestore className="h-3.5 w-3.5" />
+                  Unarchive
+                </DropdownMenuItem>
+              ) : (
+                <DropdownMenuItem onSelect={onArchive}>
+                  <Archive className="h-3.5 w-3.5" />
+                  Archive
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </div>
     </header>
   )

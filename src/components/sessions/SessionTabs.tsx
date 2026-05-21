@@ -1,8 +1,23 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Plus, X, Hash, FileText } from 'lucide-react'
+import {
+  Plus,
+  X,
+  Hash,
+  FileText,
+  Archive,
+  ArchiveRestore,
+} from 'lucide-react'
+import { toast } from 'sonner'
 import type { LaunchableChannel } from '@/lib/bindings'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu'
+import { classifyEnvelopePath } from '@/lib/envelope-path'
 import {
   OPEN_CHANNEL_EVENT,
   type OpenChannelRequest,
@@ -211,7 +226,7 @@ function TabHeader({
     tab.kind === 'channel'
       ? `${tab.org ? `${tab.org} / ` : ''}${tab.channelName}`
       : tab.name
-  return (
+  const row = (
     <div
       role="tab"
       aria-selected={active}
@@ -237,6 +252,63 @@ function TabHeader({
         <X className="h-3 w-3" />
       </button>
     </div>
+  )
+  if (tab.kind !== 'markdown') return row
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>{row}</ContextMenuTrigger>
+      <ContextMenuContent>
+        <MarkdownTabMenuItems filePath={tab.filePath} onClose={onClose} />
+      </ContextMenuContent>
+    </ContextMenu>
+  )
+}
+
+function MarkdownTabMenuItems({
+  filePath,
+  onClose,
+}: {
+  filePath: string
+  onClose: () => void
+}) {
+  const { isEnvelope, isArchived } = classifyEnvelopePath(filePath)
+  const onArchive = async () => {
+    const res = await commands.archiveInboxEnvelope(filePath)
+    if (res.status === 'error') {
+      toast.error(`Archive failed: ${res.error}`)
+      return
+    }
+    toast.success('Archived')
+    onClose()
+  }
+  const onUnarchive = async () => {
+    const res = await commands.unarchiveInboxEnvelope(filePath)
+    if (res.status === 'error') {
+      toast.error(`Unarchive failed: ${res.error}`)
+      return
+    }
+    toast.success('Unarchived')
+    onClose()
+  }
+  return (
+    <>
+      <ContextMenuItem onSelect={() => onClose()}>
+        <X className="h-3.5 w-3.5" />
+        Close tab
+      </ContextMenuItem>
+      {isArchived && (
+        <ContextMenuItem onSelect={onUnarchive}>
+          <ArchiveRestore className="h-3.5 w-3.5" />
+          Unarchive
+        </ContextMenuItem>
+      )}
+      {isEnvelope && !isArchived && (
+        <ContextMenuItem onSelect={onArchive}>
+          <Archive className="h-3.5 w-3.5" />
+          Archive
+        </ContextMenuItem>
+      )}
+    </>
   )
 }
 

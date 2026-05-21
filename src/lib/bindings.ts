@@ -335,6 +335,18 @@ async archiveInboxEnvelope(filePath: string) : Promise<Result<string, string>> {
 }
 },
 /**
+ * Reverse of `archive_inbox_envelope` — move a file from
+ * `<queue>/archived/` back to `<queue>/envelopes/` (flat).
+ */
+async unarchiveInboxEnvelope(filePath: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("unarchive_inbox_envelope", { filePath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * List the principal's known contacts. The Sign-mode home surface
  * resolves recipient DIDs to display names through this; falls back to
  * truncated DID when a peer isn't yet in the contact book.

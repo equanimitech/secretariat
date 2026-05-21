@@ -15,6 +15,8 @@ import {
   Pencil,
   Pin,
   PinOff,
+  Archive,
+  ArchiveRestore,
 } from 'lucide-react'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import { toast } from 'sonner'
@@ -27,6 +29,7 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu'
+import { classifyEnvelopePath } from '@/lib/envelope-path'
 import { entryToNode, isChannelTreeNode, type ExplorerNode } from './types'
 import { pinnedStore } from './pinnedStore'
 import { activeChannelStore } from './activeChannel'
@@ -479,6 +482,25 @@ function NodeMenuItems({
     )
   }
   if (node.kind === 'file') {
+    const { isEnvelope, isArchived } = classifyEnvelopePath(node.path)
+    const onArchive = async () => {
+      const res = await commands.archiveInboxEnvelope(node.path)
+      if (res.status === 'error') {
+        toast.error(`Archive failed: ${res.error}`)
+        return
+      }
+      toast.success('Archived')
+      refreshRoots()
+    }
+    const onUnarchive = async () => {
+      const res = await commands.unarchiveInboxEnvelope(node.path)
+      if (res.status === 'error') {
+        toast.error(`Unarchive failed: ${res.error}`)
+        return
+      }
+      toast.success('Unarchived')
+      refreshRoots()
+    }
     return (
       <>
         <ContextMenuItem onSelect={onRename}>
@@ -489,6 +511,23 @@ function NodeMenuItems({
           <FolderOpen className="h-3.5 w-3.5" />
           Reveal in Finder
         </ContextMenuItem>
+        {isArchived ? (
+          <>
+            <ContextMenuSeparator />
+            <ContextMenuItem onSelect={onUnarchive}>
+              <ArchiveRestore className="h-3.5 w-3.5" />
+              Unarchive
+            </ContextMenuItem>
+          </>
+        ) : isEnvelope ? (
+          <>
+            <ContextMenuSeparator />
+            <ContextMenuItem onSelect={onArchive}>
+              <Archive className="h-3.5 w-3.5" />
+              Archive
+            </ContextMenuItem>
+          </>
+        ) : null}
       </>
     )
   }

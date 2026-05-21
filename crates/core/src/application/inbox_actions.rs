@@ -44,13 +44,52 @@ pub fn archive_envelope(file_path: &Path) -> Result<PathBuf, InboxActionError> {
     move_into_queue_subdir(file_path, "archived")
 }
 
+/// Reverse of `archive_envelope` — move an envelope from
+/// `<queue-dir>/archived/<file>.md` back into
+/// `<queue-dir>/envelopes/<file>.md` (flat; the original date shard is
+/// not reconstructed — the daemon's inbox writer is the only path that
+/// owns date-sharding semantics, and round-tripping here would require
+/// re-reading frontmatter the use case otherwise doesn't touch).
+///
+/// `NotInQueue` if the file isn't under an `archived/` ancestor.
+pub fn unarchive_envelope(file_path: &Path) -> Result<PathBuf, InboxActionError> {
+    if !file_path.exists() {
+        return Err(InboxActionError::NotFound {
+            path: file_path.to_path_buf(),
+        });
+    }
+    let queue_dir = find_queue_dir_from(file_path, "archived")?;
+    let dest_dir = queue_dir.join("envelopes");
+    std::fs::create_dir_all(&dest_dir).map_err(|e| InboxActionError::Io {
+        path: dest_dir.clone(),
+        source: e,
+    })?;
+    let file_name = file_path
+        .file_name()
+        .ok_or_else(|| InboxActionError::NotInQueue {
+            path: file_path.to_path_buf(),
+        })?;
+    let dest = dest_dir.join(file_name);
+    std::fs::rename(file_path, &dest).map_err(|e| InboxActionError::Io {
+        path: file_path.to_path_buf(),
+        source: e,
+    })?;
+    Ok(dest)
+}
+
 /// Walk up the path looking for an ancestor named `envelopes`; the
 /// parent of that ancestor is the queue directory. Returns
 /// `NotInQueue` if the file isn't under an `envelopes/` subtree.
 fn find_queue_dir(file_path: &Path) -> Result<PathBuf, InboxActionError> {
+    find_queue_dir_from(file_path, "envelopes")
+}
+
+/// Generalized queue-dir resolver — walks ancestors until it finds a
+/// directory with the given `marker` name, and returns its parent.
+fn find_queue_dir_from(file_path: &Path, marker: &str) -> Result<PathBuf, InboxActionError> {
     let mut current = file_path.parent();
     while let Some(p) = current {
-        if p.file_name().and_then(|n| n.to_str()) == Some("envelopes") {
+        if p.file_name().and_then(|n| n.to_str()) == Some(marker) {
             if let Some(q) = p.parent() {
                 return Ok(q.to_path_buf());
             }
@@ -129,6 +168,32 @@ mod tests {
         assert!(!envelope.exists());
         assert!(dest.exists());
         assert!(dest.starts_with(queue.join("archived")));
+    }
+
+    #[test]
+    fn unarchive_moves_file_back_to_envelopes_dir() {
+        let dir = TempDir::new().unwrap();
+        let queue = dir.path().join("_self/inbox/default");
+        let archived = queue.join("archived");
+        fs::create_dir_all(&archived).unwrap();
+        let envelope = write_envelope(&archived, "test.md");
+
+        let dest = unarchive_envelope(&envelope).unwrap();
+        assert!(!envelope.exists());
+        assert!(dest.exists());
+        assert_eq!(dest, queue.join("envelopes/test.md"));
+    }
+
+    #[test]
+    fn unarchive_rejects_files_not_under_archived_dir() {
+        let dir = TempDir::new().unwrap();
+        let queue = dir.path().join("_self/inbox/default");
+        let active = queue.join("envelopes/2026/05/12");
+        fs::create_dir_all(&active).unwrap();
+        let envelope = write_envelope(&active, "test.md");
+
+        let err = unarchive_envelope(&envelope).unwrap_err();
+        assert!(matches!(err, InboxActionError::NotInQueue { .. }));
     }
 
     #[test]

@@ -13,7 +13,8 @@ use std::path::PathBuf;
 use secretariat_core::application::{
     archive_envelope as core_archive_envelope, defer_envelope as core_defer_envelope,
     list_inbox_files, list_review_queue as core_list_review_queue,
-    read_envelope as core_read_envelope, sync_now as core_sync_now, SyncOutcome as CoreSyncOutcome,
+    read_envelope as core_read_envelope, sync_now as core_sync_now,
+    unarchive_envelope as core_unarchive_envelope, SyncOutcome as CoreSyncOutcome,
 };
 use secretariat_core::domain::DisplayName;
 use secretariat_core::infrastructure::keys::{
@@ -412,6 +413,17 @@ pub async fn archive_inbox_envelope(file_path: String) -> Result<String, String>
     let _paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
     let p = std::path::PathBuf::from(file_path);
     let dest = core_archive_envelope(&p).map_err(|e| format!("archive_envelope: {e}"))?;
+    Ok(dest.display().to_string())
+}
+
+/// Reverse of `archive_inbox_envelope` — move a file from
+/// `<queue>/archived/` back to `<queue>/envelopes/` (flat).
+#[tauri::command]
+#[specta::specta]
+pub async fn unarchive_inbox_envelope(file_path: String) -> Result<String, String> {
+    let _paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
+    let p = std::path::PathBuf::from(file_path);
+    let dest = core_unarchive_envelope(&p).map_err(|e| format!("unarchive_envelope: {e}"))?;
     Ok(dest.display().to_string())
 }
 

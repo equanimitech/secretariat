@@ -33,6 +33,7 @@ pub fn generate_bindings() -> Builder<tauri::Wry> {
         secretariat::stamp_envelope,
         secretariat::defer_inbox_envelope,
         secretariat::archive_inbox_envelope,
+        secretariat::unarchive_inbox_envelope,
         secretariat::list_contacts,
         secretariat::launch_assistant,
         secretariat::list_reviewable_orgs,

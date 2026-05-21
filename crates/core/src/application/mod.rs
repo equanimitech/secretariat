@@ -44,7 +44,9 @@ pub use contextify_capture::{
     ContextifySkipReason, ROUTABLE_QUEUE,
 };
 pub use delivery_policy::{decide_poll, CadenceConfig, CadenceConfigError, PollDecision};
-pub use inbox_actions::{archive_envelope, defer_envelope, InboxActionError};
+pub use inbox_actions::{
+    archive_envelope, defer_envelope, unarchive_envelope, InboxActionError,
+};
 pub use inbox_ops::{
     list_draft_files, list_inbox_files, read_envelope, InboxOpError, ListedEnvelope, ReadResult,
 };
