@@ -12,6 +12,12 @@ All notable changes to Secretariat are recorded here. Format follows
 
 - External links in the markdown editor now open in the system browser instead of trapping the user inside the Tauri webview. A capture-phase document listener intercepts clicks on `<a>` tags whose protocol is `http(s)`, `mailto`, or `tel` and dispatches them to the Tauri opener plugin; in-app schemes (`secretariat:`, `file:`, fragment `#…`) are left to their existing handlers. Installed across the main window, markdown reader/editor window, and quick-pane; `opener:default` permission added to the quick-pane capability so the call resolves there too.
 
+- Explorer sidebar polish: opening an org now surfaces its channels directly under the org root instead of forcing the principal to expand a `channels/` middleman folder (lazy-loading auto-chains the `channels/` subdir after a private/org root expands). Leaf channels no longer render a chevron expander in channel-only mode — the caret was misleading because the underlying `channel.md` / `contract.local.md` / `template.md` siblings are filtered out of the projection. Show-all-files mode is unchanged.
+
+### Changed
+
+- Lint debt cleared so `pnpm check:all` passes again in the release pipeline. `eslint-plugin-react-hooks` v6 added `set-state-in-effect` to its recommended preset; refactored `useIsMobile` to lazy-init via `useState(() => ...)`, kept six legitimate one-shot Tauri IPC fetches behind `eslint-disable-next-line` comments with intent rationale. `react-compiler/static-components` refactor of `ExplorerTree`'s icon picker to a `<NodeIcon />` component (was returning a capitalized component reference per render). Prettier 3.7/3.8 default markdown emphasis flip (`*foo*` → `_foo_`) applied repo-wide; `docs/{ideas,pitches,decisions,audits,superpowers}/` ignored where prettier oscillates on nested-list indentation.
+
 ## [0.10.1](https://github.com/equanimitech/secretariat/compare/v0.10.0...v0.10.1) — 2026-05-21
 
 ### Fixed
