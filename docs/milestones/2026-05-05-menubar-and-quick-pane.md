@@ -16,9 +16,10 @@ slice if the appetite runs out — the partial release is still useful.
 
 The tray exists. Click → small popover with the same two-button home,
 "Sync now", "Settings…". Main window keeps showing for now. No lifecycle
-changes. Just adds the tray as a *parallel* affordance.
+changes. Just adds the tray as a _parallel_ affordance.
 
 **What changes:**
+
 - `src-tauri/Cargo.toml` — add `tauri = { features = ["tray-icon"] }`.
 - `src-tauri/src/lib.rs` — `setup` hook builds a `TrayIconBuilder` with
   a static SVG icon. Click event opens an existing hidden window
@@ -40,6 +41,7 @@ The main window only shows during onboarding. Post-onboarding, the
 app launches menubar-only.
 
 **What changes:**
+
 - `src-tauri/src/lib.rs` `setup` hook — check
   `current_identity` + `get_profile`; if both present, hide main
   window before showing it. If either missing, show normally (wizard
@@ -61,6 +63,7 @@ Tray icon shows a colored status dot reflecting queue state. Updates
 when sync runs or quick-pane captures land.
 
 **What changes:**
+
 - `src-tauri/src/commands/secretariat.rs` — new helper
   `compute_tray_state() -> TrayState { all_clear | pending }` reads
   inbox + queue counts.
@@ -79,8 +82,9 @@ The ideas pool — pre-envelope captures, no recipient/body shape required.
 Domain value object + storage + use cases. No UI yet.
 
 **What changes:**
+
 - `crates/core/src/domain/idea.rs` — `Idea { id, captured_at, body,
-  suggested_to: Option<String> }` value object.
+suggested_to: Option<String> }` value object.
 - `crates/core/src/infrastructure/idea_store.rs` — JSON-per-file
   storage at `~/.secretariat/ideas/<timestamp>.json`. Atomic write.
 - `crates/core/src/application/idea_ops.rs` — use cases:
@@ -103,6 +107,7 @@ The template's existing quick-pane scaffolding gets repurposed as the
 ideas-capture surface. Global shortcut summons it from anywhere.
 
 **What changes:**
+
 - `src/components/quick-pane/QuickPaneApp.tsx` — replace template
   content with a single text field + optional contact-picker
   dropdown + "Capture" button.

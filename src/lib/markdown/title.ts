@@ -5,7 +5,7 @@ const H1 = /^#\s+(.+)$/m
 export function resolveTitle(
   frontmatter: Frontmatter,
   body: string,
-  filePath: string,
+  filePath: string
 ): string {
   const fmTitle = frontmatter.title
   if (typeof fmTitle === 'string' && fmTitle.trim().length > 0) {

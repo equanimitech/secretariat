@@ -2,7 +2,7 @@
 
 This document describes the system as it exists today (v0.3 — channels,
 orgs, MCP-primary). It is the orientation read for Claude and for any
-developer landing on the repo. For the *why* behind v0.3, see
+developer landing on the repo. For the _why_ behind v0.3, see
 [`../ideas/2026-05-12-secretariat-as-autonomous-enterprise-substrate.md`](../ideas/2026-05-12-secretariat-as-autonomous-enterprise-substrate.md);
 for the substrate layout decision, see
 [`../decisions/2026-05-12-substrate-layout-v03.md`](../decisions/2026-05-12-substrate-layout-v03.md).
@@ -20,7 +20,7 @@ Three trust layers, composed over two records (envelope + stamp):
 
 1. **Signed envelope** — every envelope carries a detached ed25519
    signature from its author (human passport or agent DID). **Mandatory.**
-   Drives provenance: *did this come from the claimed author?*
+   Drives provenance: _did this come from the claimed author?_
 2. **Stamp** — Touch-ID attestation by the principal. **Selective.**
    Applied to envelopes the principal elects to elevate; the stamped
    subset is the org's authoritative ledger, the unstamped remainder
@@ -191,7 +191,7 @@ only ever saw signed ciphertext.
 - **`AttestedDocument`** — `Option<Envelope>`, `Stamp`, `body: String`.
   Construction enforces the invariant
   `stamp.doc_hash == canonical_body_hash(body)`. Signature verification
-  is *not* in the aggregate — it requires IO (DID resolution) and is
+  is _not_ in the aggregate — it requires IO (DID resolution) and is
   composed in the application layer.
 
 ### Pure helpers
@@ -221,7 +221,7 @@ only ever saw signed ciphertext.
 
 - **`Ed25519Signer<B: BiometricGate>`** — signing key + pluggable
   biometric gate. Gate has no access to the key; it returns "verified
-  yes/no". Signing happens in Rust *after* the gate returns success.
+  yes/no". Signing happens in Rust _after_ the gate returns success.
 - **`BiometricGate`** trait. Real impl: **`TouchIdGate`** shells out to
   `tools/touchid-prompt/` (Swift). Test impls: `AlwaysAllowGate`,
   `AlwaysDenyGate`.
@@ -277,24 +277,24 @@ only ever saw signed ciphertext.
 `crates/core/src/application/` — every principal-facing primitive
 ships parallel use case + CLI command + MCP tool.
 
-| Use case | What it does |
-|---|---|
-| `compose_envelope` | Read template, prepend `$envelope`, write to recipient's outbox |
-| `stamp_document` | Hash + sign + embed; refuses re-stamp unless `force` |
-| `verify_document` | Returns `Verified / Tampered / Unsigned / SignerUnresolvable / SignatureInvalid` |
-| `send_envelope` | Seal body to recipient, hand to relay client |
-| `capture_ops` | `capture(queue, body)` → write to `<passport>/queues/<handle>/...` |
-| `contextify_capture` | Enrich raw capture with org/channel context for review |
-| `inbox_ops`, `inbox_actions` | Read / archive / route inbound envelopes |
-| `review_queue` | Cross-channel walker — collates inbox + outbox drafts + captures |
-| `channels_ops` | Create / list / delete channels under a passport-owned org |
-| `org_ops` | Create / list / delete orgs (did:web-rooted) |
-| `contract_ops` | Get / set consumption contracts; resolver accumulates org-root → leaf |
-| `contact_ops` | Add / list / remove contacts (passport-local roster) |
-| `invite_ops` | Create + claim bilateral correspondence invites |
-| `process_correspondence_claims` | Daemon-side: process accepted invites, install peer subscription |
-| `delivery_policy` | Resolve effective contract to decide queue-vs-surface |
-| `sync` | Pull from relay, decrypt `_ciphertext/` → `envelopes/`, write index |
+| Use case                        | What it does                                                                     |
+| ------------------------------- | -------------------------------------------------------------------------------- |
+| `compose_envelope`              | Read template, prepend `$envelope`, write to recipient's outbox                  |
+| `stamp_document`                | Hash + sign + embed; refuses re-stamp unless `force`                             |
+| `verify_document`               | Returns `Verified / Tampered / Unsigned / SignerUnresolvable / SignatureInvalid` |
+| `send_envelope`                 | Seal body to recipient, hand to relay client                                     |
+| `capture_ops`                   | `capture(queue, body)` → write to `<passport>/queues/<handle>/...`               |
+| `contextify_capture`            | Enrich raw capture with org/channel context for review                           |
+| `inbox_ops`, `inbox_actions`    | Read / archive / route inbound envelopes                                         |
+| `review_queue`                  | Cross-channel walker — collates inbox + outbox drafts + captures                 |
+| `channels_ops`                  | Create / list / delete channels under a passport-owned org                       |
+| `org_ops`                       | Create / list / delete orgs (did:web-rooted)                                     |
+| `contract_ops`                  | Get / set consumption contracts; resolver accumulates org-root → leaf            |
+| `contact_ops`                   | Add / list / remove contacts (passport-local roster)                             |
+| `invite_ops`                    | Create + claim bilateral correspondence invites                                  |
+| `process_correspondence_claims` | Daemon-side: process accepted invites, install peer subscription                 |
+| `delivery_policy`               | Resolve effective contract to decide queue-vs-surface                            |
+| `sync`                          | Pull from relay, decrypt `_ciphertext/` → `envelopes/`, write index              |
 
 ## CLI (`sec`)
 
@@ -393,13 +393,13 @@ Stamped envelope = markdown with YAML frontmatter:
 $envelope:
   $type: tech.equanimi.secretariat.envelope
   from: did:key:z6Mk... | did:web:rafa.equanimi.tech
-  to: did:web:themia.pro                    # owner DID of the queue
-  handle: channel:dommage-corporel:paris    # queue handle under that owner
+  to: did:web:themia.pro # owner DID of the queue
+  handle: channel:dommage-corporel:paris # queue handle under that owner
   depth: gross | subtle
   urgency: now | soon | whenever
-  reply_to: sha256:<hex>                    # optional — threading
+  reply_to: sha256:<hex> # optional — threading
   source: <free-form>
-$attestation:                               # absent if envelope is signed-only
+$attestation: # absent if envelope is signed-only
   $type: tech.equanimi.secretariat.stamp
   signer: <did>
   act: attest
@@ -407,7 +407,9 @@ $attestation:                               # absent if envelope is signed-only
   stampedAt: 2026-05-13T16:01:35.220898Z
   signature: ed25519:<base64-of-64-bytes>
 ---
+
 # Body
+
 ...
 ```
 
@@ -439,8 +441,8 @@ the device.
 ```
 
 Recipient policy decides what's required. An unstamped-but-signed
-envelope is *informational* (the author wrote this); a stamped envelope
-is *authoritative* (the principal vouches). UI surfaces this
+envelope is _informational_ (the author wrote this); a stamped envelope
+is _authoritative_ (the principal vouches). UI surfaces this
 distinction; agents acting on received envelopes MUST treat
 signed-only ≠ stamped.
 
@@ -476,29 +478,29 @@ process-verbaux).
 
 ## Architectural invariants (recap)
 
-These are properties of the *system*, not rules of *behavior*. See
+These are properties of the _system_, not rules of _behavior_. See
 [`../../AGENTS.md`](../../AGENTS.md) for the full list. Summary:
 
 1. No central server. 2. No telemetry. 3. Keys never leave device.
-4. Transports are adapters, not authorities. 5. Cognition is pluggable.
-6. Correspondence is bilateral or multi-party; always local.
-7. No SaaS distribution. 8. Filesystem authoritative; channel dir is
-the activation surface. 9. Owner-as-sequencer per channel; cross-
-channel order not provided.
+2. Transports are adapters, not authorities. 5. Cognition is pluggable.
+3. Correspondence is bilateral or multi-party; always local.
+4. No SaaS distribution. 8. Filesystem authoritative; channel dir is
+   the activation surface. 9. Owner-as-sequencer per channel; cross-
+   channel order not provided.
 
 ## What's not built yet
 
-| Component | Trigger |
-|---|---|
-| Counter-stamp record + multi-party stamping ceremony | Themia `assemblee_generale` driver — v0.4 |
-| Attention routing daemon (compose from `depth`/`urgency`/contract) | 2–3 weeks of real channel traffic — v0.4 |
-| SQLite read-cache for cross-channel queries | When query latency demands — v0.4+ |
-| Multi-passport same-device sync (key migration UX) | v0.4 wedge |
-| Channel ownership transfer (`rosterUpdate.op = transfer_ownership`) | Concrete driver |
-| Lexicon publication | After self-use stabilizes the schema |
-| Windows support | When Christophe's brief workflow needs it |
-| `defer` / `vouch` / `dispute` / `redirect` stamp acts | As cadence + multi-party land |
-| Webhook adapter for external sources | DID-keyed external services — v0.4 wedge |
+| Component                                                           | Trigger                                   |
+| ------------------------------------------------------------------- | ----------------------------------------- |
+| Counter-stamp record + multi-party stamping ceremony                | Themia `assemblee_generale` driver — v0.4 |
+| Attention routing daemon (compose from `depth`/`urgency`/contract)  | 2–3 weeks of real channel traffic — v0.4  |
+| SQLite read-cache for cross-channel queries                         | When query latency demands — v0.4+        |
+| Multi-passport same-device sync (key migration UX)                  | v0.4 wedge                                |
+| Channel ownership transfer (`rosterUpdate.op = transfer_ownership`) | Concrete driver                           |
+| Lexicon publication                                                 | After self-use stabilizes the schema      |
+| Windows support                                                     | When Christophe's brief workflow needs it |
+| `defer` / `vouch` / `dispute` / `redirect` stamp acts               | As cadence + multi-party land             |
+| Webhook adapter for external sources                                | DID-keyed external services — v0.4 wedge  |
 
 See [`../milestones/`](../milestones/) for the historical sequence and
 the v0.3 substrate decision in [`../decisions/2026-05-12-substrate-layout-v03.md`](../decisions/2026-05-12-substrate-layout-v03.md).

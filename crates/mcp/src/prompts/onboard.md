@@ -19,7 +19,7 @@ Tauri owns identity creation — there's a tray-anchored onboarding popover for 
 
 Tell the principal:
 
-> *Open Secretariat.app from the menu bar tray. The first-launch popover will set up your identity and key. Once that's done, come back and I'll continue.*
+> _Open Secretariat.app from the menu bar tray. The first-launch popover will set up your identity and key. Once that's done, come back and I'll continue._
 
 If they prefer the CLI: `sec init` (no flags for `did:key`, or `--did did:web:<their-domain>` if they own a domain to host a DID document at). After CLI init, they should also launch Secretariat.app once so the silent-wire installs the daemon.
 
@@ -31,7 +31,7 @@ Per the principal's invite-is-correspondence model: the bidirectional contact-ad
 
 Ask the principal:
 
-> *Do you want to invite someone, or claim an invite someone sent you?*
+> _Do you want to invite someone, or claim an invite someone sent you?_
 
 #### Inviter path
 
@@ -39,21 +39,21 @@ Ask the principal:
 2. If the call errors with a relay-tenant complaint, surface that error verbatim — the principal needs a registered relay tenancy, which is currently a v0.x rough edge that the Tauri Settings pane handles.
 3. On success, render the `claim_url` to the principal. Tell them:
 
-   > *Send this URL to the peer through whatever transport you trust — email, Signal, paper. They run `/onboard` on their side and choose 'claim'. The relay will route their first envelope to your inbox at the next review session.*
+   > _Send this URL to the peer through whatever transport you trust — email, Signal, paper. They run `/onboard` on their side and choose 'claim'. The relay will route their first envelope to your inbox at the next review session._
 
    Do not promise a notification — per the no-read-receipts invariant, peer arrivals surface only at review time.
 
 #### Claimant path
 
 1. Ask the principal for the claim URL the peer sent.
-2. Ask for a display name to give the inviter in the local contact book (e.g. *"Marcelo"*) — defaults to the host portion of their DID if omitted.
+2. Ask for a display name to give the inviter in the local contact book (e.g. _"Marcelo"_) — defaults to the host portion of their DID if omitted.
 3. Call `accept_invite` with the URL and name.
 4. The tool auto-registers the principal's DID with the relay if needed AND adds the inviter to the contact book (this is the bidirectional contact-add).
-5. On success, render: *"You are now connected to <inviter_did>. They are in your contacts as <name>."*
+5. On success, render: _"You are now connected to <inviter_did>. They are in your contacts as <name>."_
 
 ### 4. End naturally
 
-After the relationship is established, surface a single line: *"You can now compose envelopes to <peer> with `/compose <peer>`."* Then stop.
+After the relationship is established, surface a single line: _"You can now compose envelopes to <peer> with `/compose <peer>`."_ Then stop.
 
 Do NOT proactively walk them through composing their first envelope — that's a separate cadence decision the principal makes.
 

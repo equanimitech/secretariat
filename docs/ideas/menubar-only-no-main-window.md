@@ -14,7 +14,7 @@ Raw capture — 2026-05-05.
   closes when the session ends → back to just the menubar icon.
 - Aligned with equanimitech "peripheral presence" (principle 4): the
   app lives in the periphery (menubar) rather than competing for
-  desktop space. The principal *summons* the review surface; it
+  desktop space. The principal _summons_ the review surface; it
   doesn't sit there asking to be looked at.
 - Tauri 2 supports tray icons natively (`TrayIconBuilder`). Existing
   Tauri-template scaffolding would need to swap the auto-show main

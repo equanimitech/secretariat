@@ -33,7 +33,7 @@ markdown body for free-form prose the agent reads. Same as `channel.md`,
 `contract.local.md`, `identity.md`. No JSON files I'm expected to
 hand-edit.
 
-*When*: every time I want to add a note to a contact ("Marcelo
+_When_: every time I want to add a note to a contact ("Marcelo
 prefers vouvoiement", "Christophe corresponds in French only") and
 have to either invent a side-channel for it or stuff it into a free-text
 JSON field, the JSON shape is in the way. Same for org metadata —
@@ -47,6 +47,7 @@ twice. Tests follow channel.md / contract.local.md / identity.md
 templates already in place.
 
 Touches:
+
 - `contact_store.rs` — JSON reader/writer → markdown reader/writer
 - `org_store.rs` — JSON reader/writer → markdown reader/writer
 - `KeyPaths.contacts` repoint to `_self/contacts.md`
@@ -118,11 +119,13 @@ contact.
 ## Marcelo
 
 ---
+
 did: did:key:z6Mk4...
 display_name: Marcelo
 full_name: Marcelo Ballestiero
 relay_endpoint: wss://relay.rafa.equanimi.tech
 added_at: 2026-04-30T12:00:00Z
+
 ---
 
 Co-author on the Autonomous Enterprise book. Prefers concrete examples
@@ -132,10 +135,12 @@ otherwise English.
 ## Christophe
 
 ---
+
 did: did:web:christophe-marchand.com
 display_name: Christophe
 full_name: Christophe Marchand
 added_at: 2026-05-02T09:00:00Z
+
 ---
 
 Avocat, dommage corporel. Vouvoiement always. French only — never
@@ -303,6 +308,7 @@ The test: would the principal want to hand-edit this in vim with
 markdown prose around it? Yes → markdown. No → leave it.
 
 Applies cleanly:
+
 - `preferences.toml` — Tauri settings pane writes it; principal
   occasionally hand-edits; structured config; **stays TOML**.
 - `relay-state.json` — daemon emits relay cursor state; principal
@@ -406,6 +412,7 @@ two more conversion steps. Legacy JSON files `mv`'d to `.archive/`,
 never deleted, per the sovereign-sediment rule.
 
 The bet pays off when:
+
 - "Can I add a note to a contact?" → yes, write prose under their `##`.
 - "Why is this org here?" → check `orgs/<alias>/org.md` body.
 - The principal-context surface has one parser family across the

@@ -8,89 +8,89 @@
 
 **Tech Stack:** Tauri 2, React 19, Vite (rolldown), Milkdown Crepe, `gray-matter`, Vitest, tauri-specta.
 
-***
+---
 
 ## File Structure
 
 **Create — frontend:**
 
-* `markdown-window.html` — Vite entry HTML (mirrors `quick-pane.html`)
+- `markdown-window.html` — Vite entry HTML (mirrors `quick-pane.html`)
 
-* `src/markdown-window-main.tsx` — React root
+- `src/markdown-window-main.tsx` — React root
 
-* `src/markdown-window.css` — entry styles
+- `src/markdown-window.css` — entry styles
 
-* `src/components/markdown/MarkdownWindow.tsx` — top-level layout + data flow
+- `src/components/markdown/MarkdownWindow.tsx` — top-level layout + data flow
 
-* `src/components/markdown/CrepeEditor.tsx` — Milkdown/Crepe React wrapper
+- `src/components/markdown/CrepeEditor.tsx` — Milkdown/Crepe React wrapper
 
-* `src/components/markdown/FrontmatterPanel.tsx` — collapsible FM form
+- `src/components/markdown/FrontmatterPanel.tsx` — collapsible FM form
 
-* `src/components/markdown/FrontmatterField.tsx` — per-row type-dispatched input
+- `src/components/markdown/FrontmatterField.tsx` — per-row type-dispatched input
 
-* `src/components/markdown/MarkdownTitlebar.tsx` — pretty title + stamp button
+- `src/components/markdown/MarkdownTitlebar.tsx` — pretty title + stamp button
 
-* `src/components/markdown/StampDialog.tsx` — verbatim-body consent modal
+- `src/components/markdown/StampDialog.tsx` — verbatim-body consent modal
 
-* `src/lib/markdown/parse.ts` — `gray-matter` wrapper + types
+- `src/lib/markdown/parse.ts` — `gray-matter` wrapper + types
 
-* `src/lib/markdown/parse.test.ts`
+- `src/lib/markdown/parse.test.ts`
 
-* `src/lib/markdown/title.ts` — title resolution rules
+- `src/lib/markdown/title.ts` — title resolution rules
 
-* `src/lib/markdown/title.test.ts`
+- `src/lib/markdown/title.test.ts`
 
-* `src/lib/markdown/field-type.ts` — FM value-type inference
+- `src/lib/markdown/field-type.ts` — FM value-type inference
 
-* `src/lib/markdown/field-type.test.ts`
+- `src/lib/markdown/field-type.test.ts`
 
-* `src/lib/markdown/open.ts` — IPC to `open_markdown_window`
+- `src/lib/markdown/open.ts` — IPC to `open_markdown_window`
 
 **Create — backend:**
 
-* `src-tauri/src/commands/markdown.rs` — Tauri commands
+- `src-tauri/src/commands/markdown.rs` — Tauri commands
 
-* `src-tauri/src/markdown/mod.rs` — module root
+- `src-tauri/src/markdown/mod.rs` — module root
 
-* `src-tauri/src/markdown/pending.rs` — `PendingOpens` state buffer
+- `src-tauri/src/markdown/pending.rs` — `PendingOpens` state buffer
 
-* `src-tauri/src/markdown/file_io.rs` — atomic read/write helpers
+- `src-tauri/src/markdown/file_io.rs` — atomic read/write helpers
 
-* `src-tauri/tests/markdown_round_trip.rs` — integration test
+- `src-tauri/tests/markdown_round_trip.rs` — integration test
 
 **Modify:**
 
-* `package.json` — add `@milkdown/crepe`, `@milkdown/core`, `gray-matter`
+- `package.json` — add `@milkdown/crepe`, `@milkdown/core`, `gray-matter`
 
-* `src-tauri/Cargo.toml` — add `sha2`, `sha1`, `urlencoding` (verify which already pulled in transitively)
+- `src-tauri/Cargo.toml` — add `sha2`, `sha1`, `urlencoding` (verify which already pulled in transitively)
 
-* `vite.config.ts` — add `markdown-window` to `rolldownOptions.input`
+- `vite.config.ts` — add `markdown-window` to `rolldownOptions.input`
 
-* `src-tauri/src/lib.rs` — register `PendingOpens` state, add `RunEvent::Opened` arm, wire single-instance argv parsing
+- `src-tauri/src/lib.rs` — register `PendingOpens` state, add `RunEvent::Opened` arm, wire single-instance argv parsing
 
-* `src-tauri/src/commands/mod.rs` — `pub mod markdown;`
+- `src-tauri/src/commands/mod.rs` — `pub mod markdown;`
 
-* `src-tauri/src/bindings.rs` — add markdown commands to `collect_commands!`
+- `src-tauri/src/bindings.rs` — add markdown commands to `collect_commands!`
 
-* `src-tauri/tauri.macos.conf.json` — add `bundle.fileAssociations`
+- `src-tauri/tauri.macos.conf.json` — add `bundle.fileAssociations`
 
-***
+---
 
 ## Task 1: Add dependencies
 
 **Files:**
 
-* Modify: `package.json`
+- Modify: `package.json`
 
-* Modify: `src-tauri/Cargo.toml`
+- Modify: `src-tauri/Cargo.toml`
 
-* [ ] **Step 1: Install JS deps**
+- [ ] **Step 1: Install JS deps**
 
 ```bash
 pnpm add @milkdown/crepe @milkdown/core gray-matter
 ```
 
-* [ ] **Step 2: Add Rust deps**
+- [ ] **Step 2: Add Rust deps**
 
 Append under `[dependencies]` in `src-tauri/Cargo.toml`:
 
@@ -100,29 +100,29 @@ sha1 = "0.10"
 urlencoding = "2"
 ```
 
-* [ ] **Step 3: Verify Rust build**
+- [ ] **Step 3: Verify Rust build**
 
 Run: `pnpm rust:fmt:check && cd src-tauri && cargo check`
 Expected: success.
 
-* [ ] **Step 4: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
 git add package.json pnpm-lock.yaml src-tauri/Cargo.toml src-tauri/Cargo.lock
 git commit -m "deps: milkdown/crepe, gray-matter, sha2/sha1/urlencoding"
 ```
 
-***
+---
 
 ## Task 2: Frontmatter type inference (TDD)
 
 **Files:**
 
-* Create: `src/lib/markdown/field-type.ts`
+- Create: `src/lib/markdown/field-type.ts`
 
-* Create: `src/lib/markdown/field-type.test.ts`
+- Create: `src/lib/markdown/field-type.test.ts`
 
-* [ ] **Step 1: Write failing tests**
+- [ ] **Step 1: Write failing tests**
 
 ```ts
 // src/lib/markdown/field-type.test.ts
@@ -160,12 +160,12 @@ describe('inferFieldType', () => {
 })
 ```
 
-* [ ] **Step 2: Run, verify fail**
+- [ ] **Step 2: Run, verify fail**
 
 Run: `pnpm test:run src/lib/markdown/field-type.test.ts`
 Expected: FAIL (module not found).
 
-* [ ] **Step 3: Implement**
+- [ ] **Step 3: Implement**
 
 ```ts
 // src/lib/markdown/field-type.ts
@@ -178,7 +178,8 @@ export type FieldType =
   | 'number'
   | 'nested'
 
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:?\d{2})?)?$/
+const ISO_DATE =
+  /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:?\d{2})?)?$/
 
 export function inferFieldType(value: unknown): FieldType {
   if (value === null || value === undefined) return 'text'
@@ -195,29 +196,29 @@ export function inferFieldType(value: unknown): FieldType {
 }
 ```
 
-* [ ] **Step 4: Run, verify pass**
+- [ ] **Step 4: Run, verify pass**
 
 Run: `pnpm test:run src/lib/markdown/field-type.test.ts`
 Expected: PASS.
 
-* [ ] **Step 5: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add src/lib/markdown/field-type.ts src/lib/markdown/field-type.test.ts
 git commit -m "feat(markdown): field type inference for frontmatter UI"
 ```
 
-***
+---
 
 ## Task 3: gray-matter parse wrapper (TDD)
 
 **Files:**
 
-* Create: `src/lib/markdown/parse.ts`
+- Create: `src/lib/markdown/parse.ts`
 
-* Create: `src/lib/markdown/parse.test.ts`
+- Create: `src/lib/markdown/parse.test.ts`
 
-* [ ] **Step 1: Write failing tests**
+- [ ] **Step 1: Write failing tests**
 
 ```ts
 // src/lib/markdown/parse.test.ts
@@ -260,12 +261,12 @@ describe('serializeMarkdown', () => {
 })
 ```
 
-* [ ] **Step 2: Run, verify fail**
+- [ ] **Step 2: Run, verify fail**
 
 Run: `pnpm test:run src/lib/markdown/parse.test.ts`
 Expected: FAIL.
 
-* [ ] **Step 3: Implement**
+- [ ] **Step 3: Implement**
 
 ```ts
 // src/lib/markdown/parse.ts
@@ -286,7 +287,10 @@ export function parseMarkdown(source: string): ParsedMarkdown {
   }
 }
 
-export function serializeMarkdown(frontmatter: Frontmatter, body: string): string {
+export function serializeMarkdown(
+  frontmatter: Frontmatter,
+  body: string
+): string {
   if (Object.keys(frontmatter).length === 0) {
     return body
   }
@@ -294,29 +298,29 @@ export function serializeMarkdown(frontmatter: Frontmatter, body: string): strin
 }
 ```
 
-* [ ] **Step 4: Run, verify pass**
+- [ ] **Step 4: Run, verify pass**
 
 Run: `pnpm test:run src/lib/markdown/parse.test.ts`
 Expected: PASS.
 
-* [ ] **Step 5: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add src/lib/markdown/parse.ts src/lib/markdown/parse.test.ts
 git commit -m "feat(markdown): gray-matter parse/serialize wrapper"
 ```
 
-***
+---
 
 ## Task 4: Title resolution (TDD)
 
 **Files:**
 
-* Create: `src/lib/markdown/title.ts`
+- Create: `src/lib/markdown/title.ts`
 
-* Create: `src/lib/markdown/title.test.ts`
+- Create: `src/lib/markdown/title.test.ts`
 
-* [ ] **Step 1: Write failing tests**
+- [ ] **Step 1: Write failing tests**
 
 ```ts
 // src/lib/markdown/title.test.ts
@@ -331,10 +335,14 @@ describe('resolveTitle', () => {
     expect(resolveTitle({}, '# Heading\n\nText', '/x/file.md')).toBe('Heading')
   })
   it('skips inline #-prefixed text that is not a heading', () => {
-    expect(resolveTitle({}, 'intro\n# Real Heading', '/x/file.md')).toBe('Real Heading')
+    expect(resolveTitle({}, 'intro\n# Real Heading', '/x/file.md')).toBe(
+      'Real Heading'
+    )
   })
   it('falls back to file basename without extension', () => {
-    expect(resolveTitle({}, 'plain text', '/x/notes/my-file.md')).toBe('my-file')
+    expect(resolveTitle({}, 'plain text', '/x/notes/my-file.md')).toBe(
+      'my-file'
+    )
   })
   it('returns basename when title is empty string', () => {
     expect(resolveTitle({ title: '' }, '', '/x/f.md')).toBe('f')
@@ -346,12 +354,12 @@ describe('resolveTitle', () => {
 })
 ```
 
-* [ ] **Step 2: Run, verify fail**
+- [ ] **Step 2: Run, verify fail**
 
 Run: `pnpm test:run src/lib/markdown/title.test.ts`
 Expected: FAIL.
 
-* [ ] **Step 3: Implement**
+- [ ] **Step 3: Implement**
 
 ```ts
 // src/lib/markdown/title.ts
@@ -362,7 +370,7 @@ const H1 = /^#\s+(.+)$/m
 export function resolveTitle(
   frontmatter: Frontmatter,
   body: string,
-  filePath: string,
+  filePath: string
 ): string {
   const fmTitle = frontmatter.title
   if (typeof fmTitle === 'string' && fmTitle.trim().length > 0) {
@@ -379,29 +387,29 @@ function basenameWithoutExt(p: string): string {
 }
 ```
 
-* [ ] **Step 4: Run, verify pass**
+- [ ] **Step 4: Run, verify pass**
 
 Run: `pnpm test:run src/lib/markdown/title.test.ts`
 Expected: PASS.
 
-* [ ] **Step 5: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add src/lib/markdown/title.ts src/lib/markdown/title.test.ts
 git commit -m "feat(markdown): title resolution (fm → h1 → basename)"
 ```
 
-***
+---
 
 ## Task 5: Rust `markdown::file_io` — atomic read/write (TDD)
 
 **Files:**
 
-* Create: `src-tauri/src/markdown/mod.rs`
+- Create: `src-tauri/src/markdown/mod.rs`
 
-* Create: `src-tauri/src/markdown/file_io.rs`
+- Create: `src-tauri/src/markdown/file_io.rs`
 
-* [ ] **Step 1: Register module**
+- [ ] **Step 1: Register module**
 
 Add to `src-tauri/src/lib.rs` near other `mod` declarations (after `mod commands;`):
 
@@ -416,7 +424,7 @@ pub mod file_io;
 pub mod pending;
 ```
 
-* [ ] **Step 2: Write failing test**
+- [ ] **Step 2: Write failing test**
 
 ```rust
 // src-tauri/src/markdown/file_io.rs
@@ -458,13 +466,13 @@ mod tests {
 }
 ```
 
-* [ ] **Step 3: Run, verify fail**
+- [ ] **Step 3: Run, verify fail**
 
 Add `tempfile = "3"` to `src-tauri/Cargo.toml` `[dev-dependencies]`.
 Run: `cd src-tauri && cargo test markdown::file_io -- --nocapture`
 Expected: FAIL (functions don't exist).
 
-* [ ] **Step 4: Implement**
+- [ ] **Step 4: Implement**
 
 ```rust
 // src-tauri/src/markdown/file_io.rs (replace the test-module-only file)
@@ -564,27 +572,27 @@ mod tests {
 
 Also add `thiserror = "1"` to `[dependencies]` in `src-tauri/Cargo.toml` if not present.
 
-* [ ] **Step 5: Run, verify pass**
+- [ ] **Step 5: Run, verify pass**
 
 Run: `cd src-tauri && cargo test markdown::file_io`
 Expected: 3 PASS.
 
-* [ ] **Step 6: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add src-tauri/src/markdown/ src-tauri/src/lib.rs src-tauri/Cargo.toml src-tauri/Cargo.lock
 git commit -m "feat(markdown): atomic file I/O with sha256 concurrency"
 ```
 
-***
+---
 
 ## Task 6: Rust `PendingOpens` buffer (TDD)
 
 **Files:**
 
-* Create: `src-tauri/src/markdown/pending.rs`
+- Create: `src-tauri/src/markdown/pending.rs`
 
-* [ ] **Step 1: Write failing test**
+- [ ] **Step 1: Write failing test**
 
 ```rust
 // src-tauri/src/markdown/pending.rs
@@ -613,12 +621,12 @@ mod tests {
 }
 ```
 
-* [ ] **Step 2: Run, verify fail**
+- [ ] **Step 2: Run, verify fail**
 
 Run: `cd src-tauri && cargo test markdown::pending`
 Expected: FAIL.
 
-* [ ] **Step 3: Implement**
+- [ ] **Step 3: Implement**
 
 ```rust
 // src-tauri/src/markdown/pending.rs
@@ -667,33 +675,33 @@ mod tests {
 }
 ```
 
-* [ ] **Step 4: Run, verify pass**
+- [ ] **Step 4: Run, verify pass**
 
 Run: `cd src-tauri && cargo test markdown::pending`
 Expected: 2 PASS.
 
-* [ ] **Step 5: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add src-tauri/src/markdown/pending.rs
 git commit -m "feat(markdown): PendingOpens buffer for RunEvent::Opened"
 ```
 
-***
+---
 
-## Task 7: Tauri commands — read/write/open/take\_pending
+## Task 7: Tauri commands — read/write/open/take_pending
 
 **Files:**
 
-* Create: `src-tauri/src/commands/markdown.rs`
+- Create: `src-tauri/src/commands/markdown.rs`
 
-* Modify: `src-tauri/src/commands/mod.rs`
+- Modify: `src-tauri/src/commands/mod.rs`
 
-* Modify: `src-tauri/src/bindings.rs`
+- Modify: `src-tauri/src/bindings.rs`
 
-* Modify: `src-tauri/src/lib.rs`
+- Modify: `src-tauri/src/lib.rs`
 
-* [ ] **Step 1: Implement commands**
+- [ ] **Step 1: Implement commands**
 
 Create `src-tauri/src/commands/markdown.rs`:
 
@@ -783,7 +791,7 @@ fn window_label(path: &str) -> String {
 }
 ```
 
-* [ ] **Step 2: Register module**
+- [ ] **Step 2: Register module**
 
 Append to `src-tauri/src/commands/mod.rs`:
 
@@ -791,7 +799,7 @@ Append to `src-tauri/src/commands/mod.rs`:
 pub mod markdown;
 ```
 
-* [ ] **Step 3: Register state + commands**
+- [ ] **Step 3: Register state + commands**
 
 Edit `src-tauri/src/lib.rs`:
 
@@ -818,37 +826,37 @@ collect_commands![
 ]
 ```
 
-* [ ] **Step 4: Regenerate TS bindings**
+- [ ] **Step 4: Regenerate TS bindings**
 
 Run: `pnpm rust:bindings`
 Expected: `src/lib/bindings.ts` updated with new commands.
 
-* [ ] **Step 5: Verify build**
+- [ ] **Step 5: Verify build**
 
 Run: `pnpm rust:clippy && pnpm typecheck`
 Expected: success.
 
-* [ ] **Step 6: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add src-tauri/src/commands/markdown.rs src-tauri/src/commands/mod.rs src-tauri/src/bindings.rs src-tauri/src/lib.rs src/lib/bindings.ts
 git commit -m "feat(markdown): Tauri commands (read/write/open/take_pending)"
 ```
 
-***
+---
 
 ## Task 8: macOS file association config
 
 **Files:**
 
-* Modify: `src-tauri/tauri.macos.conf.json`
+- Modify: `src-tauri/tauri.macos.conf.json`
 
-* [ ] **Step 1: Inspect current macOS config**
+- [ ] **Step 1: Inspect current macOS config**
 
 Run: `cat src-tauri/tauri.macos.conf.json`
 Note the structure — likely empty/minimal overrides on top of `tauri.conf.json`.
 
-* [ ] **Step 2: Add file associations**
+- [ ] **Step 2: Add file associations**
 
 Replace contents of `src-tauri/tauri.macos.conf.json` (merging with whatever exists; below is the relevant addition):
 
@@ -869,29 +877,29 @@ Replace contents of `src-tauri/tauri.macos.conf.json` (merging with whatever exi
 }
 ```
 
-Rationale on `rank: "Alternate"`: ship Secretariat as an *available* editor for `.md` without auto-claiming the default. Onboarding card (later task) walks the user through setting default via Finder.
+Rationale on `rank: "Alternate"`: ship Secretariat as an _available_ editor for `.md` without auto-claiming the default. Onboarding card (later task) walks the user through setting default via Finder.
 
-* [ ] **Step 3: Build to verify Info.plist generation**
+- [ ] **Step 3: Build to verify Info.plist generation**
 
 Run: `pnpm tauri:build --debug` (or `pnpm tauri:check`).
 Expected: build succeeds; inspect `src-tauri/target/debug/bundle/macos/Secretariat.app/Contents/Info.plist` for `CFBundleDocumentTypes` containing `md`.
 
-* [ ] **Step 4: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
 git add src-tauri/tauri.macos.conf.json
 git commit -m "feat(markdown): declare .md/.markdown file association on macOS"
 ```
 
-***
+---
 
 ## Task 9: Wire `RunEvent::Opened` + single-instance argv
 
 **Files:**
 
-* Modify: `src-tauri/src/lib.rs`
+- Modify: `src-tauri/src/lib.rs`
 
-* [ ] **Step 1: Extend the run-event callback**
+- [ ] **Step 1: Extend the run-event callback**
 
 In `src-tauri/src/lib.rs`, inside the `.run(|app_handle, event| match &event { ... })` block, add a new arm before the `_ => {}` (or before `RunEvent::Exit`):
 
@@ -911,7 +919,7 @@ RunEvent::Opened { urls } => {
 
 You need `tauri::Emitter` in scope — add `use tauri::Emitter;` near the existing `use tauri::Manager;`.
 
-* [ ] **Step 2: Wire single-instance argv parsing**
+- [ ] **Step 2: Wire single-instance argv parsing**
 
 Replace the single-instance plugin init in `src-tauri/src/lib.rs`:
 
@@ -935,33 +943,33 @@ app_builder = app_builder.plugin(tauri_plugin_single_instance::init(|app, args, 
 }));
 ```
 
-* [ ] **Step 3: Verify Rust compiles**
+- [ ] **Step 3: Verify Rust compiles**
 
 Run: `pnpm rust:clippy`
 Expected: success.
 
-* [ ] **Step 4: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
 git add src-tauri/src/lib.rs
 git commit -m "feat(markdown): route RunEvent::Opened + single-instance argv to PendingOpens"
 ```
 
-***
+---
 
 ## Task 10: Vite multi-entry for markdown window
 
 **Files:**
 
-* Create: `markdown-window.html`
+- Create: `markdown-window.html`
 
-* Create: `src/markdown-window-main.tsx`
+- Create: `src/markdown-window-main.tsx`
 
-* Create: `src/markdown-window.css`
+- Create: `src/markdown-window.css`
 
-* Modify: `vite.config.ts`
+- Modify: `vite.config.ts`
 
-* [ ] **Step 1: Create entry HTML**
+- [ ] **Step 1: Create entry HTML**
 
 ```html
 <!-- markdown-window.html -->
@@ -980,19 +988,21 @@ git commit -m "feat(markdown): route RunEvent::Opened + single-instance argv to 
 </html>
 ```
 
-* [ ] **Step 2: Create entry CSS**
+- [ ] **Step 2: Create entry CSS**
 
 ```css
 /* src/markdown-window.css */
 @import 'tailwindcss';
 
-html, body, #root {
+html,
+body,
+#root {
   height: 100%;
   margin: 0;
 }
 ```
 
-* [ ] **Step 3: Create entry TSX (stub for now)**
+- [ ] **Step 3: Create entry TSX (stub for now)**
 
 ```tsx
 // src/markdown-window-main.tsx
@@ -1010,13 +1020,13 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <ThemeProvider>
       <MarkdownWindow filePath={decodeURIComponent(path)} />
     </ThemeProvider>
-  </React.StrictMode>,
+  </React.StrictMode>
 )
 ```
 
 (`MarkdownWindow` is built in Task 14; this file references it but won't compile until then. Skip running typecheck here.)
 
-* [ ] **Step 4: Add to Vite input map**
+- [ ] **Step 4: Add to Vite input map**
 
 In `vite.config.ts`, change `rolldownOptions.input` to include the new entry:
 
@@ -1030,22 +1040,22 @@ rolldownOptions: {
 },
 ```
 
-* [ ] **Step 5: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add markdown-window.html src/markdown-window-main.tsx src/markdown-window.css vite.config.ts
 git commit -m "feat(markdown): vite multi-entry for markdown-window"
 ```
 
-***
+---
 
 ## Task 11: `CrepeEditor` React wrapper
 
 **Files:**
 
-* Create: `src/components/markdown/CrepeEditor.tsx`
+- Create: `src/components/markdown/CrepeEditor.tsx`
 
-* [ ] **Step 1: Implement**
+- [ ] **Step 1: Implement**
 
 ```tsx
 // src/components/markdown/CrepeEditor.tsx
@@ -1089,27 +1099,27 @@ export function CrepeEditor({ initialValue, onChange }: CrepeEditorProps) {
 }
 ```
 
-* [ ] **Step 2: Verify typecheck**
+- [ ] **Step 2: Verify typecheck**
 
 Run: `pnpm typecheck`
 Expected: no errors for this file (errors elsewhere are fine until next tasks land).
 
-* [ ] **Step 3: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
 git add src/components/markdown/CrepeEditor.tsx
 git commit -m "feat(markdown): Crepe React wrapper"
 ```
 
-***
+---
 
 ## Task 12: `FrontmatterField` (per-row, type-dispatched)
 
 **Files:**
 
-* Create: `src/components/markdown/FrontmatterField.tsx`
+- Create: `src/components/markdown/FrontmatterField.tsx`
 
-* [ ] **Step 1: Implement**
+- [ ] **Step 1: Implement**
 
 ```tsx
 // src/components/markdown/FrontmatterField.tsx
@@ -1124,7 +1134,11 @@ interface FrontmatterFieldProps {
   onChange: (key: string, newValue: unknown) => void
 }
 
-export function FrontmatterField({ fieldKey, value, onChange }: FrontmatterFieldProps) {
+export function FrontmatterField({
+  fieldKey,
+  value,
+  onChange,
+}: FrontmatterFieldProps) {
   const type = inferFieldType(value)
 
   return (
@@ -1132,7 +1146,9 @@ export function FrontmatterField({ fieldKey, value, onChange }: FrontmatterField
       <label className="w-32 shrink-0 pt-1 text-sm text-muted-foreground">
         {fieldKey}
       </label>
-      <div className="flex-1">{renderControl(type, value, v => onChange(fieldKey, v))}</div>
+      <div className="flex-1">
+        {renderControl(type, value, v => onChange(fieldKey, v))}
+      </div>
     </div>
   )
 }
@@ -1140,7 +1156,7 @@ export function FrontmatterField({ fieldKey, value, onChange }: FrontmatterField
 function renderControl(
   type: ReturnType<typeof inferFieldType>,
   value: unknown,
-  set: (v: unknown) => void,
+  set: (v: unknown) => void
 ) {
   switch (type) {
     case 'boolean':
@@ -1173,7 +1189,14 @@ function renderControl(
       return (
         <Input
           value={(value as unknown[]).map(String).join(', ')}
-          onChange={e => set(e.target.value.split(',').map(s => s.trim()).filter(Boolean))}
+          onChange={e =>
+            set(
+              e.target.value
+                .split(',')
+                .map(s => s.trim())
+                .filter(Boolean)
+            )
+          }
           placeholder="comma, separated, list"
         />
       )
@@ -1189,7 +1212,10 @@ function renderControl(
     case 'text':
     default:
       return (
-        <Input value={String(value ?? '')} onChange={e => set(e.target.value)} />
+        <Input
+          value={String(value ?? '')}
+          onChange={e => set(e.target.value)}
+        />
       )
   }
 }
@@ -1197,12 +1223,12 @@ function renderControl(
 
 Verify `@/components/ui/textarea` exists: run `ls src/components/ui/`. If `textarea.tsx` is missing, add it via `pnpm dlx shadcn@latest add textarea` (the project already uses Radix + shadcn pattern based on dependency list).
 
-* [ ] **Step 2: Verify typecheck (for this file)**
+- [ ] **Step 2: Verify typecheck (for this file)**
 
 Run: `pnpm typecheck`
 Expected: no errors from this file.
 
-* [ ] **Step 3: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
 git add src/components/markdown/FrontmatterField.tsx
@@ -1210,15 +1236,15 @@ git add src/components/markdown/FrontmatterField.tsx
 git commit -m "feat(markdown): FrontmatterField per-row type-dispatched input"
 ```
 
-***
+---
 
 ## Task 13: `FrontmatterPanel`
 
 **Files:**
 
-* Create: `src/components/markdown/FrontmatterPanel.tsx`
+- Create: `src/components/markdown/FrontmatterPanel.tsx`
 
-* [ ] **Step 1: Implement**
+- [ ] **Step 1: Implement**
 
 ```tsx
 // src/components/markdown/FrontmatterPanel.tsx
@@ -1232,7 +1258,10 @@ interface FrontmatterPanelProps {
   onChange: (next: Frontmatter) => void
 }
 
-export function FrontmatterPanel({ frontmatter, onChange }: FrontmatterPanelProps) {
+export function FrontmatterPanel({
+  frontmatter,
+  onChange,
+}: FrontmatterPanelProps) {
   const keys = Object.keys(frontmatter)
   const [open, setOpen] = useState(keys.length < 5)
 
@@ -1265,46 +1294,51 @@ export function FrontmatterPanel({ frontmatter, onChange }: FrontmatterPanelProp
 }
 ```
 
-* [ ] **Step 2: Commit**
+- [ ] **Step 2: Commit**
 
 ```bash
 git add src/components/markdown/FrontmatterPanel.tsx
 git commit -m "feat(markdown): collapsible FrontmatterPanel"
 ```
 
-***
+---
 
 ## Task 14: `MarkdownTitlebar` + `StampDialog` + `MarkdownWindow`
 
 **Files:**
 
-* Create: `src/components/markdown/MarkdownTitlebar.tsx`
+- Create: `src/components/markdown/MarkdownTitlebar.tsx`
 
-* Create: `src/components/markdown/StampDialog.tsx`
+- Create: `src/components/markdown/StampDialog.tsx`
 
-* Create: `src/components/markdown/MarkdownWindow.tsx`
+- Create: `src/components/markdown/MarkdownWindow.tsx`
 
-* Create: `src/lib/markdown/stamp.ts`
+- Create: `src/lib/markdown/stamp.ts`
 
-* [ ] **Step 1: Stamp IPC helper**
+- [ ] **Step 1: Stamp IPC helper**
 
 ```ts
 // src/lib/markdown/stamp.ts
 import { Command } from '@tauri-apps/plugin-shell'
 
-export async function stampFile(filePath: string): Promise<{ ok: boolean; message: string }> {
+export async function stampFile(
+  filePath: string
+): Promise<{ ok: boolean; message: string }> {
   const cmd = Command.sidecar('binaries/sec', ['stamp', filePath])
   const result = await cmd.execute()
   if (result.code === 0) {
     return { ok: true, message: result.stdout }
   }
-  return { ok: false, message: result.stderr || result.stdout || 'stamp failed' }
+  return {
+    ok: false,
+    message: result.stderr || result.stdout || 'stamp failed',
+  }
 }
 ```
 
 If `@tauri-apps/plugin-shell` is not in `package.json`, add it: `pnpm add @tauri-apps/plugin-shell` and register in `src-tauri/src/lib.rs`: `.plugin(tauri_plugin_shell::init())` plus `tauri-plugin-shell = "2"` in `Cargo.toml`. Also extend `capabilities/default.json` to permit sidecar execution.
 
-* [ ] **Step 2: Stamp dialog**
+- [ ] **Step 2: Stamp dialog**
 
 ```tsx
 // src/components/markdown/StampDialog.tsx
@@ -1326,7 +1360,13 @@ interface StampDialogProps {
   loading: boolean
 }
 
-export function StampDialog({ open, onOpenChange, body, onConfirm, loading }: StampDialogProps) {
+export function StampDialog({
+  open,
+  onOpenChange,
+  body,
+  onConfirm,
+  loading,
+}: StampDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl">
@@ -1340,7 +1380,11 @@ export function StampDialog({ open, onOpenChange, body, onConfirm, loading }: St
           {body}
         </pre>
         <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={loading}>
+          <Button
+            variant="ghost"
+            onClick={() => onOpenChange(false)}
+            disabled={loading}
+          >
             Cancel
           </Button>
           <Button onClick={onConfirm} disabled={loading}>
@@ -1353,7 +1397,7 @@ export function StampDialog({ open, onOpenChange, body, onConfirm, loading }: St
 }
 ```
 
-* [ ] **Step 3: Titlebar**
+- [ ] **Step 3: Titlebar**
 
 ```tsx
 // src/components/markdown/MarkdownTitlebar.tsx
@@ -1366,12 +1410,18 @@ interface MarkdownTitlebarProps {
   onStampClick: () => void
 }
 
-export function MarkdownTitlebar({ title, saving, onStampClick }: MarkdownTitlebarProps) {
+export function MarkdownTitlebar({
+  title,
+  saving,
+  onStampClick,
+}: MarkdownTitlebarProps) {
   return (
     <header className="flex items-center justify-between border-b border-border bg-background px-6 py-2">
       <div className="flex items-center gap-2">
         <h1 className="text-base font-semibold tracking-tight">{title}</h1>
-        {saving && <span className="text-xs text-muted-foreground">Saving…</span>}
+        {saving && (
+          <span className="text-xs text-muted-foreground">Saving…</span>
+        )}
       </div>
       <Button size="sm" onClick={onStampClick}>
         <Stamp size={14} className="mr-1.5" />
@@ -1382,13 +1432,17 @@ export function MarkdownTitlebar({ title, saving, onStampClick }: MarkdownTitleb
 }
 ```
 
-* [ ] **Step 4: Top-level** **`MarkdownWindow`**
+- [ ] **Step 4: Top-level** **`MarkdownWindow`**
 
 ```tsx
 // src/components/markdown/MarkdownWindow.tsx
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { commands } from '@/lib/tauri-bindings'
-import { parseMarkdown, serializeMarkdown, type Frontmatter } from '@/lib/markdown/parse'
+import {
+  parseMarkdown,
+  serializeMarkdown,
+  type Frontmatter,
+} from '@/lib/markdown/parse'
 import { resolveTitle } from '@/lib/markdown/title'
 import { stampFile } from '@/lib/markdown/stamp'
 import { CrepeEditor } from './CrepeEditor'
@@ -1429,7 +1483,7 @@ export function MarkdownWindow({ filePath }: MarkdownWindowProps) {
 
   const title = useMemo(
     () => resolveTitle(frontmatter, body, filePath),
-    [frontmatter, body, filePath],
+    [frontmatter, body, filePath]
   )
 
   useEffect(() => {
@@ -1459,10 +1513,11 @@ export function MarkdownWindow({ filePath }: MarkdownWindowProps) {
         setSha256(res.data.sha256)
       }, 800)
     },
-    [filePath, sha256],
+    [filePath, sha256]
   )
 
-  if (!loaded) return <div className="p-6 text-sm text-muted-foreground">Loading…</div>
+  if (!loaded)
+    return <div className="p-6 text-sm text-muted-foreground">Loading…</div>
 
   return (
     <div className="flex h-screen flex-col bg-background text-foreground">
@@ -1519,42 +1574,42 @@ export function MarkdownWindow({ filePath }: MarkdownWindowProps) {
 
 The generated `commands` shape from tauri-specta returns `{ status: 'ok', data } | { status: 'error', error }` — confirm against `src/lib/bindings.ts` after Task 7. If `sonner` isn't installed, add it: `pnpm add sonner`, and mount `<Toaster />` once in `markdown-window-main.tsx`.
 
-* [ ] **Step 5: Mount Toaster**
+- [ ] **Step 5: Mount Toaster**
 
 Edit `src/markdown-window-main.tsx` to add `<Toaster />`:
 
 ```tsx
 import { Toaster } from 'sonner'
 // ...
-<ThemeProvider>
+;<ThemeProvider>
   <MarkdownWindow filePath={decodeURIComponent(path)} />
   <Toaster />
 </ThemeProvider>
 ```
 
-* [ ] **Step 6: Typecheck**
+- [ ] **Step 6: Typecheck**
 
 Run: `pnpm typecheck`
 Expected: success.
 
-* [ ] **Step 7: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add src/components/markdown/ src/lib/markdown/stamp.ts src/markdown-window-main.tsx
 git commit -m "feat(markdown): MarkdownWindow + Titlebar + StampDialog"
 ```
 
-***
+---
 
 ## Task 15: Frontend bridge — drain `pending-opens` from `main`
 
 **Files:**
 
-* Create: `src/lib/markdown/open.ts`
+- Create: `src/lib/markdown/open.ts`
 
-* Modify: `src/App.tsx`
+- Modify: `src/App.tsx`
 
-* [ ] **Step 1: Implement open helper**
+- [ ] **Step 1: Implement open helper**
 
 ```ts
 // src/lib/markdown/open.ts
@@ -1586,7 +1641,7 @@ export function watchPendingOpens(): () => void {
 }
 ```
 
-* [ ] **Step 2: Wire into** **`App.tsx`**
+- [ ] **Step 2: Wire into** **`App.tsx`**
 
 In `src/App.tsx`, inside the existing `useEffect(() => { ... }, [])`:
 
@@ -1602,7 +1657,7 @@ return () => {
 
 (Compose with any existing teardown — read the file first; if the effect already has cleanup, extend it.)
 
-* [ ] **Step 3: Smoke test manually**
+- [ ] **Step 3: Smoke test manually**
 
 Run: `pnpm tauri:dev`. In a separate terminal:
 
@@ -1612,22 +1667,22 @@ open -a Secretariat /tmp/test.md  # create test.md first with some content
 
 Expected: a markdown window opens with the file's body.
 
-* [ ] **Step 4: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
 git add src/lib/markdown/open.ts src/App.tsx
 git commit -m "feat(markdown): drain PendingOpens on main-window mount"
 ```
 
-***
+---
 
 ## Task 16: Integration test — round-trip via commands
 
 **Files:**
 
-* Create: `src-tauri/tests/markdown_round_trip.rs`
+- Create: `src-tauri/tests/markdown_round_trip.rs`
 
-* [ ] **Step 1: Write test**
+- [ ] **Step 1: Write test**
 
 ```rust
 // src-tauri/tests/markdown_round_trip.rs
@@ -1655,66 +1710,68 @@ fn round_trip_via_file_io() {
 
 (Requires `pub use` of `markdown` module from `lib.rs`. Add at top of `src-tauri/src/lib.rs`: `pub mod markdown;` instead of `mod markdown;`.)
 
-* [ ] **Step 2: Run, verify pass**
+- [ ] **Step 2: Run, verify pass**
 
 Run: `cd src-tauri && cargo test --test markdown_round_trip`
 Expected: PASS.
 
-* [ ] **Step 3: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
 git add src-tauri/tests/markdown_round_trip.rs src-tauri/src/lib.rs
 git commit -m "test(markdown): round-trip integration test"
 ```
 
-***
+---
 
 ## Task 17: Onboarding hint — "Set as default app"
 
 **Files:**
 
-* Modify: `src/components/secretariat/Onboarding.tsx` (or create a small dismissible card if onboarding is gated)
+- Modify: `src/components/secretariat/Onboarding.tsx` (or create a small dismissible card if onboarding is gated)
 
-* [ ] **Step 1: Inspect existing onboarding**
+- [ ] **Step 1: Inspect existing onboarding**
 
 Run: `head -80 src/components/secretariat/Onboarding.tsx`
 Identify a sensible spot for an optional card.
 
-* [ ] **Step 2: Add card content**
+- [ ] **Step 2: Add card content**
 
 Add a card with copy along the lines of:
 
 ```tsx
 <div className="rounded-md border border-border bg-muted/40 p-4">
-  <h3 className="text-sm font-medium">Make Secretariat your default markdown app</h3>
+  <h3 className="text-sm font-medium">
+    Make Secretariat your default markdown app
+  </h3>
   <p className="mt-1 text-xs text-muted-foreground">
-    In Finder, right-click any <code>.md</code> file → Get Info → Open With → choose
-    Secretariat → Change All.
+    In Finder, right-click any <code>.md</code> file → Get Info → Open With →
+    choose Secretariat → Change All.
   </p>
 </div>
 ```
 
 This v1 ships the tooltip; programmatic `LSSetDefaultRoleHandlerForContentType` is a follow-up.
 
-* [ ] **Step 3: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
 git add src/components/secretariat/Onboarding.tsx
 git commit -m "feat(markdown): onboarding hint for default-app"
 ```
 
-***
+---
 
 ## Task 18: Quality gates + manual smoke
 
 **Files:** none
 
-* [ ] **Step 1: Full check**
+- [ ] **Step 1: Full check**
 
 Run: `pnpm check:all`
 Expected: typecheck, lint, format, clippy, vitest, cargo test all green.
 
-* [ ] **Step 2: Manual smoke**
+- [ ] **Step 2: Manual smoke**
 
 Run: `pnpm tauri:dev`. Verify, in order:
 
@@ -1727,11 +1784,11 @@ Run: `pnpm tauri:dev`. Verify, in order:
 7. Cmd+Ctrl+F fullscreens the window.
 8. Open the same file a second time → existing window focuses (no duplicate).
 
-* [ ] **Step 3: Note any deferred polish**
+- [ ] **Step 3: Note any deferred polish**
 
 If anything fails or is rough, log it in `docs/superpowers/specs/2026-05-17-markdown-reader-followups.md` (create) instead of fixing in this plan — keep scope.
 
-***
+---
 
 ## Self-Review (writer's pass)
 

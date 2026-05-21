@@ -65,10 +65,7 @@ function IdentityStep({ onSetUp }: { onSetUp: () => void }) {
       </header>
 
       <div className="space-y-2">
-        <label
-          htmlFor="onboarding-name"
-          className="text-sm font-medium"
-        >
+        <label htmlFor="onboarding-name" className="text-sm font-medium">
           What should we call you?
         </label>
         <input
@@ -107,4 +104,3 @@ function IdentityStep({ onSetUp }: { onSetUp: () => void }) {
     </form>
   )
 }
-

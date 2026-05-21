@@ -3,9 +3,10 @@
 **Date:** 2026-05-12
 **Status:** shaping report, pre-pitch
 **Predecessor docs:**
+
 - `docs/milestones/2026-05-05-substrate-and-menubar.md` (v0.3 substrate + tray — now narrowed scope)
 - `docs/milestones/2026-04-30-first-signed-message.md` (Day 1 milestone, shipped)
-- Marcelo Ballestiero, *Autonomous Enterprise* (245pp draft, April 2026)
+- Marcelo Ballestiero, _Autonomous Enterprise_ (245pp draft, April 2026)
 - Brainstorm notes m.2–m.6 (2026-05-12, source for this report)
 
 ---
@@ -16,9 +17,9 @@
 
 This is the new elevator tagline (2026-05-12). It replaces the prior "bilateral correspondence primitive" framing with a sharper one-line positioning. Secretariat moves from a two-party stamp-and-send protocol to a **multi-principal organizing system** where AI agents draft, humans curate via selective stamping, and verified envelopes serve as the durable breadcrumbs of decisions that both humans and agents continuously act on.
 
-The relationship to *Autonomous Enterprise* (Marcelo Ballestiero's book, 245pp draft, April 2026) becomes explicit and recursive: the book describes the framework; Secretariat is one operational instance of it. Building the system *using* the framework while *writing* the framework is the strongest possible validation loop.
+The relationship to _Autonomous Enterprise_ (Marcelo Ballestiero's book, 245pp draft, April 2026) becomes explicit and recursive: the book describes the framework; Secretariat is one operational instance of it. Building the system _using_ the framework while _writing_ the framework is the strongest possible validation loop.
 
-The product/CLI name remains **Secretariat** (the executive-secretary metaphor — the first-class agent embodying that role keeps the name). The framing for *what Secretariat helps you operate* is **an autonomous enterprise**. The experience-level tagline (*async generative communication for professionals, stamped by humans*) still holds at the UX/copy altitude — both taglines coexist.
+The product/CLI name remains **Secretariat** (the executive-secretary metaphor — the first-class agent embodying that role keeps the name). The framing for _what Secretariat helps you operate_ is **an autonomous enterprise**. The experience-level tagline (_async generative communication for professionals, stamped by humans_) still holds at the UX/copy altitude — both taglines coexist.
 
 ---
 
@@ -47,13 +48,13 @@ The pivot: move the primitive from **the principal-pair** to **the channel insid
 
 Three layers of trust, replacing the prior "every envelope is stamped" model:
 
-| Layer | Mandatory? | Authority | Purpose |
-|---|---|---|---|
-| Signature (DID-keyed) | Yes — every envelope | Author (human or agent DID) | Provenance |
-| Stamp (Touch-ID) | No — selective | Principal | Attestation / commitment |
-| Counter-stamp | No — multi-party | Multiple principals | Joint commitment (process-verbaux) |
+| Layer                 | Mandatory?           | Authority                   | Purpose                            |
+| --------------------- | -------------------- | --------------------------- | ---------------------------------- |
+| Signature (DID-keyed) | Yes — every envelope | Author (human or agent DID) | Provenance                         |
+| Stamp (Touch-ID)      | No — selective       | Principal                   | Attestation / commitment           |
+| Counter-stamp         | No — multi-party     | Multiple principals         | Joint commitment (process-verbaux) |
 
-Most envelopes flow signed-only — ambient context written by agents or humans. The *stamped subset* is the org's authoritative decision ledger. Curation, not transport gating. The tagline holds, sharper: *async generative communication for professionals, stamped by humans* — humans stamp **what matters**.
+Most envelopes flow signed-only — ambient context written by agents or humans. The _stamped subset_ is the org's authoritative decision ledger. Curation, not transport gating. The tagline holds, sharper: _async generative communication for professionals, stamped by humans_ — humans stamp **what matters**.
 
 ### Five primitives that compose the lived experience
 
@@ -150,12 +151,12 @@ The same shape powers always-on agents. The daemon launches per-channel Claude A
 
 This collapses several earlier abstractions into "the directory tree IS the scope tree":
 
-| Earlier abstraction | Now |
-|---|---|
-| Custom skill / agent scope resolver | Claude Code's existing `.claude/` + CLAUDE.md tree-walk |
-| "Dive in" mode | `cd <channel-dir>` |
-| Resolved cache directory parallel to channel | `meta/` co-located inside channel |
-| Per-channel skill / agent indexing | `.claude/{skills,agents}/` at each level |
+| Earlier abstraction                                                                   | Now                                                                                           |
+| ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Custom skill / agent scope resolver                                                   | Claude Code's existing `.claude/` + CLAUDE.md tree-walk                                       |
+| "Dive in" mode                                                                        | `cd <channel-dir>`                                                                            |
+| Resolved cache directory parallel to channel                                          | `meta/` co-located inside channel                                                             |
+| Per-channel skill / agent indexing                                                    | `.claude/{skills,agents}/` at each level                                                      |
 | Top-level scattered state (`queues/`, `cache/`, `contracts/`, `skills/` all separate) | One per-channel directory containing everything, structured as a standard Claude Code project |
 
 **Path aliasing.** DIDs in raw form (`did:web:themia.pro`, `did:key:z6Mk...`) are visually noisy and have `:` portability issues on some filesystems. Use friendly aliases on disk — `themia.pro/`, `marcelo/`, `christophe/` — with the canonical DID stored in `.identity` at the alias root. Daemon maintains the alias-to-DID map; on-disk paths stay human, canonical addresses stay cryptographic.
@@ -199,15 +200,15 @@ Keystone: **one identity, many queues.** Rejecting "one DID per channel" preserv
 
 Filesystem-authoritative + AI-readable markdown deliver substrate-level portability for free — no design work needed for the basics. `tar`, `rsync`, `git`, `cat`, any LLM — they all work because the substrate is plain files in well-known locations.
 
-| Operation | Mechanism today |
-|---|---|
-| Move a channel between machines | `tar -czf <channel-dir>` → unpack |
-| Move whole installation | `rsync ~/.secretariat/` to new machine |
-| Backup / restore | git, tar, Time Machine — pick your tool |
-| Inspect on a foreign machine | `cd && cat`; or run Claude Code against the dir |
-| Recover from disk loss (subscriber) | Re-sync from owner relay |
-| Recover from disk loss (owner) | Re-hydrate from subscriber caches (per the owner-as-sequencer redundancy property) + user-encrypted key backup |
-| Fork a channel | Copy the directory tree, re-root under own org DID, optionally re-sign — works without any design |
+| Operation                           | Mechanism today                                                                                                |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Move a channel between machines     | `tar -czf <channel-dir>` → unpack                                                                              |
+| Move whole installation             | `rsync ~/.secretariat/` to new machine                                                                         |
+| Backup / restore                    | git, tar, Time Machine — pick your tool                                                                        |
+| Inspect on a foreign machine        | `cd && cat`; or run Claude Code against the dir                                                                |
+| Recover from disk loss (subscriber) | Re-sync from owner relay                                                                                       |
+| Recover from disk loss (owner)      | Re-hydrate from subscriber caches (per the owner-as-sequencer redundancy property) + user-encrypted key backup |
+| Fork a channel                      | Copy the directory tree, re-root under own org DID, optionally re-sign — works without any design              |
 
 Gaps to design when concrete drivers appear (not v0.3):
 
@@ -215,7 +216,7 @@ Gaps to design when concrete drivers appear (not v0.3):
 2. **Channel ownership transfer.** New `rosterUpdate.op = transfer_ownership` + re-signed `channelDef` under the new owner's DID. Subscribers update their relay endpoints. Lexicon extension when needed.
 3. **Org-level migration.** Moving an entire org to a new owner DID or domain. Deferred until a real driver appears.
 
-The architectural decisions made elsewhere in this report — filesystem authority, markdown bodies, owner-as-sequencer, no central server — already make Secretariat strictly more portable than any SaaS communication tool. Worth saying so explicitly in the elevator pitch: *your data is yours, in plain files, on your disk, forever.*
+The architectural decisions made elsewhere in this report — filesystem authority, markdown bodies, owner-as-sequencer, no central server — already make Secretariat strictly more portable than any SaaS communication tool. Worth saying so explicitly in the elevator pitch: _your data is yours, in plain files, on your disk, forever._
 
 ### CRDTs explicitly rejected for core
 
@@ -229,13 +230,13 @@ If multi-author **pre-sign** drafting becomes a real use case (e.g. Rafa + Chris
 
 The shaping conversation invalidated several earlier v0.3-era decisions:
 
-| Prior decision | Why superseded |
-|---|---|
-| "v0.3 is pure simplification" — every slice net subtractive | New direction is necessarily additive (orgs, channels, membership, push). Subtraction principle re-targets v0.2.x chrome only. |
-| "Two-buttons home + inbox/outbox split" | Tauri walker removed entirely; inbox/outbox split obsolete with channels. Review session principle survives; surface moves to MCP `review` verb. |
-| "Every sent envelope is stamped" (AGENTS.md rule #4) | Stamp is selective weight. Volume tension dissolves at framing level. AGENTS.md rule #4 needs revision. |
-| "Batch-stamp Merkle ceremony" | No longer needed once stamp became selective. Design preserved as future affordance, not in v0.3 critical path. |
-| "Filesystem authoritative globally" | Sharpened to per-channel-per-owner — subscribers are synchronized caches with re-sync recovery. |
+| Prior decision                                              | Why superseded                                                                                                                                   |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| "v0.3 is pure simplification" — every slice net subtractive | New direction is necessarily additive (orgs, channels, membership, push). Subtraction principle re-targets v0.2.x chrome only.                   |
+| "Two-buttons home + inbox/outbox split"                     | Tauri walker removed entirely; inbox/outbox split obsolete with channels. Review session principle survives; surface moves to MCP `review` verb. |
+| "Every sent envelope is stamped" (AGENTS.md rule #4)        | Stamp is selective weight. Volume tension dissolves at framing level. AGENTS.md rule #4 needs revision.                                          |
+| "Batch-stamp Merkle ceremony"                               | No longer needed once stamp became selective. Design preserved as future affordance, not in v0.3 critical path.                                  |
+| "Filesystem authoritative globally"                         | Sharpened to per-channel-per-owner — subscribers are synchronized caches with re-sync recovery.                                                  |
 
 ---
 
@@ -285,7 +286,7 @@ Two distinct layers, no portmanteaus:
 - **Secretariat** — the product/CLI/daemon you install. The executive-secretary metaphor is sharp; the first-class agent embodies it. Keep the name.
 - **Autonomous enterprise** — what Secretariat helps you operate. This is Marcelo's framework (the book); the substrate Secretariat creates is one operational instance of an autonomous enterprise. Use this framing in pitches, onboarding copy, and conceptual documentation.
 
-The relationship is recursive in the strongest way: the book *describes* the autonomous enterprise; Secretariat is *built using* the autonomous enterprise pattern, *to enable* autonomous enterprises. Building the system while writing the book is the validation loop.
+The relationship is recursive in the strongest way: the book _describes_ the autonomous enterprise; Secretariat is _built using_ the autonomous enterprise pattern, _to enable_ autonomous enterprises. Building the system while writing the book is the validation loop.
 
 (An earlier portmanteau attempt — "orgosystem" — was rejected. Plain language wins; the book already has the right vocabulary.)
 
@@ -301,4 +302,4 @@ The relationship is recursive in the strongest way: the book *describes* the aut
 
 ---
 
-*Drafted by AI, reviewed by a human.*
+_Drafted by AI, reviewed by a human._

@@ -10,6 +10,7 @@ so Secretariat appears in Finder's "Open With" list — but the principal must
 opt in via Finder ("Get Info → Open With → Secretariat → Change All").
 
 Follow-up: in-app card with two affordances:
+
 1. Reveal the active `.md` handler.
 2. Call `LSSetDefaultRoleHandlerForContentType("net.daringfireball.markdown", "tech.equanimi.secretariat", kLSRolesEditor)` via a small Rust helper (link `objc2` + `LaunchServices`).
 
@@ -43,7 +44,7 @@ linking inside a channel becomes load-bearing.
 ## "Is this stamped?" indicator
 
 Stamp button is always shown. v1 doesn't detect whether the loaded file is
-*already* stamp-embedded. Detect via `sec verify --json` and render a small
+_already_ stamp-embedded. Detect via `sec verify --json` and render a small
 "stamped on 2026-05-17 by did:..." badge in the titlebar when present.
 
 ## Pending-opens drain from markdown windows

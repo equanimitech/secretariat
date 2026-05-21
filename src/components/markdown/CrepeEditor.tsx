@@ -12,7 +12,7 @@ import frameDarkUrl from '@milkdown/crepe/theme/frame-dark.css?url'
 /// stylesheets (Crepe) follow the theme without needing useTheme everywhere.
 function useHtmlDarkClass(): boolean {
   const [isDark, setIsDark] = useState(() =>
-    document.documentElement.classList.contains('dark'),
+    document.documentElement.classList.contains('dark')
   )
   useEffect(() => {
     const root = document.documentElement

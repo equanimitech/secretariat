@@ -197,7 +197,11 @@ function StampDetails({
 function collectStamps(frontmatter: Frontmatter): StampRecord[] {
   const stamps: StampRecord[] = []
   const attestation = frontmatter['$attestation']
-  if (attestation && typeof attestation === 'object' && !Array.isArray(attestation)) {
+  if (
+    attestation &&
+    typeof attestation === 'object' &&
+    !Array.isArray(attestation)
+  ) {
     const record = toStampRecord(attestation as Record<string, unknown>)
     if (record) stamps.push(record)
   }
@@ -214,8 +218,7 @@ function toStampRecord(value: Record<string, unknown>): StampRecord | null {
   const at = typeof value['at'] === 'string' ? value['at'] : null
   const signature =
     typeof value['signature'] === 'string' ? value['signature'] : null
-  const docHash =
-    typeof value['docHash'] === 'string' ? value['docHash'] : null
+  const docHash = typeof value['docHash'] === 'string' ? value['docHash'] : null
 
   // We treat any object with at least one canonical field as a stamp.
   // The frontmatter walker upstream guarantees this is shaped like a

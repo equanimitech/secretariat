@@ -1,5 +1,13 @@
 import { useState } from 'react'
-import { User, FolderOpen, Keyboard, Radio, Plug, Brain, Info } from 'lucide-react'
+import {
+  User,
+  FolderOpen,
+  Keyboard,
+  Radio,
+  Plug,
+  Brain,
+  Info,
+} from 'lucide-react'
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -114,7 +122,9 @@ export function PreferencesDialog() {
                     </BreadcrumbItem>
                     <BreadcrumbSeparator className="hidden md:block" />
                     <BreadcrumbItem>
-                      <BreadcrumbPage>{getPaneTitle(activePane)}</BreadcrumbPage>
+                      <BreadcrumbPage>
+                        {getPaneTitle(activePane)}
+                      </BreadcrumbPage>
                     </BreadcrumbItem>
                   </BreadcrumbList>
                 </Breadcrumb>

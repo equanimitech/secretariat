@@ -13,12 +13,7 @@ import { commands } from '@/lib/bindings'
 import { MarkdownWindow } from '@/components/markdown/MarkdownWindow'
 import { ChannelPicker } from './ChannelPicker'
 import { ChannelTimeline } from './ChannelTimeline'
-import {
-  loadTabs,
-  makeChannelTab,
-  makeMarkdownTab,
-  saveTabs,
-} from './storage'
+import { loadTabs, makeChannelTab, makeMarkdownTab, saveTabs } from './storage'
 import type { PersistedTabs, Tab } from './types'
 
 export const OPEN_MARKDOWN_EVENT = 'secretariat:open-markdown'
@@ -97,7 +92,10 @@ export function SessionTabs() {
       })
     }
     window.addEventListener(OPEN_CHANNEL_EVENT, onOpenChannel as EventListener)
-    window.addEventListener(OPEN_MARKDOWN_EVENT, onOpenMarkdown as EventListener)
+    window.addEventListener(
+      OPEN_MARKDOWN_EVENT,
+      onOpenMarkdown as EventListener
+    )
     return () => {
       window.removeEventListener(
         OPEN_CHANNEL_EVENT,
@@ -115,7 +113,7 @@ export function SessionTabs() {
       const tabs = prev.tabs.filter(t => t.id !== id)
       const activeId =
         prev.activeId === id
-          ? tabs[tabs.length - 1]?.id ?? null
+          ? (tabs[tabs.length - 1]?.id ?? null)
           : prev.activeId
       return { tabs, activeId }
     })

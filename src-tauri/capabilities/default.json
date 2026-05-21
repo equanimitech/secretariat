@@ -30,19 +30,31 @@
     {
       "identifier": "shell:allow-spawn",
       "allow": [
-        { "name": "binaries/cognition-claude-sdk", "sidecar": true, "args": true }
+        {
+          "name": "binaries/cognition-claude-sdk",
+          "sidecar": true,
+          "args": true
+        }
       ]
     },
     {
       "identifier": "shell:allow-stdin-write",
       "allow": [
-        { "name": "binaries/cognition-claude-sdk", "sidecar": true, "args": true }
+        {
+          "name": "binaries/cognition-claude-sdk",
+          "sidecar": true,
+          "args": true
+        }
       ]
     },
     {
       "identifier": "shell:allow-kill",
       "allow": [
-        { "name": "binaries/cognition-claude-sdk", "sidecar": true, "args": true }
+        {
+          "name": "binaries/cognition-claude-sdk",
+          "sidecar": true,
+          "args": true
+        }
       ]
     }
   ]

@@ -121,7 +121,7 @@ interface Fact {
  */
 function summarizeFacts(
   fieldKey: string,
-  value: Record<string, unknown>,
+  value: Record<string, unknown>
 ): Fact[] {
   const typeId = typeof value['$type'] === 'string' ? value['$type'] : null
 
@@ -184,7 +184,11 @@ function summarizeFacts(
   const facts: Fact[] = []
   for (const [k, v] of Object.entries(value)) {
     if (k === '$type') continue
-    if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
+    if (
+      typeof v === 'string' ||
+      typeof v === 'number' ||
+      typeof v === 'boolean'
+    ) {
       facts.push({ key: k, label: k, value: String(v) })
     }
     if (facts.length >= 4) break
@@ -218,7 +222,7 @@ function shortenType(t: string): string {
 function renderControl(
   type: FieldType,
   value: unknown,
-  set: (v: unknown) => void,
+  set: (v: unknown) => void
 ) {
   switch (type) {
     case 'boolean':
@@ -256,7 +260,7 @@ function renderControl(
               e.target.value
                 .split(',')
                 .map(s => s.trim())
-                .filter(Boolean),
+                .filter(Boolean)
             )
           }
           placeholder="comma, separated, list"

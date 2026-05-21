@@ -2,7 +2,17 @@
 name: review
 description: Review outstanding captures across Secretariat queues — triage ideas and pains, classify by GTD outcome, shape pitches for "now" items. Scoped per org, channel, or thematic. Use when the user says "/review", "let's review", "review the backlog", "what should we work on next", or names a specific org/project ("review acme backlog", "review dev captures"). Companion to /idea and /pain.
 user-invocable: true
-allowed-tools: [mcp__secretariat__read, mcp__secretariat__read_channel, mcp__secretariat__list_channels, mcp__secretariat__list_orgs, mcp__secretariat__capture, Read, Bash, Agent]
+allowed-tools:
+  [
+    mcp__secretariat__read,
+    mcp__secretariat__read_channel,
+    mcp__secretariat__list_channels,
+    mcp__secretariat__list_orgs,
+    mcp__secretariat__capture,
+    Read,
+    Bash,
+    Agent,
+  ]
 ---
 
 # Review
@@ -13,11 +23,11 @@ Cross-queue triage for Secretariat captures. Aggregate, classify, decide, shape.
 
 Parse the user's invocation for scope signals:
 
-| Signal | Scope |
-|--------|-------|
-| `/review` (no args) | personal queues: `inbox:triage` + `inbox:pain` |
-| `/review --org <alias>` | org's channel tree (all channels in that org) |
-| `/review --scope <handle>` | specific channel handle (`channel:secretariat:dev`) |
+| Signal                       | Scope                                                                                                                  |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `/review` (no args)          | personal queues: `inbox:triage` + `inbox:pain`                                                                         |
+| `/review --org <alias>`      | org's channel tree (all channels in that org)                                                                          |
+| `/review --scope <handle>`   | specific channel handle (`channel:secretariat:dev`)                                                                    |
 | `/review <natural language>` | match org alias or channel handle by name (`"themia"` → `themia.pro`, `"secretariat dev"` → `channel:secretariat:dev`) |
 
 Multiple scopes can be combined: `/review --org themia.pro --org equanimi.tech`.
@@ -25,6 +35,7 @@ Multiple scopes can be combined: `/review --org themia.pro --org equanimi.tech`.
 ## Queue sources per scope
 
 **Personal (default):**
+
 - `inbox:triage` — uncategorized ideas
 - `inbox:pain` — bugs and friction
 - `inbox:waiting` — delegated, awaiting response
@@ -41,9 +52,11 @@ Read captured envelopes via `mcp__secretariat__read` or direct file walk under `
 ### 1. Inventory
 
 Walk queues per scope. Build a flat list:
+
 ```
 [<queue>] <timestamp> — <title-or-first-line> — <one-line gist>
 ```
+
 Show per-queue count summary first (e.g. `inbox:triage: 4 · inbox:pain: 2 · channel:secretariat:dev: 1`).
 
 **Shipped check** — for `inbox:triage` items, run `git log --all --oneline --since="3 months ago"` and grep for slug keywords. Flag **potentially shipped** items; confirm with principal before archiving.
@@ -76,7 +89,7 @@ One line per item — Smart Brevity: `**<lead>.** <why ≤8 words>. <outcome rea
 
 Cross-scope dedupes in a final `## Flagged` section.
 
-End with: *"Confirm or edit before I act."*
+End with: _"Confirm or edit before I act."_
 
 ### 4. Wait for confirmation
 
@@ -109,6 +122,7 @@ For `project`-classified items, dispatch a fresh `Agent` with this prompt (self-
 > Project root: `<absolute path to secretariat repo or relevant org dir>`.
 >
 > Steps:
+>
 > 1. Read surrounding code referenced in the capture.
 > 2. Run `git log --oneline -50`; cross-reference in-flight commits.
 > 3. Write pitch to `docs/pitches/<slug>.md` using four sections: `## Boundaries` (JBTD + Appetite) → `## Elements` → `## Risks` (Rabbit holes · Off-sides · Fat cut · Domain knowledge) → `## Pitch` (Problem + Bet + No-gos).

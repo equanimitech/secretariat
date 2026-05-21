@@ -9,8 +9,8 @@ Tauri-shipped apps use **two** independent signing keys:
 
 1. **Apple Developer ID** — signs the `.app` binary so macOS Gatekeeper
    trusts it; required for notarization. Two certs needed:
-   - *Developer ID Application* — signs the binary inside the bundle
-   - *Developer ID Installer* — signs the `.pkg` (only if shipping `.pkg`;
+   - _Developer ID Application_ — signs the binary inside the bundle
+   - _Developer ID Installer_ — signs the `.pkg` (only if shipping `.pkg`;
      `.dmg` doesn't need this)
 2. **Tauri Updater Ed25519** — signs the update artifact + manifest so the
    running app verifies that an update came from us (not an MitM). Generated
@@ -152,18 +152,18 @@ not for distribution.
 {
   "bundle": {
     "macOS": {
-      "signingIdentity": "-",        // ad-hoc until Apple secrets land; flip to "$APPLE_SIGNING_IDENTITY" or just rely on env
-      "entitlements": null            // may need entitlements file for keychain access / notifications
-    }
+      "signingIdentity": "-", // ad-hoc until Apple secrets land; flip to "$APPLE_SIGNING_IDENTITY" or just rely on env
+      "entitlements": null, // may need entitlements file for keychain access / notifications
+    },
   },
   "plugins": {
     "updater": {
       "endpoints": [
-        "https://github.com/equanimitech/secretariat/releases/latest/download/latest.json"
+        "https://github.com/equanimitech/secretariat/releases/latest/download/latest.json",
       ],
-      "pubkey": "<the public key, base64-armored>"
-    }
-  }
+      "pubkey": "<the public key, base64-armored>",
+    },
+  },
 }
 ```
 

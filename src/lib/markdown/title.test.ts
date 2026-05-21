@@ -10,12 +10,12 @@ describe('resolveTitle', () => {
   })
   it('skips inline #-prefixed text that is not a heading', () => {
     expect(resolveTitle({}, 'intro\n# Real Heading', '/x/file.md')).toBe(
-      'Real Heading',
+      'Real Heading'
     )
   })
   it('falls back to file basename without extension', () => {
     expect(resolveTitle({}, 'plain text', '/x/notes/my-file.md')).toBe(
-      'my-file',
+      'my-file'
     )
   })
   it('returns basename when title is empty string', () => {

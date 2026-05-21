@@ -15,6 +15,7 @@ Baseline today: `/review` fetches `secretariat://inbox` + `secretariat://outbox`
 ### Appetite
 
 `medium` — three slices, each a focused day:
+
 1. New `secretariat://review` resource that returns the unified `list_review_queue` output, grouped by area.
 2. `QueueHandle` grammar extension to allow nested namespaces (`themia:data:dommage_corporel`).
 3. `/review` prompt rewrite: tree descent → leaf walk, with per-envelope action menu varying by kind.
@@ -29,6 +30,7 @@ Four elements; no more.
 
 - **Place:** new MCP resource registered in `crates/mcp/src/server.rs` alongside the existing `RESOURCE_INBOX_URI` and `RESOURCE_OUTBOX_URI` (server.rs:774-775).
 - **Affordance:** `read_resource("secretariat://review")` returns markdown grouped by area:
+
   ```
   # Review
 
@@ -43,6 +45,7 @@ Four elements; no more.
   ## equanimitech:secretariat (1)
   - <path> · capture · 2026-05-06
   ```
+
 - **Connection:** backed by `list_review_queue(outbox_root, queues_root)` (already shipped). Add `list_inbox_files(inbox_root)` to the union — currently `list_review_queue` only does outbox + queues, not peer inbox. Either extend the core function or compose at the MCP layer.
 
 ### Place: nested `QueueHandle` grammar
@@ -69,7 +72,7 @@ Four elements; no more.
      - peer inbox envelope → `archive` / `skip` / `compose reply`
      - outbox draft (unstamped) → `stamp` / `skip` / `discard`
      - self-capture → `archive` / `skip` / `shape` (delegates to `/shaping <path>`)
-- **Connection:** ends naturally when the chosen subtree is exhausted. Other subtrees stay untouched and re-surface next session. One-line summary: *"Reviewed N envelopes across <area> — A archived, S stamped, K skipped."*
+- **Connection:** ends naturally when the chosen subtree is exhausted. Other subtrees stay untouched and re-surface next session. One-line summary: _"Reviewed N envelopes across <area> — A archived, S stamped, K skipped."_
 
 ## Risks
 
@@ -85,7 +88,7 @@ Four elements; no more.
 - **Cross-org peer writes (Christophe → `themia:christophe`).** Out. Needs auth model — invite already grants trust edge, but per-queue ACL is a new domain concept. Separate pitch.
 - **Scheduled / time-based bubble-up of captures.** Out. Skip + leave-in-place is the v1 "remind me later." Time-based defer was already off-sides in the inbox-walker pitch (2026-05-05) and stays off-sides here.
 - **Tauri app UI walker.** Out. The 2026-05-05 inbox-walker pitch covers the in-app surface. This pitch is MCP-side only — the Claude Code `/review` flow.
-- **Replacing `/roundtable` with this walker.** Partially. The walker subsumes the *capture-triage* part (read each capture, decide action). Roundtable's *bucketing* (now/later/never) and *shaping dispatch* are not in this pitch — `shape` action delegates to existing `/shaping`, not to a bucketing system. Roundtable can later become "review with `--mode=triage` and dispatch shaping in parallel."
+- **Replacing `/roundtable` with this walker.** Partially. The walker subsumes the _capture-triage_ part (read each capture, decide action). Roundtable's _bucketing_ (now/later/never) and _shaping dispatch_ are not in this pitch — `shape` action delegates to existing `/shaping`, not to a bucketing system. Roundtable can later become "review with `--mode=triage` and dispatch shaping in parallel."
 - **Migration of existing `inbox:triage` captures into nested namespaces.** Out. Existing flat handles keep working; new captures use whatever namespace the principal chooses.
 - **Notifications / unread badges.** No. Equanimitech red lines stand.
 
@@ -100,7 +103,7 @@ Four elements; no more.
 
 - **`list_inbox_files` recursion behavior.** Verify it walks only `inbox/` root, not `inbox/archived/` or `inbox/deferred/` — same risk flagged in the 2026-05-05 inbox-walker pitch. If it recurses, the walker shows already-archived envelopes. ~10min spike against `crates/core/src/application/inbox_ops.rs:92`.
 - **`as_path_segment()` interaction with new grammar.** Already does `replace(':', "/")` (queue_handle.rs:101) so nested handles produce nested dirs for free. Verified.
-- **The "show body before acting" invariant.** Holds for the new self-capture action menu — `archive`, `shape`, `skip` all happen *after* the body has been rendered verbatim. No new ceremony work.
+- **The "show body before acting" invariant.** Holds for the new self-capture action menu — `archive`, `shape`, `skip` all happen _after_ the body has been rendered verbatim. No new ceremony work.
 - **Lexicon impact.** None. `tech.equanimi.secretariat.envelope` schema is untouched; this is a projection / surface change. The `kind` field stays as-is.
 
 ## Pitch

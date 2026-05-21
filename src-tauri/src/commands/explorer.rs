@@ -219,7 +219,8 @@ fn dir_has_children(p: &std::path::Path) -> bool {
                 let n = d.file_name();
                 let s = n.to_string_lossy();
                 let hidden = s.starts_with('.') && s != ".claude";
-                let staging = matches!(s.as_ref(), "_drafts" | "_ciphertext" | "envelopes" | "sent");
+                let staging =
+                    matches!(s.as_ref(), "_drafts" | "_ciphertext" | "envelopes" | "sent");
                 !hidden && !staging
             }
             Err(_) => false,
@@ -341,7 +342,9 @@ pub async fn move_path(src: String, dest_parent: String) -> Result<String, Strin
         return Err(format!("source does not exist: {src}"));
     }
     if !dest_parent_path.is_dir() {
-        return Err(format!("destination parent is not a directory: {dest_parent}"));
+        return Err(format!(
+            "destination parent is not a directory: {dest_parent}"
+        ));
     }
     let basename = src_path
         .file_name()
@@ -352,9 +355,10 @@ pub async fn move_path(src: String, dest_parent: String) -> Result<String, Strin
     }
     // Cycle guard: refuse to move a dir into itself or one of its
     // descendants. Canonicalize to dodge `./` and symlink games.
-    let src_canon = std::fs::canonicalize(&src_path).map_err(|e| format!("canonicalize src: {e}"))?;
-    let dest_canon = std::fs::canonicalize(&dest_parent_path)
-        .map_err(|e| format!("canonicalize dest: {e}"))?;
+    let src_canon =
+        std::fs::canonicalize(&src_path).map_err(|e| format!("canonicalize src: {e}"))?;
+    let dest_canon =
+        std::fs::canonicalize(&dest_parent_path).map_err(|e| format!("canonicalize dest: {e}"))?;
     if dest_canon == src_canon || dest_canon.starts_with(&src_canon) {
         return Err("cannot move a directory into itself or one of its descendants".into());
     }

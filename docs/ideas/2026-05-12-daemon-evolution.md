@@ -3,6 +3,7 @@
 **Date:** 2026-05-12
 **Status:** shaping, no code changes
 **Predecessor / companion docs:**
+
 - `docs/ideas/2026-05-12-secretariat-as-autonomous-enterprise-substrate.md` (v0.3 direction)
 - `~/.claude/projects/.../memory/project_daemon_v03_subsystems.md` (9-subsystem target shape)
 - `docs/milestones/2026-04-30-first-signed-message.md` (Day 1 daemon shape)
@@ -71,33 +72,33 @@ No per-channel directory, no time-sharding, no `_ciphertext/` +
 Nine subsystems, organized around channel-dir layout (per the substrate
 report, §"channel directory IS the activation surface"):
 
-| # | Subsystem | Owns | Maps to today |
-|---|---|---|---|
-| 1 | RelayServer | Per-channel canonical sequence for channels this principal owns; HTTP + WebSocket/SSE | `crates/relay/` (separate binary, per-DID only) |
-| 2 | RelayClient | Push subscription to owner relays for channels this principal reads; cadenced poll fallback for humans | `core::infrastructure::transport::relay::RelayClient` (poll-only) |
-| 3 | OutboxWatcher | Watches `<channel-dir>/outbox/`; signs draft; encrypts to recipients; hands to transport | `sync::drain_outbox` (tick-only, per-DID flat scheme) |
-| 4 | InboxWriter | Decrypts inbound → writes `_ciphertext/<hash>.env` (canonical) + `envelopes/YYYY/MM/DD/<iso>-<hash>.md` (plaintext) | `sync::file_inbound` (ciphertext-only, flat scheme) |
-| 5 | MetaResolver | Pulls `<channel>:_meta`; writes resolved `CLAUDE.md` + `.claude/{agents,skills,commands}/` to channel-dir; respects `*.local.md` | — (none) |
-| 6 | AgentSupervisor | Spawns per-channel always-on agents via Claude Agent SDK; cwd = channel-dir; triggers on cron + FS-notify on `envelopes/`; respects consumption contracts | — (none) |
-| 7 | RoutingEngine | Per-envelope: consumption contract × attention-envelope × declared depth/urgency → promote/digest/mute/bounce | — (none; v0.4 wedge per [[project_attention_routing_future]]) |
-| 8 | ScheduleTicker | Cron-like duty registry — relay poll, outbox drain, daily digest, meta-resolve, subscription keepalive | `decide_poll` + serve-loop sleep (single duty) |
-| 9 | IPC | Unix socket; CLI / Tauri tray / MCP all talk to running daemon | — (Tauri calls in-proc; CLI tick spawns separate process) |
+| #   | Subsystem       | Owns                                                                                                                                                      | Maps to today                                                     |
+| --- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| 1   | RelayServer     | Per-channel canonical sequence for channels this principal owns; HTTP + WebSocket/SSE                                                                     | `crates/relay/` (separate binary, per-DID only)                   |
+| 2   | RelayClient     | Push subscription to owner relays for channels this principal reads; cadenced poll fallback for humans                                                    | `core::infrastructure::transport::relay::RelayClient` (poll-only) |
+| 3   | OutboxWatcher   | Watches `<channel-dir>/outbox/`; signs draft; encrypts to recipients; hands to transport                                                                  | `sync::drain_outbox` (tick-only, per-DID flat scheme)             |
+| 4   | InboxWriter     | Decrypts inbound → writes `_ciphertext/<hash>.env` (canonical) + `envelopes/YYYY/MM/DD/<iso>-<hash>.md` (plaintext)                                       | `sync::file_inbound` (ciphertext-only, flat scheme)               |
+| 5   | MetaResolver    | Pulls `<channel>:_meta`; writes resolved `CLAUDE.md` + `.claude/{agents,skills,commands}/` to channel-dir; respects `*.local.md`                          | — (none)                                                          |
+| 6   | AgentSupervisor | Spawns per-channel always-on agents via Claude Agent SDK; cwd = channel-dir; triggers on cron + FS-notify on `envelopes/`; respects consumption contracts | — (none)                                                          |
+| 7   | RoutingEngine   | Per-envelope: consumption contract × attention-envelope × declared depth/urgency → promote/digest/mute/bounce                                             | — (none; v0.4 wedge per [[project_attention_routing_future]])     |
+| 8   | ScheduleTicker  | Cron-like duty registry — relay poll, outbox drain, daily digest, meta-resolve, subscription keepalive                                                    | `decide_poll` + serve-loop sleep (single duty)                    |
+| 9   | IPC             | Unix socket; CLI / Tauri tray / MCP all talk to running daemon                                                                                            | — (Tauri calls in-proc; CLI tick spawns separate process)         |
 
 Constraint reminders this shape respects:
 
-- **Owner-as-sequencer.** RelayServer is the *only* sequencer for channels
+- **Owner-as-sequencer.** RelayServer is the _only_ sequencer for channels
   this principal owns; subscribers' RelayClient reads that sequence. No
   consensus, no global ordering.
 - **Filesystem authoritative.** InboxWriter + MetaResolver write to disk
-  *first*; any in-memory index is a derivable cache.
+  _first_; any in-memory index is a derivable cache.
 - **Selective stamp.** OutboxWatcher signs every draft but never auto-stamps;
   drafts marked `elevate=true` queue for principal review instead of
   direct send.
 - **No central server.** RelayServer is per-principal-local; RelayClient
   talks directly to each peer's owner-relay; no broker.
 - **Pluggable cognition.** AgentSupervisor and (future) RoutingEngine
-  call `CognitionPort`; SmolLM2 / Ollama acceptable for *enrichment*
-  (subject, topic, sanity), never for the *decision* (route, surface,
+  call `CognitionPort`; SmolLM2 / Ollama acceptable for _enrichment_
+  (subject, topic, sanity), never for the _decision_ (route, surface,
   stamp).
 
 ---
@@ -197,7 +198,7 @@ to a synthetic channel-dir at `<peer-alias>/`).
 
 **Slice 4. InboxWriter — eager decrypt + two-tier.** When the envelope
 is channel-routed (Slice 3 path), write ciphertext to
-`<channel-dir>/_ciphertext/<hash>.env` *and* decrypt + write plaintext
+`<channel-dir>/_ciphertext/<hash>.env` _and_ decrypt + write plaintext
 to `<channel-dir>/envelopes/YYYY/MM/DD/<iso>-<hash>.md`. Requires the
 daemon to hold the principal's x25519 decryption key. Threat-model
 decision is open (see §"Open questions" #1). Bridges the
@@ -248,7 +249,7 @@ per `project_secretariat_agent` memory) drafting the morning digest.
 **Slice 10. RoutingEngine.** Wait for 2-3 weeks of real channel
 traffic before designing rules (per [[project_attention_routing_future]]).
 Deterministic core (declared fields × contract × bounds → decision);
-SmolLM2 enrichment *after* filing (subject inference, topic tagging,
+SmolLM2 enrichment _after_ filing (subject inference, topic tagging,
 urgency sanity, tone tag for notify policy). Never gate filing on
 inference.
 
@@ -260,131 +261,125 @@ slow. Regenerable, never authoritative.
 
 ## 5. Open questions
 
-1. **Decryption key in daemon (Slice 4 blocker).** v0.2.x deliberately
-   kept the key cold to limit blast radius if the daemon process is
-   compromised. v0.3 substrate (markdown for AI/grep) needs eager
-   decrypt → daemon must hold the x25519 decryption key derived from
-   the ed25519 identity. Options:
-   - (a) Daemon holds the key in memory (simplest; matches the
-     sovereignty rule's "the device is the threat boundary, not the
-     process boundary"). Use `zeroize` + memory-locked region. Document
-     the change in AGENTS.md threat model.
-   - (b) Daemon writes ciphertext only; a separate short-lived
-     "decryptor" process the principal authorizes per session writes
-     plaintext. Higher operational complexity; doesn't actually
-     improve the threat model meaningfully (same disk, same
-     attacker).
-   - (c) Decrypt lazily on AI/grep request via IPC RPC. Defers the
-     decision but blocks Claude Code sessions from reading history
-     without a running daemon. Wrong tradeoff.
+1.  **Decryption key in daemon (Slice 4 blocker).** v0.2.x deliberately
+    kept the key cold to limit blast radius if the daemon process is
+    compromised. v0.3 substrate (markdown for AI/grep) needs eager
+    decrypt → daemon must hold the x25519 decryption key derived from
+    the ed25519 identity. Options:
+    - (a) Daemon holds the key in memory (simplest; matches the
+      sovereignty rule's "the device is the threat boundary, not the
+      process boundary"). Use `zeroize` + memory-locked region. Document
+      the change in AGENTS.md threat model.
+    - (b) Daemon writes ciphertext only; a separate short-lived
+      "decryptor" process the principal authorizes per session writes
+      plaintext. Higher operational complexity; doesn't actually
+      improve the threat model meaningfully (same disk, same
+      attacker).
+    - (c) Decrypt lazily on AI/grep request via IPC RPC. Defers the
+      decision but blocks Claude Code sessions from reading history
+      without a running daemon. Wrong tradeoff.
 
-   **Lean:** (a) with explicit AGENTS.md amendment.
+    **Lean:** (a) with explicit AGENTS.md amendment.
 
-2. **Daemon crate location.** Three options:
-   - New `crates/daemon/` crate, separate from `crates/cli` and
-     `crates/core`. Hosts its own deps (`notify`, `tokio-tungstenite`,
-     Claude Agent SDK bindings). Cleanest. **Recommended.**
-   - Library module under `crates/core/`. Inflates core; violates the
-     "domain has no IO" rule indirectly because `notify` and WS are IO.
-   - Stay in `crates/cli/`. Couples to the CLI binary; can't be a
-     LaunchAgent target without the full CLI.
+2.  **Daemon crate location.** Three options:
+    - New `crates/daemon/` crate, separate from `crates/cli` and
+      `crates/core`. Hosts its own deps (`notify`, `tokio-tungstenite`,
+      Claude Agent SDK bindings). Cleanest. **Recommended.**
+    - Library module under `crates/core/`. Inflates core; violates the
+      "domain has no IO" rule indirectly because `notify` and WS are IO.
+    - Stay in `crates/cli/`. Couples to the CLI binary; can't be a
+      LaunchAgent target without the full CLI.
 
-3. **IPC protocol.** JSON-RPC over Unix socket is enough for v0.3.
-   Capnp / Cap'n Proto only if push-volume across IPC matters (it
-   probably doesn't — push lives daemon-internal, IPC is for control
-   plane).
+3.  **IPC protocol.** JSON-RPC over Unix socket is enough for v0.3.
+    Capnp / Cap'n Proto only if push-volume across IPC matters (it
+    probably doesn't — push lives daemon-internal, IPC is for control
+    plane).
 
-4. **Embedded RelayServer vs sibling binary (Slice 6).** Two install
-   profiles or one? Sibling binary is operationally cleaner (independent
-   restart, independent log, independent crash). Embedded saves a
-   LaunchAgent. Decision can defer to Slice 6; both shapes already
-   factored into `crates/relay/`'s library + main split.
+4.  **Embedded RelayServer vs sibling binary (Slice 6).** Two install
+    profiles or one? Sibling binary is operationally cleaner (independent
+    restart, independent log, independent crash). Embedded saves a
+    LaunchAgent. Decision can defer to Slice 6; both shapes already
+    factored into `crates/relay/`'s library + main split.
 
-5. **AgentSupervisor concurrency budget.** N channels × always-on
-   Claude Agent SDK loops = N concurrent API connections + token cost.
-   Default: launch-on-trigger (cron / FS-notify), not persistent. A
-   persistent-loop agent declares `persistent = true` in its frontmatter
-   and is supervised differently. Resource cap configurable.
+5.  **AgentSupervisor concurrency budget.** N channels × always-on
+    Claude Agent SDK loops = N concurrent API connections + token cost.
+    Default: launch-on-trigger (cron / FS-notify), not persistent. A
+    persistent-loop agent declares `persistent = true` in its frontmatter
+    and is supervised differently. Resource cap configurable.
 
-6. **Channel resolution at file-inbound time (Slice 3 blocker).**
-   InboxWriter needs `(owner_did, handle)` → channel-dir. Source:
-   substrate report §5 says envelope carries `(owner_did, handle)` as
-   wire-level fields. v0.2.x envelope wire format doesn't yet —
-   lexicon extension blocks Slice 3. May want to land the lexicon
-   shape (no runtime validation, per the substrate report's "next
-   steps" #3) before Phase B.
+6.  **Channel resolution at file-inbound time (Slice 3 blocker).**
+    InboxWriter needs `(owner_did, handle)` → channel-dir. Source:
+    substrate report §5 says envelope carries `(owner_did, handle)` as
+    wire-level fields. v0.2.x envelope wire format doesn't yet —
+    lexicon extension blocks Slice 3. May want to land the lexicon
+    shape (no runtime validation, per the substrate report's "next
+    steps" #3) before Phase B.
 
-7. **Legacy path migration.** Dual-write through v0.3, one-shot
-   `sec migrate` when v0.4 lands. Alternative: read-old / write-new
-   for inbox (new arrivals only land in channel-dirs) and let
-   `~/.secretariat/inbox/` go stale. Cleaner; loses history.
-   **Lean:** dual-write through v0.3, migrate at v0.4.
+7.  **Legacy path migration.** Dual-write through v0.3, one-shot
+    `sec migrate` when v0.4 lands. Alternative: read-old / write-new
+    for inbox (new arrivals only land in channel-dirs) and let
+    `~/.secretariat/inbox/` go stale. Cleaner; loses history.
+    **Lean:** dual-write through v0.3, migrate at v0.4.
 
-8. **LaunchAgent KeepAlive vs embedded RelayServer.** If port-bind
-   fails (port already in use), `KeepAlive = true` makes launchctl
-   respawn-loop. Need explicit unhealthy-exit semantics: distinguish
-   "daemon failed, retry" from "port conflict, stop." Probably an
-   exit-code convention + a launchd `ExitTimeOut`. Slice 6 problem.
+8.  **LaunchAgent KeepAlive vs embedded RelayServer.** If port-bind
+    fails (port already in use), `KeepAlive = true` makes launchctl
+    respawn-loop. Need explicit unhealthy-exit semantics: distinguish
+    "daemon failed, retry" from "port conflict, stop." Probably an
+    exit-code convention + a launchd `ExitTimeOut`. Slice 6 problem.
 
-9. **Per-duty cadence config.** Today's `cadence.toml` has one knob
-   (`poll_interval_minutes`). Slice 8 needs per-duty entries. Schema
-   migration: extend the same TOML file with named tables (`[relay_poll]`,
-   `[meta_resolve]`, etc.); the existing top-level `poll_interval_minutes`
-   becomes `[relay_poll].interval_minutes` with a back-compat shim.
+9.  **Per-duty cadence config.** Today's `cadence.toml` has one knob
+    (`poll_interval_minutes`). Slice 8 needs per-duty entries. Schema
+    migration: extend the same TOML file with named tables (`[relay_poll]`,
+    `[meta_resolve]`, etc.); the existing top-level `poll_interval_minutes`
+    becomes `[relay_poll].interval_minutes` with a back-compat shim.
 
 10. **MCP exposure of daemon control.** Should MCP expose
     `daemon_tick`, `daemon_status` already? Today only the CLI does
     (`sec daemon tick`/`status`). Adding to MCP is cheap once Slice 1
     socket exists; aligns with the AGENTS.md rule "every principal-
     facing primitive ships on both interfaces." Daemon-only operations
-    are exempt — these are *control* operations, principal-facing, so
+    are exempt — these are _control_ operations, principal-facing, so
     they qualify. **Lean:** yes, ship them on MCP in Slice 1.
 
 11. **Per-reader review-state cursors (needs shaping before code).**
     Once the channel-dir layout lands (Slice 3+), the receiver side
-    needs a way to know *what's new since last review*. The shape
+    needs a way to know _what's new since last review_. The shape
     doc's "cross-channel review verb" implies this state exists but
-    doesn't specify it. Sketch so far (not yet a decision):
+    doesn't specify it. Sketch so far (not yet a decision): - **Per-reader cursor file** per channel, e.g.
+    `<channel-dir>/.review-cursor` for the principal,
+    `<channel-dir>/.review-cursor.<agent-did-fragment>` for any
+    agent that subscribes (Secretariat agent included). Each
+    cursor records the last envelope the reader processed —
+    either a hash or an ISO timestamp. Reader-local, never
+    published, regenerable (matches consumption-contract pattern). - **Append-only access ledger** (v0.4+) at
+    `<channel-dir>/.access.log` — one line per review session,
+    pure local audit. Optional; powers "what did I review last
+    Tuesday" + future routing-engine rules. - **Composability with the routing engine.** Cursor is the
+    foundation; routing decides `unread × declared depth/urgency
+× consumption contract → surface | digest | mute | bounce`.
+    Slice 10 (RoutingEngine, v0.4) reads cursor state; cursor
+    itself needs to ship earlier so review + digest work at all. - **Reader-to-reader coordination is open.** Does the
+    Secretariat agent's cursor advance when the _principal_
+    reads, so the agent doesn't re-digest items the principal
+    already saw? Cleanest answer: each reader's cursor is fully
+    independent (agent digests on its own pace; if the
+    principal pre-read an item, the digest just confirms what
+    they already saw — no harm). Alternative: principal's cursor
+    shadows the agent's via a coordination file. Decide before
+    Slice 3.5 (the slice that would land the cursor primitive). - **Granularity tradeoff.** Hash-based cursor is precise but
+    requires a sorted index to compare "before/after"; timestamp
+    cursor is fuzzy at the second boundary but trivially
+    comparable against the time-sharded `envelopes/YYYY/MM/DD/`
+    layout. Lean **timestamp + hash tiebreaker** (cursor = `(ts,
+hash)`). Same shape as a SQL `(ORDER BY ts, id)` index.
 
-    - **Per-reader cursor file** per channel, e.g.
-      `<channel-dir>/.review-cursor` for the principal,
-      `<channel-dir>/.review-cursor.<agent-did-fragment>` for any
-      agent that subscribes (Secretariat agent included). Each
-      cursor records the last envelope the reader processed —
-      either a hash or an ISO timestamp. Reader-local, never
-      published, regenerable (matches consumption-contract pattern).
-    - **Append-only access ledger** (v0.4+) at
-      `<channel-dir>/.access.log` — one line per review session,
-      pure local audit. Optional; powers "what did I review last
-      Tuesday" + future routing-engine rules.
-    - **Composability with the routing engine.** Cursor is the
-      foundation; routing decides `unread × declared depth/urgency
-      × consumption contract → surface | digest | mute | bounce`.
-      Slice 10 (RoutingEngine, v0.4) reads cursor state; cursor
-      itself needs to ship earlier so review + digest work at all.
-    - **Reader-to-reader coordination is open.** Does the
-      Secretariat agent's cursor advance when the *principal*
-      reads, so the agent doesn't re-digest items the principal
-      already saw? Cleanest answer: each reader's cursor is fully
-      independent (agent digests on its own pace; if the
-      principal pre-read an item, the digest just confirms what
-      they already saw — no harm). Alternative: principal's cursor
-      shadows the agent's via a coordination file. Decide before
-      Slice 3.5 (the slice that would land the cursor primitive).
-    - **Granularity tradeoff.** Hash-based cursor is precise but
-      requires a sorted index to compare "before/after"; timestamp
-      cursor is fuzzy at the second boundary but trivially
-      comparable against the time-sharded `envelopes/YYYY/MM/DD/`
-      layout. Lean **timestamp + hash tiebreaker** (cursor = `(ts,
-      hash)`). Same shape as a SQL `(ORDER BY ts, id)` index.
-
-    Lives parallel to consumption contracts — both are
-    reader-local-per-channel state — but contracts declare
-    acceptance criteria *before* delivery while cursors track
-    processing *after* delivery. Worth a short decision doc
-    (`docs/decisions/2026-05-12-review-state-and-access-cursors.md`)
-    before Slice 3 hits review surfaces, since the Secretariat
-    agent's digest workflow is load-bearing on this primitive.
+            Lives parallel to consumption contracts — both are
+            reader-local-per-channel state — but contracts declare
+            acceptance criteria _before_ delivery while cursors track
+            processing _after_ delivery. Worth a short decision doc
+            (`docs/decisions/2026-05-12-review-state-and-access-cursors.md`)
+            before Slice 3 hits review surfaces, since the Secretariat
+            agent's digest workflow is load-bearing on this primitive.
 
 ---
 
@@ -428,11 +423,11 @@ the channel-dir.
   flat-fields. Promoting it to a tagged union on the wire would force
   every reader to branch on a discriminator the substrate has
   consciously avoided (per the substrate-simplifications memo:
-  `Recipient::Peer | LocalQueue` collapsed because *the recipient
-  pair already encodes the kind*). Routing dispatches on `to == self?`
+  `Recipient::Peer | LocalQueue` collapsed because _the recipient
+  pair already encodes the kind_). Routing dispatches on `to == self?`
   and handle namespace prefix, both of which are read directly.
 - **Cross-reference tightened in `rosterUpdate.channel`.** That field
-  carries the *composite* URI string (not factored) because the record
+  carries the _composite_ URI string (not factored) because the record
   travels as a body and needs to be self-describing for replay
   verifiers operating without envelope context. Doc now notes the
   split-on-first-`#` parsing rule and that DID grammar forbids `#`
@@ -466,7 +461,7 @@ the channel-dir.
     only until self-use stabilizes them.
 - **Surprises worth flagging.**
   - The envelope already had `(to, handle)` factoring shipped — the
-    Slice 1.5 work was mostly *documentation tightening*, not schema
+    Slice 1.5 work was mostly _documentation tightening_, not schema
     extension. The blocker called out in Open Question #6 was a
     documentation gap, not a shape gap. Slice 3 is unblocked sooner
     than the daemon-evolution doc implied.
@@ -476,7 +471,7 @@ the channel-dir.
     in the field doc so we don't accidentally normalize it back to
     factored fields and break replay verifiers.
   - `attentionEnvelope` was not touched. It declares the principal's
-    *global* bounds and is queue-agnostic; per-channel consumption
+    _global_ bounds and is queue-agnostic; per-channel consumption
     contracts (the per-channel override surface) are not yet a
     published lexicon record. They live as local files
     (`<channel-dir>/contract.md`) per the "never published" memo. If

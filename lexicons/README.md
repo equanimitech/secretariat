@@ -15,14 +15,14 @@ format**, not a public protocol.
 
 ## Files
 
-| File | Lexicon ID | Used for |
-|---|---|---|
-| `tech.equanimi.secretariat.stamp.json` | `tech.equanimi.secretariat.stamp` | The signed human act block (`$attestation`) |
-| `tech.equanimi.secretariat.envelope.json` | `tech.equanimi.secretariat.envelope` | The bid for attention block (`$envelope`) |
-| `tech.equanimi.secretariat.rosterUpdate.json` | `tech.equanimi.secretariat.rosterUpdate` | Signed membership mutation (add / remove / role_change) on a channel's `_meta` queue (v0.3) |
-| `tech.equanimi.secretariat.channelDef.json` | `tech.equanimi.secretariat.channelDef` | Channel definition advertised inside an `orgDoc` (handle, visibility, creator, relay hint) (v0.3) |
-| `tech.equanimi.secretariat.orgDoc.json` | `tech.equanimi.secretariat.orgDoc` | Org-level manifest referenced from the org's W3C DID document via a `SecretariatOrg` service entry — lists relays, advertised channels, roster reference (v0.3) |
-| `tech.equanimi.secretariat.fileUpdate.json` | `tech.equanimi.secretariat.fileUpdate` | Signed write/delete against a channel-dir path, riding the main envelope stream — syncs `CLAUDE.md`, `.claude/skills/`, `template.md`, etc. across roster (v0.8) |
+| File                                          | Lexicon ID                               | Used for                                                                                                                                                         |
+| --------------------------------------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tech.equanimi.secretariat.stamp.json`        | `tech.equanimi.secretariat.stamp`        | The signed human act block (`$attestation`)                                                                                                                      |
+| `tech.equanimi.secretariat.envelope.json`     | `tech.equanimi.secretariat.envelope`     | The bid for attention block (`$envelope`)                                                                                                                        |
+| `tech.equanimi.secretariat.rosterUpdate.json` | `tech.equanimi.secretariat.rosterUpdate` | Signed membership mutation (add / remove / role_change) on a channel's `_meta` queue (v0.3)                                                                      |
+| `tech.equanimi.secretariat.channelDef.json`   | `tech.equanimi.secretariat.channelDef`   | Channel definition advertised inside an `orgDoc` (handle, visibility, creator, relay hint) (v0.3)                                                                |
+| `tech.equanimi.secretariat.orgDoc.json`       | `tech.equanimi.secretariat.orgDoc`       | Org-level manifest referenced from the org's W3C DID document via a `SecretariatOrg` service entry — lists relays, advertised channels, roster reference (v0.3)  |
+| `tech.equanimi.secretariat.fileUpdate.json`   | `tech.equanimi.secretariat.fileUpdate`   | Signed write/delete against a channel-dir path, riding the main envelope stream — syncs `CLAUDE.md`, `.claude/skills/`, `template.md`, etc. across roster (v0.8) |
 
 ## Why this exists alongside Rust types
 

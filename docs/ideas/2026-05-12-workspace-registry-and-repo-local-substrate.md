@@ -29,9 +29,9 @@ git, then merge into the unified channel tree at runtime.
   project channels by git. Decrypted history doesn't ride the repo
   (private), but the daemon re-syncs envelopes from the channel owner's
   relay on first run.
-- **Multi-principal onboarding.** Marcelo clones the *Autonomous
-  Enterprise* book repo → registers it → the `channel/autonomous-
-  enterprise/draft/` channel-dir is fully populated with committed
+- **Multi-principal onboarding.** Marcelo clones the _Autonomous
+  Enterprise_ book repo → registers it → the `channel/autonomous-
+enterprise/draft/` channel-dir is fully populated with committed
   skills (verify-citation, check-pacing, etc.). The book substrate IS
   the channel substrate. Recursive validation tightens.
 - **Project-vs-personal separation is real.** Some channels are
@@ -59,12 +59,12 @@ git, then merge into the unified channel tree at runtime.
     └── .gitignore
 ```
 
-| In repo | In passport home |
-|---|---|
-| `CLAUDE.md`, `.claude/skills/`, `.claude/agents/` | `key`, `did`, `profile.json` |
-| `_meta/` (signed roster + channel def envelopes) | `contacts.json` |
-| `workspace.json` (workspace identity) | `attention-envelope.md` |
-| Channel definitions, template files | `outbox/`, `_ciphertext/`, decrypted `envelopes/` |
+| In repo                                           | In passport home                                  |
+| ------------------------------------------------- | ------------------------------------------------- |
+| `CLAUDE.md`, `.claude/skills/`, `.claude/agents/` | `key`, `did`, `profile.json`                      |
+| `_meta/` (signed roster + channel def envelopes)  | `contacts.json`                                   |
+| `workspace.json` (workspace identity)             | `attention-envelope.md`                           |
+| Channel definitions, template files               | `outbox/`, `_ciphertext/`, decrypted `envelopes/` |
 
 ---
 
@@ -84,6 +84,7 @@ Two mechanisms, both supported:
 ```
 
 CLI:
+
 - `sec workspace register .`
 - `sec workspace list`
 - `sec workspace unregister <id>`
@@ -105,8 +106,8 @@ model as `*.local.md`).
 ## What this changes upstream
 
 - `KeyPaths` (slice 1 will probably rename to `Substrate` or
-  `SubstrateRoot`) becomes a *list of substrate roots* — passport home
-  + N registered workspaces. Channel resolution iterates.
+  `SubstrateRoot`) becomes a _list of substrate roots_ — passport home
+  - N registered workspaces. Channel resolution iterates.
 - `sec review` walks the merged tree.
 - MCP `secretariat://review` resource emits the merged tree.
 

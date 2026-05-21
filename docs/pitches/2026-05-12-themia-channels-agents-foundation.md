@@ -38,52 +38,52 @@ Breadboard: places (channel dirs), affordances (CLI verbs + agent loop), connect
 
   **Cross-product (2)**
 
-  | Handle | Display | Home agent | Trust gate |
-  |---|---|---|---|
+  | Handle    | Display | Home agent           | Trust gate  |
+  | --------- | ------- | -------------------- | ----------- |
   | `general` | Général | Secrétariat (digest) | signed-only |
-  | `clients` | Clients | Rédacteur clients | signed-only |
+  | `clients` | Clients | Rédacteur clients    | signed-only |
 
   **Themia jurimétrie product (5)**
 
-  | Handle | Display | Home agents | Trust gate |
-  |---|---|---|---|
-  | `themia` | Themia | — (principals) | mixed |
+  | Handle                    | Display                   | Home agents                                  | Trust gate  |
+  | ------------------------- | ------------------------- | -------------------------------------------- | ----------- |
+  | `themia`                  | Themia                    | — (principals)                               | mixed       |
   | `module:baux_commerciaux` | Module — Baux commerciaux | Principals + Vérificateur BC + Chercheur(BC) | signed-only |
   | `module:dommage_corporel` | Module — Dommage corporel | Principals + Vérificateur DC + Chercheur(DC) | signed-only |
-  | `module:travail` | Module — Travail | Principals + Vérificateur + Chercheur | signed-only |
-  | `module:cassation` | Module — Cassation | Principals + Vérificateur + Chercheur | signed-only |
+  | `module:travail`          | Module — Travail          | Principals + Vérificateur + Chercheur        | signed-only |
+  | `module:cassation`        | Module — Cassation        | Principals + Vérificateur + Chercheur        | signed-only |
 
   **Encyclopédie (1) — untouched**
 
-  | Handle | Display | Home agent | Trust gate |
-  |---|---|---|---|
+  | Handle                    | Display                 | Home agent                              | Trust gate  |
+  | ------------------------- | ----------------------- | --------------------------------------- | ----------- |
   | `encyclopedie-jurimetrie` | Encyclopédie jurimétrie | — (defer to encyclopedia-product pitch) | signed-only |
 
   **Gouvernance (1)**
 
-  | Handle | Display | Home agent | Trust gate |
-  |---|---|---|---|
+  | Handle               | Display            | Home agent                 | Trust gate         |
+  | -------------------- | ------------------ | -------------------------- | ------------------ |
   | `assemblee_generale` | Assemblée générale | — (principal-authored PVs) | **stamp-required** |
 
   **Com (Slack-shaped, 5)**
 
-  | Handle | Display | Home agent | Trust gate |
-  |---|---|---|---|
-  | `com:blog` | Com — Blog | Rédacteur com | signed-only |
-  | `com:newsletter` | Com — Newsletter | Rédacteur com | signed-only |
-  | `com:linkedin` | Com — LinkedIn | Rédacteur com | signed-only |
-  | `com:webinaire` | Com — Webinaire | Rédacteur com | signed-only |
-  | `com:landing-page` | Com — Landing | Rédacteur com | signed-only |
+  | Handle             | Display          | Home agent    | Trust gate  |
+  | ------------------ | ---------------- | ------------- | ----------- |
+  | `com:blog`         | Com — Blog       | Rédacteur com | signed-only |
+  | `com:newsletter`   | Com — Newsletter | Rédacteur com | signed-only |
+  | `com:linkedin`     | Com — LinkedIn   | Rédacteur com | signed-only |
+  | `com:webinaire`    | Com — Webinaire  | Rédacteur com | signed-only |
+  | `com:landing-page` | Com — Landing    | Rédacteur com | signed-only |
 
   **Ops (1)**
 
-  | Handle | Display | Home agent | Trust gate |
-  |---|---|---|---|
-  | `ops:compta` | Ops — Compta | Compta | signed-only |
+  | Handle       | Display      | Home agent | Trust gate  |
+  | ------------ | ------------ | ---------- | ----------- |
+  | `ops:compta` | Ops — Compta | Compta     | signed-only |
 
 - **Connection — `module:<name>` collapses `data:` + `labo:` from earlier drafts.** Single channel per legal module hosts everything: principal-driven discussion (corpus health, schema, prioritization, ideas), agent-driven workflow (verification findings, hypothesis experiments), published rapports. Differentiation moves from channel-handle to **envelope stream tag** — see [[project-envelope-streams]] memory. Streams (illustrative, not locked) — `data`, `idea`, `decision`, `verification`, `experiment`, `rapport`, `triage`. Stream-tag design is its own follow-on pitch; this pitch only commits to `module:<name>` as the channel shape and notes streams as the differentiator for later.
 
-- **Connection — Veriguard sidestepped at handle level:** Veriguard is a Themia *product* (verification MCP server) but only one *workflow* inside the module channels (alongside Chercheur experiments, triage, rapports). Channel handle = `module:*`, not `veriguard:*` or `labo:*`. Product brand stays as "Veriguard" in agent role descriptions (e.g. `Vérificateur Veriguard pour baux_commerciaux`). No product rename needed.
+- **Connection — Veriguard sidestepped at handle level:** Veriguard is a Themia _product_ (verification MCP server) but only one _workflow_ inside the module channels (alongside Chercheur experiments, triage, rapports). Channel handle = `module:*`, not `veriguard:*` or `labo:*`. Product brand stays as "Veriguard" in agent role descriptions (e.g. `Vérificateur Veriguard pour baux_commerciaux`). No product rename needed.
 
 - **Connection — agent identity policy:** all Vérificateurs + Chercheur share ONE `did:key` (`agent:module@themia.pro`), distinguished by channel scope. Single key per agent role across modules. Compta / Rédacteurs each get own `did:key`. Secrétariat gets own `did:key`.
 

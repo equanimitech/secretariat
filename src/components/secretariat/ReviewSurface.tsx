@@ -68,6 +68,8 @@ export function ReviewSurface() {
   }, [])
 
   useEffect(() => {
+    // One-shot Tauri IPC fetch on mount; no external store to subscribe to.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void refresh()
   }, [refresh])
 
@@ -134,7 +136,7 @@ export function ReviewSurface() {
   const signBuckets = useMemo<Bucket[]>(() => {
     if (!identity) return []
     const selfDid = identity.did
-    const contactByDid = new Map(contacts.map((c) => [c.did, c.display_name]))
+    const contactByDid = new Map(contacts.map(c => [c.did, c.display_name]))
     const peers = new Map<string, Bucket>()
     for (const item of queueItems) {
       if (!item.to || item.to === selfDid) continue
@@ -278,7 +280,7 @@ function BlobRow({
 }) {
   return (
     <div className="flex flex-wrap items-end justify-center gap-6">
-      {buckets.map((b) => (
+      {buckets.map(b => (
         <Blob key={b.id} bucket={b} onClick={onClick} />
       ))}
     </div>
@@ -309,7 +311,7 @@ function Blob({ bucket, onClick }: { bucket: Bucket; onClick: () => void }) {
 function Legend({ buckets }: { buckets: Bucket[] }) {
   return (
     <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-      {buckets.map((b) => (
+      {buckets.map(b => (
         <span key={b.id}>{b.label}</span>
       ))}
     </div>
@@ -349,13 +351,7 @@ function truncateDid(did: string): string {
 // Avatar (unchanged shape; consolidated for the new layout).
 // ---------------------------------------------------------------------------
 
-function PrincipalAvatar({
-  did,
-  name,
-}: {
-  did: string
-  name: string | null
-}) {
+function PrincipalAvatar({ did, name }: { did: string; name: string | null }) {
   const hue = hueFromDid(did)
   const initial = (name?.trim()[0] || '?').toUpperCase()
   return (

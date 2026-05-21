@@ -1,6 +1,7 @@
 # Inbox review walker — Reply / Remind me later / Archive
 
 Pitch — 2026-05-05. Source: free-text + composes three captured ideas:
+
 - `docs/ideas/two-buttons-cadenced-reviews.md` (walker concept)
 - `docs/ideas/bubble-up-like-hey.md` (defer / remind-later semantics)
 - `docs/ideas/reply-directly-to-message.md` (reply as first-class)
@@ -11,9 +12,9 @@ Pitch — 2026-05-05. Source: free-text + composes three captured ideas:
 
 ### Job to be done
 
-When I open Secretariat — typically once or twice a day during a chosen review window — I want to walk through the envelopes my dad / Christophe / future correspondents have sent me, one at a time. For each, I should be able to *reply now*, *defer it for later*, *archive it as handled*, or *skip to next* without leaving the walker. The session should end naturally when the queue is exhausted, returning me to the two-button home; I should never feel like I'm in an inbox dashboard.
+When I open Secretariat — typically once or twice a day during a chosen review window — I want to walk through the envelopes my dad / Christophe / future correspondents have sent me, one at a time. For each, I should be able to _reply now_, _defer it for later_, _archive it as handled_, or _skip to next_ without leaving the walker. The session should end naturally when the queue is exhausted, returning me to the two-button home; I should never feel like I'm in an inbox dashboard.
 
-Baseline today: one envelope sits in my inbox unread since yesterday (Marcelo's "Muito bom mas como mando um file pra você?"). The home shows a count but clicking the button copies a Claude prompt — useful but indirect. There's no way to *act* on an envelope inside the app yet.
+Baseline today: one envelope sits in my inbox unread since yesterday (Marcelo's "Muito bom mas como mando um file pra você?"). The home shows a count but clicking the button copies a Claude prompt — useful but indirect. There's no way to _act_ on an envelope inside the app yet.
 
 ### Appetite
 
@@ -48,8 +49,8 @@ Four elements; no more.
 
 - The walker doesn't compose in-app (out of scope; aligns with the "drafting lives in the AI assistant" stance per `feedback_review_session_model.md`).
 - Reply button copies a focused Claude prompt to clipboard:
-  > *"Reply to this Secretariat envelope from <sender>: ‹body›. Use the compose MCP tool with to=<sender-DID> and the body I'll dictate next. Show me the body before you stamp."*
-- Shows toast: *"Reply prompt copied — paste into Claude."* Walker advances.
+  > _"Reply to this Secretariat envelope from <sender>: ‹body›. Use the compose MCP tool with to=<sender-DID> and the body I'll dictate next. Show me the body before you stamp."_
+- Shows toast: _"Reply prompt copied — paste into Claude."_ Walker advances.
 
 ### Connection: Session lifecycle
 
@@ -92,7 +93,7 @@ Four elements; no more.
 
 ### Problem
 
-The home surface has two big buttons that do nothing useful — they copy prompts to Claude. That works as a placeholder but doesn't honor what the principal is actually trying to do: walk through correspondence one piece at a time, deciding what to act on, what to defer, what to forget. Today the only way to *do* something with an inbox envelope is to read it (CLI: `sec read <path>`), then manually move it (CLI: `mv` to wherever you keep handled mail), and remember the context for replying through your AI assistant.
+The home surface has two big buttons that do nothing useful — they copy prompts to Claude. That works as a placeholder but doesn't honor what the principal is actually trying to do: walk through correspondence one piece at a time, deciding what to act on, what to defer, what to forget. Today the only way to _do_ something with an inbox envelope is to read it (CLI: `sec read <path>`), then manually move it (CLI: `mv` to wherever you keep handled mail), and remember the context for replying through your AI assistant.
 
 The cadenced-review-walker idea has been floating in `docs/ideas/` for two days. Marcelo's first message ("Muito bom mas como mando um file pra você?") has been sitting in the inbox since yesterday because the surface to act on it doesn't exist yet. Shipping the walker turns the home buttons from "copy prompt" into a real review affordance — the smallest version of the daily ritual the v0.3 daily-routines idea will eventually build on.
 

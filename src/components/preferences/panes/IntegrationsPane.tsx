@@ -21,13 +21,21 @@ type TerminalChoice =
   | 'alacritty'
   | 'claude-desktop'
 
-const TERMINAL_OPTIONS: { value: TerminalChoice; label: string; hint: string }[] = [
+const TERMINAL_OPTIONS: {
+  value: TerminalChoice
+  label: string
+  hint: string
+}[] = [
   { value: 'terminal', label: 'Terminal.app', hint: 'macOS default' },
   { value: 'iterm', label: 'iTerm2', hint: 'iTerm.app' },
   { value: 'ghostty', label: 'Ghostty', hint: 'Ghostty.app' },
   { value: 'wezterm', label: 'WezTerm', hint: 'WezTerm.app' },
   { value: 'alacritty', label: 'Alacritty', hint: 'Alacritty.app' },
-  { value: 'claude-desktop', label: 'Claude Desktop', hint: 'no terminal — opens Claude.app directly' },
+  {
+    value: 'claude-desktop',
+    label: 'Claude Desktop',
+    hint: 'no terminal — opens Claude.app directly',
+  },
 ]
 
 export function IntegrationsPane() {
@@ -82,12 +90,13 @@ export function IntegrationsPane() {
         <div>
           <Label className="text-sm font-medium">MCP integrations</Label>
           <p className="text-xs text-muted-foreground">
-            Where the Secretariat MCP server (`sec-mcp`) is currently
-            wired. Claude Code and Claude Desktop pick this up at launch —
-            once an integration shows ✓, you can use the Secretariat
-            slash commands (<code className="rounded bg-muted px-1">/idea</code>,
+            Where the Secretariat MCP server (`sec-mcp`) is currently wired.
+            Claude Code and Claude Desktop pick this up at launch — once an
+            integration shows ✓, you can use the Secretariat slash commands (
+            <code className="rounded bg-muted px-1">/idea</code>,
             <code className="rounded bg-muted px-1">/review</code>,
-            <code className="rounded bg-muted px-1">/compose</code>) in that client.
+            <code className="rounded bg-muted px-1">/compose</code>) in that
+            client.
           </p>
         </div>
 
@@ -115,7 +124,9 @@ export function IntegrationsPane() {
             disabled={busy}
             className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50"
           >
-            <RefreshCw className={`h-3.5 w-3.5 ${busy ? 'animate-spin' : ''}`} />
+            <RefreshCw
+              className={`h-3.5 w-3.5 ${busy ? 'animate-spin' : ''}`}
+            />
             {busy ? 'Re-wiring…' : 'Re-wire integrations'}
           </button>
           {savedNote && (
@@ -150,11 +161,15 @@ function AssistantLauncherSection() {
   const savePreferences = useSavePreferences()
 
   const current: TerminalChoice =
-    (preferences?.assistant_terminal as TerminalChoice | null | undefined) ?? 'terminal'
+    (preferences?.assistant_terminal as TerminalChoice | null | undefined) ??
+    'terminal'
   const command = preferences?.assistant_command ?? ''
 
   const update = async (
-    patch: Partial<{ assistant_terminal: string | null; assistant_command: string | null }>
+    patch: Partial<{
+      assistant_terminal: string | null
+      assistant_command: string | null
+    }>
   ) => {
     if (!preferences) return
     await savePreferences.mutateAsync({ ...preferences, ...patch })
@@ -165,13 +180,16 @@ function AssistantLauncherSection() {
       <div>
         <Label className="text-sm font-medium">Assistant launcher</Label>
         <p className="text-xs text-muted-foreground">
-          Where Secretariat opens your CLI assistant (Claude Code, Gemini, aider).
-          Used by the home-screen launcher and <code>launch_assistant_in</code>.
+          Where Secretariat opens your CLI assistant (Claude Code, Gemini,
+          aider). Used by the home-screen launcher and{' '}
+          <code>launch_assistant_in</code>.
         </p>
       </div>
 
       <div className="space-y-1.5 max-w-md">
-        <Label htmlFor="terminal-select" className="text-xs">Terminal</Label>
+        <Label htmlFor="terminal-select" className="text-xs">
+          Terminal
+        </Label>
         <select
           id="terminal-select"
           value={current}
@@ -193,7 +211,9 @@ function AssistantLauncherSection() {
       </div>
 
       <div className="space-y-1.5 max-w-md">
-        <Label htmlFor="assistant-command" className="text-xs">Command</Label>
+        <Label htmlFor="assistant-command" className="text-xs">
+          Command
+        </Label>
         <Input
           id="assistant-command"
           type="text"

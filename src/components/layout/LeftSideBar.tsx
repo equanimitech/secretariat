@@ -63,7 +63,9 @@ export function LeftSideBar({ className }: LeftSideBarProps) {
           registerPath={registerPath}
           onOpenChannel={req => {
             window.dispatchEvent(
-              new CustomEvent<OpenChannelRequest>(OPEN_CHANNEL_EVENT, { detail: req })
+              new CustomEvent<OpenChannelRequest>(OPEN_CHANNEL_EVENT, {
+                detail: req,
+              })
             )
           }}
         />

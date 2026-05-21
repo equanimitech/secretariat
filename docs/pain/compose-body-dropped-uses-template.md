@@ -30,6 +30,7 @@ Raw capture — 2026-05-04. Marcelo's first attempt to send a reply via natural 
 > Re-reading the compose tool's note now: "Draft written to outbox via the AG template. Edit the file to insert the body, then stamp it manually." So the v0 compose tool just stages the template — the actual body has to be written into the file separately before stamping.
 >
 > A few options:
+>
 > 1. You edit the file at ~/.secretariat/outbox/.../20260504T171229Z-q6dzqg.md to replace the template with what's up?, then I'll stamp it.
 > 2. I can shape "what's up?" to fit the template's headline/lede/body structure ... and write that as a properly composed note.
 > 3. Skip the template entirely — but I don't have a file-write tool for arbitrary paths in this session, so this would still need you to edit the file manually.
@@ -51,7 +52,7 @@ Raw capture — 2026-05-04. Marcelo's first attempt to send a reply via natural 
 ## Questions
 
 - How should the show-body anti-phishing check report this failure mode upstream — silent skip vs noisy "compose tool ignored your body, here's what was written" so future bugs surface immediately?
-- Should compose return a content hash AND echo of the body it wrote, so the calling Claude can verify *before* stamp-time that the body landed?
+- Should compose return a content hash AND echo of the body it wrote, so the calling Claude can verify _before_ stamp-time that the body landed?
 - What's the auto-update path that lets fixes like this actually reach existing principals (not just new installs)?
 
 Don't fix yet.

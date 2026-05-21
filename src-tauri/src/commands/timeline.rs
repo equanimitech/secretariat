@@ -107,9 +107,7 @@ pub async fn read_channel_envelopes(
 /// the parent of that segment is `channels_root`, and everything beneath
 /// it (joined by `:`) is the handle. Returns None if no `channels`
 /// ancestor is present.
-fn split_into_channels_root_and_handle(
-    channel_dir: &std::path::Path,
-) -> Option<(PathBuf, String)> {
+fn split_into_channels_root_and_handle(channel_dir: &std::path::Path) -> Option<(PathBuf, String)> {
     let mut segments: Vec<String> = Vec::new();
     let mut cur = channel_dir;
     loop {

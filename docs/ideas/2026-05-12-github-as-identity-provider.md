@@ -4,6 +4,7 @@
 **Tags:** `equanimitech/secretariat`, identity, did:web, onboarding
 **Status:** idea — captured during slice 1 shaping
 **Related:**
+
 - `docs/ideas/2026-05-12-workspace-registry-and-repo-local-substrate.md`
 - `docs/decisions/2026-05-12-substrate-layout-v03.md`
 
@@ -18,8 +19,9 @@ they push to their own `<username>.github.io` repo. No new DID method
 needed — it's the existing `did:web` flow with a hosting answer every
 developer can use today. This composes with the workspace-registry idea
 (channels as repos) into a single coherent stack: GitHub hosts identity
-+ git transports channel updates + no central authority appears anywhere
-in the chain except the one GitHub already is in the user's life.
+
+- git transports channel updates + no central authority appears anywhere
+  in the chain except the one GitHub already is in the user's life.
 
 ---
 
@@ -59,12 +61,14 @@ paths are served as-is. So:
    {
      "@context": ["https://www.w3.org/ns/did/v1"],
      "id": "did:web:<username>.github.io",
-     "verificationMethod": [{
-       "id": "did:web:<username>.github.io#stamp-key-1",
-       "type": "Ed25519VerificationKey2020",
-       "controller": "did:web:<username>.github.io",
-       "publicKeyMultibase": "<their-pubkey-multibase>"
-     }],
+     "verificationMethod": [
+       {
+         "id": "did:web:<username>.github.io#stamp-key-1",
+         "type": "Ed25519VerificationKey2020",
+         "controller": "did:web:<username>.github.io",
+         "publicKeyMultibase": "<their-pubkey-multibase>"
+       }
+     ],
      "assertionMethod": ["did:web:<username>.github.io#stamp-key-1"]
    }
    ```
@@ -83,7 +87,7 @@ public document. Sovereignty preserved.
 
 ## Onboarding flow (MCP-first)
 
-```
+````
 [in Claude Code, fresh install]
 
 User: "Set me up using my GitHub account."
@@ -119,7 +123,7 @@ finish, you need to publish it on GitHub Pages:
 
    ```json
    <contents shown>
-   ```
+````
 
 4. Commit and push.
 5. Wait ~30 seconds for Pages to deploy.
@@ -129,14 +133,15 @@ When that's done, tell me and I'll verify."
 User: "Done."
 
 Claude → setup_identity({stage: "verify", did: "did:web:rafaba.github.io"})
-  ← fetches https://rafaba.github.io/.well-known/did.json
-  ← validates the pubkey matches the local key
-  ← {state: "ready", identity_root: "~/.secretariat/rafaba.github.io/"}
+← fetches https://rafaba.github.io/.well-known/did.json
+← validates the pubkey matches the local key
+← {state: "ready", identity_root: "~/.secretariat/rafaba.github.io/"}
 
 Claude: "Verified. Your identity is `did:web:rafaba.github.io`,
 anchored in your GitHub. Anyone who knows your GitHub username can
 verify your envelopes by fetching that URL. No Secretariat server, no
 central registry — your domain, your repo, your control. What's next?"
+
 ```
 
 For users without GitHub or who don't want to expose a username, the
@@ -189,3 +194,4 @@ fallback is `did:key` (device-anchored, no network dependency).
 Goes into the identity-setup slice (whenever that lands). For today's
 channels-first slice, no impact — captures don't care about identity
 host.
+```

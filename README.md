@@ -2,13 +2,13 @@
 
 **Ambient context for AI, stamped by humans.**
 
-Most tools treat AI as a consumer of static context — RAG, system prompts, one-shot retrieval. Secretariat inverts that: AI lives *in* the context stream, reads and drafts continuously, and the human only enters to stamp the moments that count. It's the operating layer for an autonomous enterprise — where agents draft at volume, humans vouch for what matters, and no vendor sits in the middle.
+Most tools treat AI as a consumer of static context — RAG, system prompts, one-shot retrieval. Secretariat inverts that: AI lives _in_ the context stream, reads and drafts continuously, and the human only enters to stamp the moments that count. It's the operating layer for an autonomous enterprise — where agents draft at volume, humans vouch for what matters, and no vendor sits in the middle.
 
 ## The primitive
 
 Two records, three trust layers:
 
-1. **Signed envelope** — every message carries a detached signature from its author (human or AI agent), keyed to a DID. Mandatory. Drives provenance: *did this come from the claimed author?*
+1. **Signed envelope** — every message carries a detached signature from its author (human or AI agent), keyed to a DID. Mandatory. Drives provenance: _did this come from the claimed author?_
 2. **Stamp** — Touch ID attestation from the human principal. **Selective, not mandatory.** Applied to envelopes the principal elects to elevate: decisions, commitments, external messages, contracts. The stamped subset is the org's authoritative record. Everything else is ambient context.
 3. **Counter-stamp** — multi-principal stamp on the same envelope (process-verbaux model). Reserved for later.
 

@@ -8,13 +8,13 @@ Pitch — 2026-05-13. Source: `/Users/rafa/.secretariat/queues/inbox/triage/2026
 
 As a principal working out of a channel that maps to a real working
 directory (a git repo for `dev:*` channels, a plain folder for umbrella
-channels like `themia`), I want my channel-dir on disk to *be* that
+channels like `themia`), I want my channel-dir on disk to _be_ that
 working directory — and I want to launch interactive Claude Code in it or
 dispatch headless subagents against it from anywhere — so that the
 filesystem-authoritative substrate stops being a parallel universe to the
 code I actually edit.
 
-*When*: I'm in a parent Claude session and want to delegate work into a
+_When_: I'm in a parent Claude session and want to delegate work into a
 specific channel's context (its `.claude/` tree, its envelopes, its
 contract). Today: there's no way — channel-dirs live at
 `~/.secretariat/<alias>/<handle>/` and my repos live at `~/Developer/…`.
@@ -39,7 +39,7 @@ Five primary elements. Resolver + binding underpin everything; the verbs
 are the principal-facing surface.
 
 - **Place:** `contract.local.md` frontmatter gains one field — `root_path:
-  Option<PathBuf>`. Receiver-private, lives on the consumption contract.
+Option<PathBuf>`. Receiver-private, lives on the consumption contract.
   **Note:** does NOT compose via the accumulate merge — `root_path` is a
   leaf-only override, not a numeric floor or restrictive enum. Treat as a
   sibling concern to `ChannelContract` in the same frontmatter, parsed
@@ -100,7 +100,7 @@ are the principal-facing surface.
 - **`.gitignore` writer in a dirty repo.** First bind in a repo with
   uncommitted changes or an existing `.gitignore` Secretariat block.
   Append idempotently with a sentinel comment block (`# === secretariat
-  ===` … `# === /secretariat ===`) and a fixed-shape entry list; if the
+===` … `# === /secretariat ===`) and a fixed-shape entry list; if the
   block exists, replace its contents in place. Never rewrite outside the
   fenced region.
 
@@ -126,7 +126,7 @@ are the principal-facing surface.
   appetite tightens — the one-shot path is enough to unblock the JBTD
   (parent agent fans out across channels, awaits results). Persistent
   cross-channel agents already have a home (`AgentSupervisor` per the
-  daemon plan) and don't *need* a `dispatch` entry point on day one.
+  daemon plan) and don't _need_ a `dispatch` entry point on day one.
 - Profile-side `launch_command` config. Default `claude` hardcoded for
   the first slice; promote to `preferences.cognition.launch_command` only
   if a second cognition substrate (e.g. local CLI wrapper) actually
@@ -164,10 +164,10 @@ side. A parent Claude session in some root context can't delegate "go do
 this in the Themia book channel" or "review PR #42 in the Secretariat
 dev channel" without losing its own context. Task tool stays in the
 current cwd; new sessions lose parent state. There's no primitive for
-*cross-channel* delegation that respects each channel's `.claude/` tree.
+_cross-channel_ delegation that respects each channel's `.claude/` tree.
 
 Both problems collapse to the same missing piece: a way to tell the
-resolver "this channel lives at *that* directory," plus two verbs that
+resolver "this channel lives at _that_ directory," plus two verbs that
 consume that binding (launch for humans, dispatch for parent agents).
 
 ### The bet

@@ -45,8 +45,8 @@ export function PathsPane() {
           <Label className="text-sm font-medium">Secretariat home</Label>
           <p className="text-xs text-muted-foreground">
             Where your keys, contacts, drafts, and inbox live on disk.
-            Everything Secretariat does happens inside this folder — nothing
-            is stored on a server.
+            Everything Secretariat does happens inside this folder — nothing is
+            stored on a server.
           </p>
         </div>
         {root ? (
@@ -80,8 +80,8 @@ export function PathsPane() {
         <p>
           Changing the home location requires editing the substrate&apos;s
           discovery logic and restarting. Reach for the CLI (
-          <code className="rounded bg-muted px-1">SEC_HOME</code>{' '}
-          environment variable) if you need to relocate during a migration.
+          <code className="rounded bg-muted px-1">SEC_HOME</code> environment
+          variable) if you need to relocate during a migration.
         </p>
       </section>
     </div>

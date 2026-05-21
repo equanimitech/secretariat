@@ -10,6 +10,7 @@ allowed-tools: [mcp__secretariat__capture]
 Logs are the running tape — lightweight, high-cadence, signed but not stamped. Every developer journal entry, agent activity trace, session summary, or "what happened today" note lives here.
 
 The key distinction from other capture types:
+
 - `/idea` → bids for future action
 - `/pain` → signals something broken
 - `/decision` → records a commitment, gets stamped
@@ -17,11 +18,11 @@ The key distinction from other capture types:
 
 ## Scope
 
-| Signal | Queue |
-|--------|-------|
-| No context ("log this") | `area:journal` personal queue |
+| Signal                                    | Queue                                       |
+| ----------------------------------------- | ------------------------------------------- |
+| No context ("log this")                   | `area:journal` personal queue               |
 | Org/channel named ("log for dev channel") | `channel:dev` (or named channel) in the org |
-| Agent writing a session trace | `area:journal` or channel's activity queue |
+| Agent writing a session trace             | `area:journal` or channel's activity queue  |
 
 ## Body shape
 
@@ -41,6 +42,7 @@ For agent-written logs, add a `source:` tag in the body:
 # Secretariat agent: morning digest generated
 
 source: secretariat-agent
+
 - 3 new envelopes in channel:project-x since yesterday
 - Digest draft written to inbox:digest:morning
 - No anomalies
@@ -55,7 +57,7 @@ source: secretariat-agent
    - `body`: formatted entry
    - `source`: `log-skill` (or `<agent-name>` if agent-authored)
    - `org`: set if targeting an org channel
-4. Confirm: *"Logged to `<queue>`."* No further ceremony.
+4. Confirm: _"Logged to `<queue>`."_ No further ceremony.
 
 ## Agent journaler pattern
 
@@ -67,7 +69,7 @@ This skill is designed to be called programmatically. An agent running a duty cy
 
 The daemon's `AgentSupervisor` can inject the channel dir as cwd; the agent calls capture with `queue: area:journal` (personal run) or `queue: channel:dev` + `org: <org-alias>` (channel run).
 
-**No stamping.** Logs are ambient context, not authoritative record. The principal stamps a *decision* derived from log entries — not the logs themselves.
+**No stamping.** Logs are ambient context, not authoritative record. The principal stamps a _decision_ derived from log entries — not the logs themselves.
 
 ## Rules
 

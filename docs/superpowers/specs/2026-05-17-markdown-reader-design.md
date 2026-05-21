@@ -8,7 +8,7 @@
 ## Goal
 
 Make Secretariat the principal's default app for opening and editing `.md` files
-on macOS — replacing VS Code for the *read* path and providing enough editing
+on macOS — replacing VS Code for the _read_ path and providing enough editing
 power to live in instead of Obsidian for ad-hoc markdown work. Each file opens
 in its own fullscreenable window. Front-matter is rendered as a structured form
 above the body. The stamp ceremony is one click away from any open file.
@@ -19,7 +19,7 @@ above the body. The stamp ceremony is one click away from any open file.
 - Stamp ceremony (CLI + MCP) is shipped — UI just needs to invoke it.
 - Reading `.md` files is the principal's highest-frequency action across the
   Secretariat / Themia / book corpus; VS Code is overkill and visually noisy.
-- Channel directories already *are* markdown trees — a native reader closes the
+- Channel directories already _are_ markdown trees — a native reader closes the
   feedback loop between "navigate the channel" (forthcoming) and "read an envelope".
 
 ## Non-goals (v1)
@@ -37,13 +37,13 @@ above the body. The stamp ceremony is one click away from any open file.
 
 Rationale matrix:
 
-| Lib | Fit | Decision |
-|---|---|---|
-| **Milkdown/Crepe** | Typora-like WYSIWYG out of box. Plugin-driven (ProseMirror + remark). Frontmatter plugin exists. React adapter. Precedent: MarkBun, Kuku. | **Pick.** |
-| TipTap | Headless ProseMirror. Higher build cost for Typora-feel and FM UI. | Reject. |
-| CodeMirror 6 | Source-only. | Reject for primary; reserve for future source-mode toggle. |
-| Lexical | Powerful but markdown round-tripping is not first-class. | Reject. |
-| @uiw/react-md-editor | Side-by-side preview, not WYSIWYG. | Reject. |
+| Lib                  | Fit                                                                                                                                       | Decision                                                   |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| **Milkdown/Crepe**   | Typora-like WYSIWYG out of box. Plugin-driven (ProseMirror + remark). Frontmatter plugin exists. React adapter. Precedent: MarkBun, Kuku. | **Pick.**                                                  |
+| TipTap               | Headless ProseMirror. Higher build cost for Typora-feel and FM UI.                                                                        | Reject.                                                    |
+| CodeMirror 6         | Source-only.                                                                                                                              | Reject for primary; reserve for future source-mode toggle. |
+| Lexical              | Powerful but markdown round-tripping is not first-class.                                                                                  | Reject.                                                    |
+| @uiw/react-md-editor | Side-by-side preview, not WYSIWYG.                                                                                                        | Reject.                                                    |
 
 Crepe ships as `@milkdown/crepe` and renders into a DOM element; we mount it
 inside a React effect with a `useRef`-bound div. Markdown round-trips via
@@ -113,6 +113,7 @@ Title resolution: `fm.title` → first `# H1` in body → file basename without 
 Three pieces:
 
 1. **`tauri.macos.conf.json`** — `bundle.fileAssociations`:
+
    ```json
    {
      "fileAssociations": [
@@ -127,6 +128,7 @@ Three pieces:
      ]
    }
    ```
+
    This populates `CFBundleDocumentTypes` in the bundled `Info.plist`.
 
 2. **Rust `RunEvent::Opened` handler** — `src-tauri/src/main.rs`:
@@ -272,7 +274,7 @@ stamp click ──▶ StampDialog (verbatim) ──▶ sec stamp <path> ──�
   buffer drain semantics.
 - **Integration:** open Tauri dev, simulate `RunEvent::Opened` via test harness,
   assert window spawn. (Tauri integration tests are limited — manual smoke
-  + a thin e2e using the existing Playwright setup if present.)
+  - a thin e2e using the existing Playwright setup if present.)
 - **Manual:** open `.md` from Finder; from `open` CLI; from drag onto Dock icon;
   full-screen toggle; stamp on a file in a Secretariat outbox.
 
@@ -286,19 +288,19 @@ stamp click ──▶ StampDialog (verbatim) ──▶ sec stamp <path> ──�
 
 ## Open trade-offs resolved with defaults
 
-| Question | Default | Reversible? |
-|---|---|---|
-| One window per file vs tabs | One window | Yes (tabs are additive later) |
-| Autosave vs save-on-blur | Autosave debounced 800ms | Yes (config later) |
-| FM placement | Collapsible above body | Yes (sidebar variant later) |
-| Read-only vs always editable | Always editable; stamp gates durability | Yes |
-| Source-mode toggle | Not v1 | Yes (CodeMirror layer additive) |
+| Question                     | Default                                 | Reversible?                     |
+| ---------------------------- | --------------------------------------- | ------------------------------- |
+| One window per file vs tabs  | One window                              | Yes (tabs are additive later)   |
+| Autosave vs save-on-blur     | Autosave debounced 800ms                | Yes (config later)              |
+| FM placement                 | Collapsible above body                  | Yes (sidebar variant later)     |
+| Read-only vs always editable | Always editable; stamp gates durability | Yes                             |
+| Source-mode toggle           | Not v1                                  | Yes (CodeMirror layer additive) |
 
 ## Risks
 
 - **Milkdown/Crepe stability with frontmatter** — the FM plugin is community-
   maintained. Mitigation: parse FM in JS (gray-matter), keep Crepe focused on
-  body only. FM is *not* round-tripped through Crepe.
+  body only. FM is _not_ round-tripped through Crepe.
 - **macOS "Open With" event-ordering** — covered by `AppState::pending_opens`.
 - **`sec stamp` non-existence of file in Secretariat path** — v1 assumes any
   `.md` path is stampable; the CLI's existing checks handle envelope-shape

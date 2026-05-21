@@ -31,16 +31,17 @@ export function MainWindowContent({
       commands.getProfile(),
       commands.currentIdentity(),
     ])
-    const hasProfile =
-      profile.status === 'ok' && profile.data !== null
-    const hasIdentity =
-      identity.status === 'ok' && identity.data !== null
+    const hasProfile = profile.status === 'ok' && profile.data !== null
+    const hasIdentity = identity.status === 'ok' && identity.data !== null
     setState({
       kind: hasProfile && hasIdentity ? 'ready' : 'onboarding',
     })
   }, [])
 
   useEffect(() => {
+    // One-shot Tauri IPC at mount to discriminate onboarding vs ready.
+    // No external store to subscribe to — intentional fetch-on-mount.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void refresh()
   }, [refresh])
 

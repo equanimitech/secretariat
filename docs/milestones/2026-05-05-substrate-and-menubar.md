@@ -17,6 +17,7 @@ Replaces `docs/milestones/2026-05-05-menubar-and-quick-pane.md` and the
 earlier "menubar with main window" framing.
 
 Sources:
+
 - `docs/pitches/2026-05-05-event-sourced-envelope-substrate.md`
 - `docs/pitches/2026-05-05-menubar-only.md`
 - Direction lock-in: `memory/project_mcp_is_primary_interface.md` —
@@ -28,10 +29,9 @@ Sources:
 The substrate pitch turns local captures (ideas, future pains, future
 agent bids) into envelopes addressed to local queues. The menubar pitch
 removes window chrome and adds a quick-pane for capture from anywhere.
-They merge cleanly because the menubar's "ideas pool" (original slice
-4) is exactly what the substrate's `Recipient::LocalQueue` provides — at
+They merge cleanly because the menubar's "ideas pool" (original slice 4) is exactly what the substrate's `Recipient::LocalQueue` provides — at
 the cost of one enum, one newtype, one field, and one projection union
-— while *deleting* a parallel data model that would have grown.
+— while _deleting_ a parallel data model that would have grown.
 
 This is one merged project, not two parallel ones.
 
@@ -48,14 +48,14 @@ rationale; the slice descriptions below have been updated to match.
 
 ## Simplification accounting
 
-| Slice | Adds | Removes | Net |
-|---|---|---|---|
-| 1 — Substrate | `Recipient` struct, `QueueHandle`, `capture_to_queue`, projection union (~280 LOC, 9 tests) | `Option<Did>` recipient, `EnvelopeKind`, `Recipient` enum + variants, `allows_stamp` invariant, `as_peer_did`/`as_queue_handle`/`SelfAddressed`/`LocalQueue` (~80 LOC) + parallel data models (ideas pool, pains pool, agent-bid pool) | **subtractive in concept, modestly additive in code** |
-| 2 — `/idea` skill migrates | `idea_capture` MCP tool (~40 LOC) | `Write to docs/ideas/*.md` skill body (~10 LOC); future per-skill capture handlers | **subtractive** |
-| 3 — Tray icon | `TrayIconBuilder` setup (~80 LOC) | Original menubar pitch's popover plan (never built); two-buttons home in `<ReviewSurface>` (built, now removable) | **subtractive in plan, +~80 LOC code** |
-| 4 — Window-less lifecycle + popover carve-out + 2-name profile | Lifecycle conditional (~30 LOC), NSPanel anchoring (~20 LOC), profile v2 schema migration (~30 LOC) | Persistent main-window assumption (already commented out, can now delete); auto-show on launch | **subtractive** |
-| 5 — Quick-pane wired to capture | Replace template QuickPaneApp content (~100 LOC) | Template's placeholder QuickPaneApp body (~80 LOC); the previously-planned parallel ideas-pool storage (never built) | **near-zero net, repurposes existing scaffold** |
-| 6 — MCP review tools | `defer_envelope` / `archive_envelope` MCP tools (~30 LOC) — wrap already-shipped application use cases | Walker UI plan (never built); in-app stamp button + envelope reader modal shipped earlier today (delete here) | **subtractive — deletes existing UI** |
+| Slice                                                          | Adds                                                                                                   | Removes                                                                                                                                                                                                                                | Net                                                   |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| 1 — Substrate                                                  | `Recipient` struct, `QueueHandle`, `capture_to_queue`, projection union (~280 LOC, 9 tests)            | `Option<Did>` recipient, `EnvelopeKind`, `Recipient` enum + variants, `allows_stamp` invariant, `as_peer_did`/`as_queue_handle`/`SelfAddressed`/`LocalQueue` (~80 LOC) + parallel data models (ideas pool, pains pool, agent-bid pool) | **subtractive in concept, modestly additive in code** |
+| 2 — `/idea` skill migrates                                     | `idea_capture` MCP tool (~40 LOC)                                                                      | `Write to docs/ideas/*.md` skill body (~10 LOC); future per-skill capture handlers                                                                                                                                                     | **subtractive**                                       |
+| 3 — Tray icon                                                  | `TrayIconBuilder` setup (~80 LOC)                                                                      | Original menubar pitch's popover plan (never built); two-buttons home in `<ReviewSurface>` (built, now removable)                                                                                                                      | **subtractive in plan, +~80 LOC code**                |
+| 4 — Window-less lifecycle + popover carve-out + 2-name profile | Lifecycle conditional (~30 LOC), NSPanel anchoring (~20 LOC), profile v2 schema migration (~30 LOC)    | Persistent main-window assumption (already commented out, can now delete); auto-show on launch                                                                                                                                         | **subtractive**                                       |
+| 5 — Quick-pane wired to capture                                | Replace template QuickPaneApp content (~100 LOC)                                                       | Template's placeholder QuickPaneApp body (~80 LOC); the previously-planned parallel ideas-pool storage (never built)                                                                                                                   | **near-zero net, repurposes existing scaffold**       |
+| 6 — MCP review tools                                           | `defer_envelope` / `archive_envelope` MCP tools (~30 LOC) — wrap already-shipped application use cases | Walker UI plan (never built); in-app stamp button + envelope reader modal shipped earlier today (delete here)                                                                                                                          | **subtractive — deletes existing UI**                 |
 
 **Project net:** small additive in raw LOC, **subtractive at every
 other layer** — surfaces, parallel data models, cognitive load,
@@ -82,7 +82,7 @@ discipline.
 
 Stamps are allowed on **any** envelope. Tamper-evident self-attestation
 of one's own captures is a valid use case. The send-routing rule
-decides what *happens* to a stamped envelope.
+decides what _happens_ to a stamped envelope.
 
 Three real-world cases collapse to one shape:
 
@@ -105,6 +105,7 @@ any slice; partial release still useful.
 The wire-format change landed first because all UI choices depend on it.
 
 **What changed (final, post-collapse):**
+
 - `crates/core/src/domain/envelope.rs` — `Envelope.to: Option<Did>`
   becomes `Envelope.recipient: Recipient`. Wire format unified:
   `to: <owner-did>` + `handle: <namespace:slug>`, both always present.
@@ -140,6 +141,7 @@ Prove the substrate from the principal's most-used capture path before
 building UI on top of it.
 
 **What changes:**
+
 - `~/.claude/skills/idea/SKILL.md` — rewrite the skill body. Instead of
   `Write` to `docs/ideas/<slug>.md`, call the MCP `capture` tool with
   `queue: inbox:triage` and the user's raw phrasing as body.
@@ -157,8 +159,9 @@ record.
 Now we have a substrate; the app becomes peripheral.
 
 **What changes:**
+
 - `src-tauri/Cargo.toml` — add `tauri = { features = [...,
-  "tray-icon", "image-png"] }`.
+"tray-icon", "image-png"] }`.
 - `src-tauri/src/lib.rs` — `setup` hook installs `TrayIconBuilder`.
 - Right-click menu items (no popover for v1):
   - "Capture an idea…" → opens the quick-pane (slice 5)
@@ -181,6 +184,7 @@ a tray-anchored popover (~400×500). It closes on completion and never
 reappears — a bounded experience, not a persistent window.
 
 **What changes:**
+
 - `lib.rs` setup hook — never auto-show the main window. On first
   launch (no identity), open the onboarding popover anchored to the
   tray icon. On every subsequent launch, just install the tray and
@@ -200,8 +204,8 @@ reappears — a bounded experience, not a persistent window.
 
 **Demo:** install .dmg → drag to /Applications → open → tray icon
 appears (red dot) + small popover slides down with two name fields:
-*"Your full name"* (e.g. "Rafael Toletti Ballestiero") + *"How
-would you like to be called?"* (e.g. "Rafa" — pre-filled from the
+_"Your full name"_ (e.g. "Rafael Toletti Ballestiero") + _"How
+would you like to be called?"_ (e.g. "Rafa" — pre-filled from the
 first word of the full name as you type, editable) → click "Set me
 up" → identity generated → popover advances to "paste an invite URL
 or skip" → popover closes on completion → tray dot transitions
@@ -220,6 +224,7 @@ The capture entry point — the half of the menubar pitch that survives
 the merge.
 
 **What changes:**
+
 - `src/components/quick-pane/QuickPaneApp.tsx` — replace template
   content with single text field + (optional) recipient picker (peer
   contact OR local queue). "Capture" button.
@@ -246,6 +251,7 @@ the principal asks Claude "review my inbox" / "review my outbox" /
 guides the principal through the conversation.
 
 **What changes:**
+
 - New MCP tools wrapping the inbox-actions primitives shipped earlier
   today: `defer_envelope`, `archive_envelope`, `promote_idea_to_letter`.
 - The `compose` MCP tool gains an optional `from_idea_id` parameter so
@@ -264,25 +270,28 @@ principal sees tray dot transition green afterward.
 The principal's day. Marcelo as audience, Rafa-as-author on the book.
 
 **Morning** (anywhere — editor, browser, Slack):
+
 - Thought hits: "tell Marcelo the constraint section needs a human
   example". `Cmd+Shift+S` → quick-pane → type → Enter. Idea lands in
   `inbox:triage`. **No window. No Claude prompt. 4 seconds.**
 
 **Mid-day** (writing in Claude Code on the chapter):
+
 - Claude is drafting prose. Rafa says "draft an envelope to Marcelo
   with this section's outline." Claude calls the `compose` MCP tool
   → unstamped letter lands in `outbox/<marcelo>/`. **No interruption.**
 
 **EOD review** (Rafa's chosen review time, e.g. 6pm):
+
 - Glances at menubar — tray dot is **amber** (has been since the
   morning capture).
 - Opens Claude Code (already open from mid-day work) and types:
-  *"Review my outbox queue."*
+  _"Review my outbox queue."_
 - Claude calls `list_review_queue` (sees 1 idea + 2 letter drafts).
   Walks one at a time, in Claude's chat:
 
-  > Claude: "First up — an idea you captured this morning: '*tell
-  > Marcelo the constraint section needs a human example*'. Promote
+  > Claude: "First up — an idea you captured this morning: '_tell
+  > Marcelo the constraint section needs a human example_'. Promote
   > to a letter, archive, or skip?"
   > Rafa: "promote, to Marcelo."
   > Claude: [calls `compose` with `from_idea_id`] "Drafted. Body:
@@ -296,6 +305,7 @@ The principal's day. Marcelo as audience, Rafa-as-author on the book.
 - Tray dot transitions amber → green.
 
 **Throughout, never:**
+
 - App window opens. The app is the tray icon and the quick-pane,
   nothing else.
 - Claude is replaced by an in-app composer. Drafting + reviewing live
@@ -303,6 +313,7 @@ The principal's day. Marcelo as audience, Rafa-as-author on the book.
 - Notifications fire. Tray dot is the only ambient signal.
 
 **Onboarding** (a fresh install, e.g. for Christophe):
+
 - Christophe opens `Secretariat.app` from /Applications → tray icon
   appears (red dot) + small popover slides down anchored under it.
 - Popover shows "Welcome to Secretariat" + name field + Set me up
@@ -311,9 +322,10 @@ The principal's day. Marcelo as audience, Rafa-as-author on the book.
   → popover advances to "paste an invite URL or skip" → Christophe
   pastes the URL Rafa sent him → claim runs → popover closes.
 - Tray dot transitions red → green.
-- *No window. No copy-paste-into-Claude. Bounded experience that ends.*
+- _No window. No copy-paste-into-Claude. Bounded experience that ends._
 
 **Settings** (rare):
+
 - Rafa wants to update his name from "Rafa" to "Rafa B." → in Claude:
   "Change my Secretariat display name to 'Rafa B.'"
 - Claude calls `set_profile` — done.
@@ -321,15 +333,15 @@ The principal's day. Marcelo as audience, Rafa-as-author on the book.
 
 ## What changes in the v0.3 release scope
 
-| Was (separate plans) | Is (merged + MCP-primary) |
-|---|---|
-| Menubar slice 1: tray + popover | **Slice 3** — tray only, no popover |
-| Menubar slice 2: hide main window | **Slice 4** — no main window at all |
-| Menubar slice 3: tray badge | Slice 4 (folded) |
-| Menubar slice 4: ideas pool data model | **Replaced** by substrate slice 1 |
-| Menubar slice 5: quick-pane | Slice 5 (still ships) |
-| Substrate slice (whole pitch) | Slices 1+2 |
-| Walker UI in app | **Cut** — review happens in Claude (slice 6 = MCP review tools instead) |
+| Was (separate plans)                   | Is (merged + MCP-primary)                                               |
+| -------------------------------------- | ----------------------------------------------------------------------- |
+| Menubar slice 1: tray + popover        | **Slice 3** — tray only, no popover                                     |
+| Menubar slice 2: hide main window      | **Slice 4** — no main window at all                                     |
+| Menubar slice 3: tray badge            | Slice 4 (folded)                                                        |
+| Menubar slice 4: ideas pool data model | **Replaced** by substrate slice 1                                       |
+| Menubar slice 5: quick-pane            | Slice 5 (still ships)                                                   |
+| Substrate slice (whole pitch)          | Slices 1+2                                                              |
+| Walker UI in app                       | **Cut** — review happens in Claude (slice 6 = MCP review tools instead) |
 
 Net: 6 slices, same total work, sharper sequencing, **no main window
 ever**, no parallel data models for "ideas" vs "envelopes", no walker
@@ -347,7 +359,7 @@ UI to maintain inside the app.
   ritual with a defined endpoint (equanimitech principle 6 —
   bounded experiences) so it gets a small tray-anchored popover
   reusing the existing `<Onboarding>` component. Closes on
-  completion; never reappears unless reset. This is *not* a
+  completion; never reappears unless reset. This is _not_ a
   persistent window — it's an ephemeral panel that exists for one
   ritual.
 - **No walker UI inside the app.** Review happens in Claude. Slice 6

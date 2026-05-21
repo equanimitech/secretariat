@@ -46,7 +46,10 @@ export function makeChannelTab(channel: {
   }
 }
 
-export function makeMarkdownTab(file: { path: string; name: string }): MarkdownTab {
+export function makeMarkdownTab(file: {
+  path: string
+  name: string
+}): MarkdownTab {
   return {
     kind: 'markdown',
     id: newTabId(),

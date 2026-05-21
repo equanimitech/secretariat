@@ -27,7 +27,12 @@
  * cached mapping.
  */
 
-import { query, AbortError, type Options, type SDKMessage } from '@anthropic-ai/claude-agent-sdk'
+import {
+  query,
+  AbortError,
+  type Options,
+  type SDKMessage,
+} from '@anthropic-ai/claude-agent-sdk'
 
 /**
  * Resolve the on-disk `claude` executable. After `bun build --compile`,
@@ -184,8 +189,15 @@ async function handleSend(c: SendCmd) {
   }
 }
 
-function forward(callerSessionId: string, state: SessionState, msg: SDKMessage) {
-  if (msg.type === 'system' && (msg as { subtype?: string }).subtype === 'init') {
+function forward(
+  callerSessionId: string,
+  state: SessionState,
+  msg: SDKMessage
+) {
+  if (
+    msg.type === 'system' &&
+    (msg as { subtype?: string }).subtype === 'init'
+  ) {
     const sysMsg = msg as { session_id: string }
     if (sysMsg.session_id) state.sdkSessionId = sysMsg.session_id
     return
@@ -193,22 +205,33 @@ function forward(callerSessionId: string, state: SessionState, msg: SDKMessage) 
 
   if (msg.type === 'stream_event') {
     const ev = (msg as { event: unknown }).event as
-      | { type?: string; delta?: { type?: string; text?: string; thinking?: string } }
+      | {
+          type?: string
+          delta?: { type?: string; text?: string; thinking?: string }
+        }
       | undefined
     if (!ev) return
     if (ev.type === 'content_block_delta') {
       const d = ev.delta
       if (d?.type === 'text_delta' && typeof d.text === 'string') {
         emit({ kind: 'text_delta', session_id: callerSessionId, text: d.text })
-      } else if (d?.type === 'thinking_delta' && typeof d.thinking === 'string') {
-        emit({ kind: 'thinking', session_id: callerSessionId, text: d.thinking })
+      } else if (
+        d?.type === 'thinking_delta' &&
+        typeof d.thinking === 'string'
+      ) {
+        emit({
+          kind: 'thinking',
+          session_id: callerSessionId,
+          text: d.thinking,
+        })
       }
     }
     return
   }
 
   if (msg.type === 'assistant') {
-    const m = (msg as { message: { content: Array<Record<string, unknown>> } }).message
+    const m = (msg as { message: { content: Array<Record<string, unknown>> } })
+      .message
     if (Array.isArray(m?.content)) {
       for (const block of m.content) {
         if (block.type === 'tool_use') {
@@ -246,7 +269,12 @@ function forward(callerSessionId: string, state: SessionState, msg: SDKMessage) 
   }
 
   if (msg.type === 'result') {
-    const r = msg as { is_error?: boolean; result?: string; errors?: string[]; subtype?: string }
+    const r = msg as {
+      is_error?: boolean
+      result?: string
+      errors?: string[]
+      subtype?: string
+    }
     if (r.is_error) {
       const errText = (r.errors ?? []).join('; ') || (r.subtype ?? 'unknown')
       emit({ kind: 'error', session_id: callerSessionId, message: errText })
@@ -279,7 +307,11 @@ async function main() {
       try {
         cmd = JSON.parse(line) as InboundCmd
       } catch (e) {
-        emit({ kind: 'error', session_id: '', message: `bad json: ${String(e)}` })
+        emit({
+          kind: 'error',
+          session_id: '',
+          message: `bad json: ${String(e)}`,
+        })
         continue
       }
       if (cmd.cmd === 'send') {

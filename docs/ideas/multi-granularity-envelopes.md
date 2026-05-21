@@ -3,7 +3,7 @@
 Raw capture — 2026-05-05.
 
 - "Should the idea of attentive granularity basically generate versions at different scales of granularity?"
-- Today's AG template is *one* envelope that progresses gross → subtle (Headline, Lede, Body, Go-deeper). The recipient reads top-to-bottom and stops where their attention runs out.
+- Today's AG template is _one_ envelope that progresses gross → subtle (Headline, Lede, Body, Go-deeper). The recipient reads top-to-bottom and stops where their attention runs out.
 - The user's question flips the model: the scribe generates **multiple versions** of the same message at different attentional resolutions. The recipient's app picks the one that fits their current context — busy inbox-glance, deep review session, full-context deep-read.
 - Possible shapes:
   - **Headline-only** (3–6 words) — surfaces in tray badge / inbox row preview
@@ -12,8 +12,8 @@ Raw capture — 2026-05-05.
   - **Deep-context** — body + linked attachments + threading + provenance — what shows on long-read mode
 - Each version is a stamped artifact in its own right (or one envelope with multiple body fields, all covered by the same stamp hash). Single stamp protects the whole bundle.
 - AI-native angle: this is exactly what the scribe SHOULD generate. A human writes one body and stops. An AI assistant can produce all four resolutions simultaneously without much marginal effort. Pre-stamp, the principal reviews all of them; one stamp covers the bundle.
-- Adjacent to *Hey.com's "Imbox vs The Feed"* — but more granular and per-message rather than per-channel.
-- Adjacent to the *bubble-up* idea: when an envelope bubbles back, maybe it surfaces at a *different* granularity than the one that was glanced past last time.
+- Adjacent to _Hey.com's "Imbox vs The Feed"_ — but more granular and per-message rather than per-channel.
+- Adjacent to the _bubble-up_ idea: when an envelope bubbles back, maybe it surfaces at a _different_ granularity than the one that was glanced past last time.
 - Questions:
   - Wire format: extend `$envelope:` frontmatter with `versions: { headline, lede, body, deep }`, or separate `$envelope.tech.equanimi.secretariat.envelope.v1` + a new `multi-granularity-envelope.v1` `$type` for forward-compat?
   - Does the recipient's app pick automatically (based on inbox depth, time of day, principal mood) or does the principal choose ("show me ledes, skip headlines")? Auto = magical but opaque; manual = explicit but loses the AG point.

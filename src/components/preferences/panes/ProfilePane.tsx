@@ -98,8 +98,8 @@ export function ProfilePane() {
       <section className="space-y-2 border-t pt-4">
         <Label className="text-sm font-medium">Identity</Label>
         <p className="text-xs text-muted-foreground">
-          Your cryptographic DID. Generated on this device, never sent
-          over the wire. Recipients use it to verify envelopes you stamp.
+          Your cryptographic DID. Generated on this device, never sent over the
+          wire. Recipients use it to verify envelopes you stamp.
         </p>
         {did ? (
           <div className="flex items-center gap-2">
@@ -120,7 +120,6 @@ export function ProfilePane() {
           </p>
         )}
       </section>
-
     </div>
   )
 }

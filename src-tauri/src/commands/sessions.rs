@@ -121,10 +121,7 @@ pub async fn session_cancel(
 
 fn serialize_event(event: SessionEvent) -> (String, serde_json::Value) {
     match event {
-        SessionEvent::TextDelta(text) => (
-            "text_delta".into(),
-            serde_json::json!({ "text": text }),
-        ),
+        SessionEvent::TextDelta(text) => ("text_delta".into(), serde_json::json!({ "text": text })),
         SessionEvent::ToolCallStart { id, name, input } => (
             "tool_call_start".into(),
             serde_json::json!({ "id": id, "name": name, "input": input }),
@@ -133,14 +130,10 @@ fn serialize_event(event: SessionEvent) -> (String, serde_json::Value) {
             "tool_call_result".into(),
             serde_json::json!({ "id": id, "output": output }),
         ),
-        SessionEvent::Thinking(text) => (
-            "thinking".into(),
-            serde_json::json!({ "text": text }),
-        ),
-        SessionEvent::Warning(message) => (
-            "warning".into(),
-            serde_json::json!({ "message": message }),
-        ),
+        SessionEvent::Thinking(text) => ("thinking".into(), serde_json::json!({ "text": text })),
+        SessionEvent::Warning(message) => {
+            ("warning".into(), serde_json::json!({ "message": message }))
+        }
         SessionEvent::Done { stop_reason } => (
             "done".into(),
             serde_json::json!({ "stop_reason": stop_reason }),

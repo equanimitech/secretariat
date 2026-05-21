@@ -20,7 +20,7 @@ Today the principal's identity is scattered at the vault root:
 │   └── channels/...
 ```
 
-The shape `_self/` and `orgs/<alias>/` are *supposed* to be the same
+The shape `_self/` and `orgs/<alias>/` are _supposed_ to be the same
 primitive — both queue-roots, one for the principal, one for each org
 the principal subscribes to. But `_self/` is missing its identity
 file, its profile, and its DID document; those still live at the vault
@@ -37,9 +37,9 @@ its own dir. So that backup is `tar -czf principal.tgz _self/`,
 restore is the reverse, and the file layout teaches the rule "every
 queue-root knows itself."
 
-*When*: every time I write onboarding docs and have to explain "your
+_When_: every time I write onboarding docs and have to explain "your
 key lives at `~/.secretariat/key`, your DID lives at `~/.secretariat/did`,
-your profile at `~/.secretariat/profile.json` — wait but your *channels*
+your profile at `~/.secretariat/profile.json` — wait but your _channels_
 live under `~/.secretariat/_self/channels/`." The split-brain at the
 filesystem root makes the substrate look unfinished. It is unfinished.
 Finish it.
@@ -50,6 +50,7 @@ Finish it.
 
 This is much narrower than slice 2 (which touched every load/save
 site). Slice 3 touches:
+
 - `KeyPaths` paths: `signing_key`, `did_document`, `profile` → repoint
   to `_self/identity/*`.
 - `identity.md` frontmatter shape — new file, sole writer is
@@ -130,10 +131,10 @@ did: did:web:rafa.equanimi.tech
 did_method: did:web
 display_name: Rafa
 full_name: Rafael T. Ballestiero
-key_path: identity/key           # relative to this file
+key_path: identity/key # relative to this file
 key_type: ed25519
 key_created_at: 2026-05-12T05:55:00Z
-key_rotations: []                # append on rotation; old entries point at archived key paths
+key_rotations: [] # append on rotation; old entries point at archived key paths
 created_at: 2026-05-12T05:55:00Z
 ---
 
@@ -322,9 +323,9 @@ regenerable, never principal-edited.
   Mitigation: grep + bulk replace; runs in an hour, not a day.
 
 - **MCP tool descriptions reference paths.** `secretariat://contacts`
-  + `secretariat://orgs` resource render functions don't reference
-  identity files, but onboarding prompts (`onboard.md`) might. Audit
-  + update.
+  - `secretariat://orgs` resource render functions don't reference
+    identity files, but onboarding prompts (`onboard.md`) might. Audit
+  - update.
 
 ### 🏴 Off-sides called
 
@@ -360,7 +361,7 @@ regenerable, never principal-edited.
 ### Problem
 
 The v0.6.0 layout makes `_self/` the principal's queue-root, mirroring
-`orgs/<alias>/` for org subscriptions. But the principal's *identity*
+`orgs/<alias>/` for org subscriptions. But the principal's _identity_
 — DID, keypair, profile, DID document — still sits at the vault
 root. Asymmetry leaks into every onboarding doc, every backup
 instruction, every "where does my key live?" question.
@@ -376,9 +377,10 @@ Move principal identity into `_self/identity.md` + `_self/identity/`.
 Keep `preferences.toml` and `relay-state.json` at root (app config +
 daemon state, not principal context). Consolidate `did` + `profile.json`
 data into one principal-editable `identity.md` with YAML frontmatter
-+ free-form markdown body. Same pattern as v0.6.0's
-`contract.local.md`: typed fields the machine enforces, prose the
-agent respects.
+
+- free-form markdown body. Same pattern as v0.6.0's
+  `contract.local.md`: typed fields the machine enforces, prose the
+  agent respects.
 
 Ship as v0.6.1 (or v0.7.0 if we want to signal the layout is now
 truly self-symmetric). Hand-script migration that `mv`s the key file
@@ -386,8 +388,9 @@ and consolidates the rest. Pre-flight tar snapshot + post-move DID
 roundtrip gate, same discipline as v0.6.0.
 
 The bet pays off when:
+
 - "Backup my Secretariat" = `tar -czf backup.tgz ~/.secretariat/_self/
-  ~/.secretariat/orgs/`. Two paths, both shaped the same way.
+~/.secretariat/orgs/`. Two paths, both shaped the same way.
 - "Where does my key live?" has one answer: `_self/identity/key`.
 - Onboarding docs stop saying "your key is at `~/.secretariat/key`
   AND your channels are under `_self/channels/`" with a confused

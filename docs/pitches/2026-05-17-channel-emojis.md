@@ -21,7 +21,7 @@ identifier on each channel so I can scan a list of 10 channels in 200ms
 without reading the handle string, and so the channel's identity
 "travels" across every surface that lists it.
 
-*When*: every time the quick-pane dropdown renders, every time the
+_When_: every time the quick-pane dropdown renders, every time the
 OrgPicker stack shows, every future surface that lists channels.
 Baseline today: handles are strings; visual scanning is
 character-by-character; channel:dev:secretariat and
@@ -78,15 +78,15 @@ asks for `--name` interactively; we ask for an emoji on the next
 line. The prompt suggests one from the handle's slug using a tiny
 heuristic table:
 
-| Slug contains | Suggested |
-|---------------|-----------|
-| `journal` / `diary` | 🪶 |
-| `inbox` / `triage` | 📥 |
-| `dev` / `code` | 💻 |
-| `client` / `customer` | 👥 |
-| `dommage` / `legal` / `law` | ⚖️ |
-| `book` / `writing` / `article` | 📖 |
-| (no match) | 🟢 |
+| Slug contains                  | Suggested |
+| ------------------------------ | --------- |
+| `journal` / `diary`            | 🪶        |
+| `inbox` / `triage`             | 📥        |
+| `dev` / `code`                 | 💻        |
+| `client` / `customer`          | 👥        |
+| `dommage` / `legal` / `law`    | ⚖️        |
+| `book` / `writing` / `article` | 📖        |
+| (no match)                     | 🟢        |
 
 Same shape as zenborg's `suggestEmojiForAreaName`. Principal can
 accept (Enter) or override (type their own). MCP `create_channel`
@@ -119,7 +119,7 @@ output gains it. MCP `list_channels` tool gains it.
   Add a one-line accept/reject test.
 - **Width across surfaces.** Emoji render width varies (1ch vs ~1.5ch
   vs ~2ch depending on platform fonts). Constrain CSS `width:
-  1.5em; display: inline-flex; justify-content: center` on the prefix
+1.5em; display: inline-flex; justify-content: center` on the prefix
   cell so the column stays aligned.
 - **Skin-tone and gendered variants.** Allow them — `unicode-properties`
   accepts. Don't try to filter, the principal chose.
@@ -127,7 +127,7 @@ output gains it. MCP `list_channels` tool gains it.
 ### 🏴 Off-sides called
 
 - Emoji as the primary identifier. Handle stays canonical;
-  emoji is an *attribute*, not a primary key. Search inputs match
+  emoji is an _attribute_, not a primary key. Search inputs match
   on handle/slug/name, not emoji.
 - Emoji on orgs. Org cards stay text in v1. Different VO, different
   pitch.

@@ -10,7 +10,7 @@ When composing an envelope, follow this shape:
 
 **Lede:** one sentence — the thing the reader must remember.
 
-**Why it matters:** one sentence on relevance to *this* recipient.
+**Why it matters:** one sentence on relevance to _this_ recipient.
 
 ## Body
 

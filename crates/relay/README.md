@@ -34,6 +34,7 @@ template URL. For now:
    TLS automatically
 
 The `railway.json` in this directory tells Railway:
+
 - Build via the included Dockerfile
 - Healthcheck `GET /healthz`
 - Restart on failure
@@ -53,13 +54,13 @@ resulting static binary needs nothing but a port to bind.
 
 ## API surface (v0)
 
-| Method | Path | Purpose |
-|---|---|---|
-| GET  | `/healthz` | Health probe (Railway, load balancers) |
-| POST | `/v0/register` | Register a tenant DID + ed25519 pubkey |
-| POST | `/v0/auth/challenge` | Request a nonce to authenticate as a tenant |
-| POST | `/v0/auth/answer` | Sign the nonce, receive a bearer token (1h TTL) |
-| POST | `/v0/inbox/{did}` | Queue an envelope for a registered DID (open — sender sig is verified by recipient downstream) |
-| GET  | `/v0/inbox/{did}?after=<id>` | Pull queued envelopes (bearer auth, must match recipient DID) |
+| Method | Path                         | Purpose                                                                                        |
+| ------ | ---------------------------- | ---------------------------------------------------------------------------------------------- |
+| GET    | `/healthz`                   | Health probe (Railway, load balancers)                                                         |
+| POST   | `/v0/register`               | Register a tenant DID + ed25519 pubkey                                                         |
+| POST   | `/v0/auth/challenge`         | Request a nonce to authenticate as a tenant                                                    |
+| POST   | `/v0/auth/answer`            | Sign the nonce, receive a bearer token (1h TTL)                                                |
+| POST   | `/v0/inbox/{did}`            | Queue an envelope for a registered DID (open — sender sig is verified by recipient downstream) |
+| GET    | `/v0/inbox/{did}?after=<id>` | Pull queued envelopes (bearer auth, must match recipient DID)                                  |
 
 Wire details in the relay source — see `crates/relay/src/routes/`.

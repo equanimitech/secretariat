@@ -15,20 +15,24 @@
 ## File map
 
 ### Domain (`crates/core/src/domain/`)
+
 - **Create:** `channel_binding.rs` — `ChannelBinding` VO.
 - **Modify:** `mod.rs` — re-export `ChannelBinding`.
 - **Unchanged:** `channel_contract.rs` — merge algebra stays as-is.
 
 ### Application (`crates/core/src/application/`)
+
 - **Modify:** `contract_ops.rs` — extend frontmatter parse/write to round-trip `root_path` alongside `ChannelContract`. Add `resolve_channel_binding(channel_uri) -> ChannelBinding` (leaf-only lookup, no merge).
 - **Create:** `bind_channel.rs` — `bind_channel` use case: validate channel exists, write/update `<root_path>/contract.local.md`, ensure default-location symlink, write `.gitignore` block when `.git/` present.
 - **Create:** `launch_channel.rs` — `launch_channel` use case: resolve binding → cwd, return `LaunchInvocation { cwd, command }`.
 - **Create:** `dispatch_channel.rs` — `dispatch_channel` use case: resolve binding → cwd, delegate to `CognitionLauncher::dispatch`.
 
 ### Ports (`crates/core/src/ports/`)
+
 - **Create:** `cognition_launcher.rs` — `CognitionLauncher` trait: `launch(&self, cwd) -> Result<LaunchPlan>` (interactive plan, not exec) + `dispatch(&self, cwd, task) -> Result<String>` (headless, returns stdout).
 
 ### Infrastructure (`crates/core/src/infrastructure/`)
+
 - **Create:** `binding_store.rs` — read `root_path` from a channel-dir's `contract.local.md`; `BindingLookup` struct cached per session.
 - **Create:** `gitignore_writer.rs` — idempotent fenced-block writer.
 - **Create:** `cognition/headless_claude.rs` — `HeadlessClaudeLauncher` adapter wrapping `claude -p`.
@@ -37,17 +41,21 @@
 - **Modify:** `mod.rs` — re-exports.
 
 ### CLI (`crates/cli/src/`)
+
 - **Create:** `commands/bind.rs`, `commands/launch.rs`, `commands/dispatch.rs`.
 - **Modify:** `main.rs` — register three subcommands.
 
 ### MCP (`crates/mcp/src/`)
+
 - **Modify:** `server.rs` — three new `#[tool]` entries: `bind_channel`, `launch_channel`, `dispatch`.
 
 ### Tests
+
 - Unit tests live with each module via `#[cfg(test)]`.
 - Integration tests: `crates/cli/tests/bind_launch_dispatch.rs`, `crates/mcp/tests/bind_launch_dispatch.rs`.
 
 ### Docs
+
 - **Modify:** `AGENTS.md` — extend "What's here today" with the three new verbs.
 - **Create:** `docs/developer/launch-dispatch.md` — operator notes (binding flow, gitignore block shape, dispatch auth caveats).
 
@@ -97,6 +105,7 @@ Append a "Task 0 findings" block to this file under this task, recording: (a) ch
 ## Task 1: Domain — `ChannelBinding` VO
 
 **Files:**
+
 - Create: `crates/core/src/domain/channel_binding.rs`
 - Modify: `crates/core/src/domain/mod.rs`
 
@@ -178,6 +187,7 @@ git commit -m "feat(core): ChannelBinding value object — leaf-only root_path"
 ## Task 2: Application — parse `root_path` from `contract.local.md`
 
 **Files:**
+
 - Modify: `crates/core/src/application/contract_ops.rs`
 
 **Context:** The contract file parser today reads `cadence_floor_minutes` and `min_trust`. We add `root_path`. The parser becomes a `ContractFrontmatter { contract: ChannelContract, binding: ChannelBinding }` struct so callers can keep the two value objects separated cleanly.
@@ -305,6 +315,7 @@ git commit -m "feat(core): contract.local.md frontmatter round-trips root_path"
 ## Task 3: Infrastructure — `gitignore_writer`
 
 **Files:**
+
 - Create: `crates/core/src/infrastructure/gitignore_writer.rs`
 - Modify: `crates/core/src/infrastructure/mod.rs` — re-export.
 
@@ -456,6 +467,7 @@ git commit -m "feat(core): idempotent fenced .gitignore writer"
 ## Task 4: Infrastructure — `BindingLookup` + binding-aware queue_dir
 
 **Files:**
+
 - Create: `crates/core/src/infrastructure/binding_store.rs`
 - Modify: `crates/core/src/infrastructure/queue_dir.rs`
 - Modify: `crates/core/src/infrastructure/mod.rs`
@@ -564,12 +576,14 @@ git commit -m "feat(core): BindingLookup + resolve_queue_dir wrapper"
 ## Task 5: Application — `bind_channel` use case
 
 **Files:**
+
 - Create: `crates/core/src/application/bind_channel.rs`
 - Modify: `crates/core/src/application/mod.rs`
 
 **Behavior:**
+
 1. Parse channel URI → `(owner_did, handle)`. Verify channel exists (channel def present).
-2. Compute the *default* channel-dir (via `queue_dir`).
+2. Compute the _default_ channel-dir (via `queue_dir`).
 3. `create_dir_all(bound_path)`.
 4. If `<default>/contract.local.md` exists with body, MOVE the body across to `<bound>/contract.local.md` along with the existing frontmatter; otherwise scaffold a fresh `contract.local.md` carrying only `root_path`.
 5. Write the binding's `root_path` field into `<bound>/contract.local.md` frontmatter.
@@ -660,6 +674,7 @@ git commit -m "feat(core): bind_channel use case — symlink, gitignore, contrac
 ## Task 6: Port — `CognitionLauncher`
 
 **Files:**
+
 - Create: `crates/core/src/ports/cognition_launcher.rs`
 - Modify: `crates/core/src/ports/mod.rs`
 
@@ -736,6 +751,7 @@ git commit -m "feat(core): CognitionLauncher port — plan_launch + dispatch"
 ## Task 7: Infrastructure — `HeadlessClaudeLauncher` adapter
 
 **Files:**
+
 - Create: `crates/core/src/infrastructure/cognition/headless_claude.rs`
 - Modify: `crates/core/src/infrastructure/cognition/mod.rs`
 
@@ -844,6 +860,7 @@ git commit -m "feat(core): HeadlessClaudeLauncher adapter — claude -p subproce
 ## Task 8: Infrastructure — add `launch_command` to preferences
 
 **Files:**
+
 - Modify: `crates/core/src/infrastructure/preferences.rs`
 
 - [ ] **Step 1: Write the failing test**
@@ -910,6 +927,7 @@ git commit -m "feat(core): preferences cognition.launch_command (default claude)
 ## Task 9: Application — `launch_channel` + `dispatch_channel` use cases
 
 **Files:**
+
 - Create: `crates/core/src/application/launch_channel.rs`
 - Create: `crates/core/src/application/dispatch_channel.rs`
 - Modify: `crates/core/src/application/mod.rs`
@@ -1004,6 +1022,7 @@ git commit -m "feat(core): launch_channel + dispatch_channel use cases"
 ## Task 10: CLI — `sec bind`, `sec launch`, `sec dispatch`
 
 **Files:**
+
 - Create: `crates/cli/src/commands/bind.rs`
 - Create: `crates/cli/src/commands/launch.rs`
 - Create: `crates/cli/src/commands/dispatch.rs`
@@ -1025,6 +1044,7 @@ sec dispatch <channel-uri> <task...>
 - [ ] **Step 2: Implement each command**
 
 Each command:
+
 1. Loads `KeyPaths` + `AliasMap` + `Preferences` + builds `BindingLookup::load_from(...)`.
 2. Constructs a `HeadlessClaudeLauncher::new(prefs.cognition.launch_command.clone())`.
 3. Calls the application use case.
@@ -1070,6 +1090,7 @@ git commit -m "feat(cli): bind / launch / dispatch verbs for channel-to-dir bind
 ## Task 11: MCP — `bind_channel`, `launch_channel`, `dispatch` tools
 
 **Files:**
+
 - Modify: `crates/mcp/src/server.rs`
 - Create: `crates/mcp/tests/bind_launch_dispatch.rs`
 
@@ -1197,6 +1218,7 @@ Smoke test only; if anything broke, file a follow-up task. Do not modify code as
 ## Task 13: Docs
 
 **Files:**
+
 - Modify: `AGENTS.md`
 - Create: `docs/developer/launch-dispatch.md`
 
@@ -1234,7 +1256,7 @@ git commit -m "docs: launch/dispatch/bind — operator notes + AGENTS update"
 - GUI binding flow — MCP + CLI only for this slice.
 - Multi-device path federation — bindings are receiver-private.
 - Cross-channel global ordering — channels remain independent logs.
-- Migration of existing `~/.secretariat/<channel>/` content into bound paths *automatically* — `bind_channel` moves contract.local.md but leaves `envelopes/` and `outbox/` to follow the symlink. If users want eager moves later, add a `--move-contents` flag in a follow-up.
+- Migration of existing `~/.secretariat/<channel>/` content into bound paths _automatically_ — `bind_channel` moves contract.local.md but leaves `envelopes/` and `outbox/` to follow the symlink. If users want eager moves later, add a `--move-contents` flag in a follow-up.
 
 ## Risks recorded
 

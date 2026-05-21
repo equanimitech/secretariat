@@ -20,11 +20,11 @@ This is the mandatory display gate. If you skip this step the principal cannot g
 
 ### 3. Wait for explicit consent
 
-Ask: *"Stamp this envelope?"* Wait for the principal's response in this turn.
+Ask: _"Stamp this envelope?"_ Wait for the principal's response in this turn.
 
-Accept as consent: *"yes"* / *"stamp it"* / *"go ahead"* / *"sign"* / unambiguous affirmatives.
+Accept as consent: _"yes"_ / _"stamp it"_ / _"go ahead"_ / _"sign"_ / unambiguous affirmatives.
 
-Reject as non-consent: silence, *"hold on"*, *"let me think"*, *"change X"*, anything ambiguous. If the principal asked for a change, treat the ceremony as aborted — the body needs to be rewritten in `/compose` first, then `/stamp` re-run. Implicit consent from a prior turn does NOT count if the body has changed since you displayed it.
+Reject as non-consent: silence, _"hold on"_, _"let me think"_, _"change X"_, anything ambiguous. If the principal asked for a change, treat the ceremony as aborted — the body needs to be rewritten in `/compose` first, then `/stamp` re-run. Implicit consent from a prior turn does NOT count if the body has changed since you displayed it.
 
 ### 4. Call `stamp`
 

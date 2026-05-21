@@ -38,7 +38,7 @@ Raw. Bullets. Keep the user's phrasing — no polishing.
 ```md
 ---
 status: open
-severity: low         # low | medium | high
+severity: low # low | medium | high
 created: <YYYY-MM-DD>
 updated: <YYYY-MM-DD>
 ---

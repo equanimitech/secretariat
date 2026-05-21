@@ -29,16 +29,19 @@ export function ChannelTimeline({ tab }: ChannelTimelineProps) {
   }, [tab.channelPath])
 
   useEffect(() => {
+    // One-shot Tauri IPC fetch when channelPath changes; no external store.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void refresh()
   }, [refresh])
 
   const openEnvelope = useCallback((env: EnvelopePreview) => {
     unreadStore.markOpened(env.file_path)
     window.dispatchEvent(new CustomEvent(ENVELOPE_OPENED_EVENT))
-    const detail: OpenMarkdownRequest = { path: env.file_path, name: env.filename }
-    window.dispatchEvent(
-      new CustomEvent(OPEN_MARKDOWN_EVENT, { detail })
-    )
+    const detail: OpenMarkdownRequest = {
+      path: env.file_path,
+      name: env.filename,
+    }
+    window.dispatchEvent(new CustomEvent(OPEN_MARKDOWN_EVENT, { detail }))
   }, [])
 
   // Launch Claude is a *channel-level* action — it opens the cognition
@@ -62,7 +65,8 @@ export function ChannelTimeline({ tab }: ChannelTimelineProps) {
         <div className="flex items-center gap-2 text-xs">
           <Hash className="h-3.5 w-3.5 opacity-60" />
           <span className="font-medium text-foreground">
-            {tab.org ? `${tab.org} / ` : ''}{tab.channelName}
+            {tab.org ? `${tab.org} / ` : ''}
+            {tab.channelName}
           </span>
           <span className="font-mono text-[10px] text-muted-foreground">
             {tab.channelPath}
@@ -229,7 +233,10 @@ function formatWhen(rfc3339: string): string {
     d.getMonth() === now.getMonth() &&
     d.getDate() === now.getDate()
   if (sameDay) {
-    return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+    return d.toLocaleTimeString(undefined, {
+      hour: '2-digit',
+      minute: '2-digit',
+    })
   }
   return d.toLocaleDateString(undefined, {
     year: 'numeric',

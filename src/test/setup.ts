@@ -30,8 +30,9 @@ Object.defineProperty(window, 'ResizeObserver', {
   configurable: true,
   value: ResizeObserverMock,
 })
-;(globalThis as unknown as { ResizeObserver: typeof ResizeObserverMock }).ResizeObserver =
-  ResizeObserverMock
+;(
+  globalThis as unknown as { ResizeObserver: typeof ResizeObserverMock }
+).ResizeObserver = ResizeObserverMock
 
 // Mock Tauri APIs for tests
 vi.mock('@tauri-apps/api/event', () => ({
@@ -104,12 +105,10 @@ vi.mock('@/lib/tauri-bindings', () => ({
     openMarkdownWindow: vi
       .fn()
       .mockResolvedValue({ status: 'ok', data: 'md:test' }),
-    readMarkdown: vi
-      .fn()
-      .mockResolvedValue({
-        status: 'ok',
-        data: { content: '', sha256: '0'.repeat(64) },
-      }),
+    readMarkdown: vi.fn().mockResolvedValue({
+      status: 'ok',
+      data: { content: '', sha256: '0'.repeat(64) },
+    }),
     writeMarkdown: vi.fn().mockResolvedValue({
       status: 'ok',
       data: { kind: 'ok', sha256: '0'.repeat(64) },

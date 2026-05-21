@@ -8,7 +8,7 @@ Pitch — 2026-05-18. Source: free-text "shape Windows readiness" (follow-up to 
 
 As Christophe (Themia, dommage-corporel briefs, Windows-only), I want to install Secretariat on my Windows machine and stamp envelopes with Windows Hello, so that the Themia legal-briefs flow can actually run.
 
-*When:* Christophe accepts an invite Rafa sends; baseline today is "can't — Secretariat won't build for Windows."
+_When:_ Christophe accepts an invite Rafa sends; baseline today is "can't — Secretariat won't build for Windows."
 
 ### Appetite
 
@@ -45,7 +45,7 @@ Daemon runs foreground on Windows (`sec daemon run` in PowerShell). Windows Hell
 ### 🧪 Domain knowledge
 
 - **Christophe's machine reality.** Windows 11 Home/Pro? Domain-joined? Hello hardware (fingerprint / IR / PIN-only)? Ask before sinking days into ACL design.
-- **French *avocat* deontology on stamp = signature.** Does ed25519 + Hello satisfy his RGS/eIDAS bar, or is there a qualified-signature requirement we're misreading? In scope to *know*, out of scope to satisfy.
+- **French _avocat_ deontology on stamp = signature.** Does ed25519 + Hello satisfy his RGS/eIDAS bar, or is there a qualified-signature requirement we're misreading? In scope to _know_, out of scope to satisfy.
 
 ## Pitch
 

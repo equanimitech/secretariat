@@ -30,7 +30,7 @@ export function parseMarkdown(source: string): ParsedMarkdown {
 
 export function serializeMarkdown(
   frontmatter: Frontmatter,
-  body: string,
+  body: string
 ): string {
   if (Object.keys(frontmatter).length === 0) {
     return body

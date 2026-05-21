@@ -27,7 +27,7 @@ export interface RenderOptions {
  */
 export function renderPreviewMarkdown(
   source: string,
-  options: RenderOptions = {},
+  options: RenderOptions = {}
 ): ReactNode {
   const maxLines = options.maxLines ?? 3
   const lines = source.split('\n').slice(0, maxLines)

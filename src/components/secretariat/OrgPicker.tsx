@@ -37,6 +37,8 @@ export function OrgPicker() {
   }, [])
 
   useEffect(() => {
+    // One-shot Tauri IPC fetch on mount; no external store to subscribe to.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void refresh()
   }, [refresh])
 
@@ -74,7 +76,7 @@ export function OrgPicker() {
           </div>
         )}
 
-        {orgs?.map((o) => (
+        {orgs?.map(o => (
           <OrgRow
             key={o.alias}
             org={o}

@@ -19,5 +19,12 @@ package-lock.json
 .git/
 src/lib/bindings.ts
 
+# Documentation — prose; prettier's nested-list indent oscillates here.
+docs/ideas/
+docs/pitches/
+docs/decisions/
+docs/audits/
+docs/superpowers/
+
 # Logs
 *.log

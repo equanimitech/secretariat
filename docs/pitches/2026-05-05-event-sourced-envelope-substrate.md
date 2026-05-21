@@ -3,7 +3,7 @@
 Pitch — 2026-05-05. Source: `docs/ideas/event-sourced-envelope-substrate.md`
 
 > **2026-05-05 implementation note (post-collapse):** the substrate
-> shipped *flatter* than this pitch describes. `Recipient` is a flat
+> shipped _flatter_ than this pitch describes. `Recipient` is a flat
 > struct `{ owner: Did, handle: QueueHandle }` — **no enum variants**.
 > Direct messages, local captures, and channel/newsletter posts all
 > share that shape; `owner == self_did?` is a runtime predicate, not
@@ -15,13 +15,13 @@ Pitch — 2026-05-05. Source: `docs/ideas/event-sourced-envelope-substrate.md`
 > own captures. See `memory/project_substrate_simplifications.md` and
 > `docs/milestones/2026-05-05-substrate-and-menubar.md` for the final
 > shape. The breadboarding and risks below remain accurate as
-> *motivations*; the type structure they describe was simplified
+> _motivations_; the type structure they describe was simplified
 > further during slice 1 implementation.
-
 
 ## Boundaries
 
 ### Job to be done
+
 As the principal, when I capture an idea (or a pain, or a roundtable item), I
 want it to land in the same review surface as my outbox drafts — one substrate,
 one walker, one mental model — instead of a parallel pile of `docs/ideas/*.md`
@@ -35,9 +35,10 @@ Baseline today: stamped peer envelopes go to
 `/roundtable` skill walking the filesystem.
 
 ### Appetite
+
 `medium`
 
-Appetite picked: `medium` — the *substrate* reshape touches envelope domain,
+Appetite picked: `medium` — the _substrate_ reshape touches envelope domain,
 one application use case, walker projection, and one CLI/MCP entry point. We
 prove with one queue (`inbox:triage`) and one kind (`idea`); we do not migrate
 `/pain`, `/roundtable`, or `/share` in this bet, and we do not replace the
@@ -62,7 +63,7 @@ Breadboard, four primary elements:
   not at the call site.
 - **Connection: walker projection reads both outbox + local queues** —
   extend `list_outbox_queue` (or sibling `list_review_queue`) to union
-  `outbox/<peer-did>/` *and* `queues/<queue-handle>/` under
+  `outbox/<peer-did>/` _and_ `queues/<queue-handle>/` under
   `~/.secretariat/`. Walker UI groups by recipient kind. One CLI/MCP
   entry point (`sec capture --kind=idea --queue=inbox:triage <body>`)
   proves the loop end-to-end.
@@ -70,6 +71,7 @@ Breadboard, four primary elements:
 ## Risks
 
 ### 🐇 Rabbit holes
+
 - **Wire-format compatibility.** `Envelope.to` is serialized today as
   `Option<Did>` over the relay (`crates/core/src/infrastructure/transport/relay.rs:328`).
   Local queues never travel transport, so the wire format only needs to
@@ -90,11 +92,12 @@ Breadboard, four primary elements:
   `inbox:triage` → `queues/inbox/triage/`.
 
 ### 🏴 Off-sides called
+
 - **Migrating `/pain` and `/roundtable` in this bet.** Out. Substrate
   must be proven with one kind first; pain and roundtable get their own
   pitches once the substrate is real.
 - **Replacing the filesystem with an append-only event log.** Out. The
-  idea file frames the *model* as event-sourced; the *implementation*
+  idea file frames the _model_ as event-sourced; the _implementation_
   stays markdown-files-in-directories for v1. Append-only log is a
   follow-on infrastructure pitch only if/when projection cost
   demands it.
@@ -107,9 +110,10 @@ Breadboard, four primary elements:
   in v1.
 
 ### 🥩 Fat cut
+
 - **Full `EnvelopeKind` enum (`Pain | Note | Task` etc).** Ship `Letter`
-  + `Idea` only; the others are reserved variants without code paths.
-  Adding them later is additive.
+  - `Idea` only; the others are reserved variants without code paths.
+    Adding them later is additive.
 - **Walker UI redesign.** Current two-button home + walker (v0.2.3,
   commit `21cc416`) handles the new envelopes with one extra group
   header. No screen rework.
@@ -118,6 +122,7 @@ Breadboard, four primary elements:
   attention-envelope routing. Just: write envelope to local queue file.
 
 ### 🧪 Domain knowledge
+
 - **The "no real DIDs in tests" rule** (memory:
   `feedback_no_real_dids_in_tests.md`) — `Recipient::Peer` test data
   must use `Did::from_ed25519_public_key(&[seed; 32])`. Verified.
@@ -135,10 +140,11 @@ Breadboard, four primary elements:
 ## Pitch
 
 ### Problem
+
 Secretariat reads as a stamped peer-mail tool with a slash-command
 sidecar (`/idea`, `/pain`, `/roundtable`) writing files to `docs/`.
-The vision — *"async generative communication for professionals,
-stamped by humans"* (memory: `project_vision_tagline.md`) — requires
+The vision — _"async generative communication for professionals,
+stamped by humans"_ (memory: `project_vision_tagline.md`) — requires
 that AI agents participate in correspondence as first-class traffic,
 not as bolt-on tooling. Today they don't: ideas, pains, agent bids
 all live in a parallel filesystem world the review walker can't see.
@@ -154,6 +160,7 @@ Same primitive, three traffic kinds (H↔H stamped, H↔A unstamped, A↔A
 unstamped), one walker, one log.
 
 ### The bet
+
 Generalize `Envelope.to` from `Option<Did>` to a `Recipient` enum that
 admits a `LocalQueue(QueueHandle)` variant. Add an `EnvelopeKind` tag
 (`Letter` | `Idea` for v1). Walker projection unions outbox + local
@@ -170,6 +177,7 @@ extension, infrastructure is filesystem (mirror existing layout under
 `queues/`), CLI/MCP add one verb. Tests and lexicon update included.
 
 ### No-gos
+
 - No append-only event log infrastructure — keep markdown-files-in-dirs.
 - No queue taxonomy beyond `inbox:triage` — defer to follow-on pitch.
 - No migration of `/pain`, `/roundtable`, `/share` — separate pitches.

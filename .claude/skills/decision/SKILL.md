@@ -2,7 +2,13 @@
 name: decision
 description: Record a decision with its rationale and guide it through the stamp ceremony. Use when the user says "/decision", "record this decision", "we decided X", "the call is Y", or signals a commitment being made. This is the canonical use of the stamp — decisions are what the principal attests to. DO guide the stamp ceremony. DO ask for rationale if missing.
 user-invocable: true
-allowed-tools: [mcp__secretariat__compose, mcp__secretariat__stamp, mcp__secretariat__capture, Read]
+allowed-tools:
+  [
+    mcp__secretariat__compose,
+    mcp__secretariat__stamp,
+    mcp__secretariat__capture,
+    Read,
+  ]
 ---
 
 # Recording a decision
@@ -20,18 +26,19 @@ Decisions are the authoritative ledger of the org. A decision envelope is what g
 
 Two modes depending on context:
 
-| Signal | Where it lands |
-|--------|----------------|
-| Personal / no org context | `area:decisions` local queue |
+| Signal                                           | Where it lands                      |
+| ------------------------------------------------ | ----------------------------------- |
+| Personal / no org context                        | `area:decisions` local queue        |
 | Org/channel named ("for acme", "in dev channel") | compose as envelope to that channel |
 
-Ask if unclear: *"Is this a personal record or should it go to a specific channel?"*
+Ask if unclear: _"Is this a personal record or should it go to a specific channel?"_
 
 ## Flow
 
 ### 1. Collect the decision
 
 If the user gave the full context, proceed. If not, ask for:
+
 - **The decision itself** (one sentence, active voice)
 - **Rationale** (why this over alternatives — at minimum one line)
 - **Alternatives considered** (optional but valuable — what was rejected)
@@ -67,11 +74,13 @@ Show the full draft inline before writing anything. Wait for the user to confirm
 ### 3. Write and stamp
 
 **Personal decision** → `mcp__secretariat__capture` to `area:decisions`, then offer to stamp:
+
 > "Decision recorded. Stamp it to make it authoritative? (Touch ID)"
 
 **Channel decision** → `mcp__secretariat__compose` to the channel. Then stamp ceremony:
+
 1. Show the full body verbatim (already done above — confirm nothing changed).
-2. Ask: *"Stamp this decision? (Touch ID will be required)"*
+2. Ask: _"Stamp this decision? (Touch ID will be required)"_
 3. On yes → `mcp__secretariat__stamp`.
 
 **Multi-party decisions** are counter-stamped (v0.4 feature). For now, note in the body who else should attest; they'll stamp when the envelope reaches them.

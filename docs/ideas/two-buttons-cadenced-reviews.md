@@ -7,7 +7,7 @@ Raw capture — 2026-05-05.
 - The default surface of the app is **not** an inbox dashboard. It's a near-empty surface with two buttons:
   - **Review inbox** — enters a focused session walking through received envelopes
   - **Review outbox** — enters a focused session walking through drafts awaiting stamp
-- Strategic friction (equanimitech principle 7): the principal *enters* the review session deliberately. Email's always-on inbox is the compulsive path; the two-button home is the intentional one.
+- Strategic friction (equanimitech principle 7): the principal _enters_ the review session deliberately. Email's always-on inbox is the compulsive path; the two-button home is the intentional one.
 - "Cadenced" — the review session itself is paced:
   - One item at a time, full screen
   - Maybe a timer ("10 min sweep")
@@ -23,8 +23,8 @@ Raw capture — 2026-05-05.
   (`docs/ideas/multi-granularity-envelopes.md`) — a cadenced review can
   show envelopes at headline-granularity by default, with "go deeper"
   to expand. Walks at the speed of attention.
-- "Big red buttons" is shorthand for *unmistakable, single-purpose,
-  no-decoration*. Probably not literally red — uses the app's
+- "Big red buttons" is shorthand for _unmistakable, single-purpose,
+  no-decoration_. Probably not literally red — uses the app's
   existing palette — but the visual weight is "this is the only thing
   you do here."
 - Questions:

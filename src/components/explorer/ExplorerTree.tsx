@@ -67,7 +67,10 @@ export function ExplorerTree({
 
   useEffect(() => pinnedStore.subscribe(() => setPinnedVersion(v => v + 1)), [])
   useEffect(
-    () => activeChannelStore.subscribe(() => setActivePath(activeChannelStore.get())),
+    () =>
+      activeChannelStore.subscribe(() =>
+        setActivePath(activeChannelStore.get())
+      ),
     []
   )
 
@@ -94,6 +97,10 @@ export function ExplorerTree({
     }
   }, [showAll])
 
+  // Recursive useCallback: chains a `channels/` auto-load after a private/org
+  // root expansion. react-compiler can't preserve the manual memoization
+  // through the self-reference; the runtime closure resolves correctly.
+  // eslint-disable-next-line react-hooks/preserve-manual-memoization
   const loadChildren = useCallback(async (node: ExplorerNode) => {
     if (loadingRef.current.has(node.path)) return
     if (node.children !== undefined) return
@@ -257,7 +264,9 @@ export function ExplorerTree({
         onClick={() => setShowAll(v => !v)}
         title={showAll ? 'Show channels only' : 'Show every file in the vault'}
       >
-        {showAll ? 'Showing all files — click to hide internals' : 'Show all files'}
+        {showAll
+          ? 'Showing all files — click to hide internals'
+          : 'Show all files'}
       </button>
     </div>
   )
@@ -293,7 +302,6 @@ function Node({
   activePath,
 }: NodeRendererProps<ExplorerNode> & NodeContext) {
   const d = node.data
-  const Icon = pickIcon(d, node.isOpen)
   const isActive = activePath !== null && d.path === activePath
   // Active channels always count as read — no bold, no badge.
   const rawUnread = unreadByPath[d.path] ?? 0
@@ -319,14 +327,22 @@ function Node({
           if (d.hasChildren) node.toggle()
         }}
       >
-        {d.hasChildren
-          ? node.isOpen
-            ? <ChevronDown className="h-3 w-3" />
-            : <ChevronRight className="h-3 w-3" />
-          : null}
+        {d.hasChildren ? (
+          node.isOpen ? (
+            <ChevronDown className="h-3 w-3" />
+          ) : (
+            <ChevronRight className="h-3 w-3" />
+          )
+        ) : null}
       </span>
-      <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-      <span className={cn('truncate', bold && 'font-semibold')}>{labelFor(d)}</span>
+      <NodeIcon
+        d={d}
+        isOpen={node.isOpen}
+        className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+      />
+      <span className={cn('truncate', bold && 'font-semibold')}>
+        {labelFor(d)}
+      </span>
       {unread > 0 && <UnreadPill count={unread} />}
     </div>
   )
@@ -495,23 +511,38 @@ function labelFor(d: ExplorerNode): string {
   return d.name
 }
 
-function pickIcon(d: ExplorerNode, isOpen: boolean) {
+function NodeIcon({
+  d,
+  isOpen,
+  className,
+}: {
+  d: ExplorerNode
+  isOpen: boolean
+  className: string
+}) {
   switch (d.kind) {
     case 'private':
-      return Lock
+      return <Lock className={className} />
     case 'org':
-      return Building2
+      return <Building2 className={className} />
     case 'channel_leaf':
       // Every channel — leaf or super — gets the channel-hash icon.
       // The chevron expander signals "has subchannels" structurally.
-      void isOpen
-      return Hash
+      return <Hash className={className} />
     case 'dir':
-      return isOpen ? FolderOpen : Folder
+      return isOpen ? (
+        <FolderOpen className={className} />
+      ) : (
+        <Folder className={className} />
+      )
     case 'file':
-      return d.ext === 'md' ? FileText : FileIcon
+      return d.ext === 'md' ? (
+        <FileText className={className} />
+      ) : (
+        <FileIcon className={className} />
+      )
     default:
-      return FileIcon
+      return <FileIcon className={className} />
   }
 }
 
@@ -525,7 +556,10 @@ function spliceChildren(
       return { ...n, children }
     }
     if (n.children && n.children.length > 0) {
-      return { ...n, children: spliceChildren(n.children, parentPath, children) }
+      return {
+        ...n,
+        children: spliceChildren(n.children, parentPath, children),
+      }
     }
     return n
   })
@@ -562,7 +596,8 @@ function projectRoot(n: ExplorerNode): ExplorerNode | null {
       return { ...n }
     }
     const channelsDir = n.children.find(
-      c => c.name === 'channels' && (c.kind === 'dir' || c.kind === 'channel_leaf')
+      c =>
+        c.name === 'channels' && (c.kind === 'dir' || c.kind === 'channel_leaf')
     )
     if (!channelsDir) {
       return { ...n, children: [] }

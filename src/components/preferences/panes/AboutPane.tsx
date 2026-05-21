@@ -107,7 +107,7 @@ export function AboutPane() {
         {state.kind === 'up-to-date' && (
           <div className="flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 p-2 text-xs text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-400">
             <CheckCircle2 className="h-3.5 w-3.5" />
-            You're on the latest version.
+            You&apos;re on the latest version.
           </div>
         )}
 

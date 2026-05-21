@@ -20,7 +20,7 @@ Read the MCP resource `secretariat://template` — the principal's customized AG
 
 If the template is empty or missing critical sections, fall back to the default AG sections:
 
-- **Headline** (1 line — the gross summary, the *one thing* this is about)
+- **Headline** (1 line — the gross summary, the _one thing_ this is about)
 - **Context** (≤ 3 sentences — what triggered this, what the recipient needs to hold in mind)
 - **Substance** (the actual point — claim, request, observation, decision; keep tight)
 - **Subtleties** (the deepening pathway — caveats, second-order considerations, anything the recipient might want to push back on)
@@ -36,15 +36,16 @@ Tone: match the principal's voice. If the recipient channel has a `contract.loca
 
 Render the full draft body to the principal verbatim, in a code block. Do NOT call `compose` yet. Wait for one of:
 
-- *"looks good, send it"* / *"compose it"* → proceed to step 5.
-- *"change X"* → revise inline, re-render, re-ask.
-- *"never mind"* → abort. Do not write to disk.
+- _"looks good, send it"_ / _"compose it"_ → proceed to step 5.
+- _"change X"_ → revise inline, re-render, re-ask.
+- _"never mind"_ → abort. Do not write to disk.
 
 This is the pre-disk consent gate. Drafts written to the queue's `_drafts/` are visible to the substrate; only write what the principal endorsed.
 
 ### 5. Compose
 
 Call the `compose` tool with:
+
 - `to`: the resolved DID or slug
 - `body`: the approved body
 - `depth`: chosen depth
@@ -56,7 +57,7 @@ The tool returns the file_path of the draft in `<root>/<alias-of-peer>/channels/
 
 ### 6. Stamp ceremony
 
-Immediately offer to walk the stamp ceremony. The principal will say *"yes, stamp it"* or *"not yet"*. If they confirm, run the stamp prompt's recipe (read → display verbatim → wait → call `stamp`). If "not yet," tell them the draft path so they can find it later.
+Immediately offer to walk the stamp ceremony. The principal will say _"yes, stamp it"_ or _"not yet"_. If they confirm, run the stamp prompt's recipe (read → display verbatim → wait → call `stamp`). If "not yet," tell them the draft path so they can find it later.
 
 ## Rules
 

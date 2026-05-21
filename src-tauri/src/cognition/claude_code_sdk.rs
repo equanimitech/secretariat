@@ -91,7 +91,10 @@ impl ClaudeCodeSdkAdapter {
         // Pin sec-mcp + claude binary paths so the SDK has Secretariat
         // tools available in every session (per [[project_mcp_is_primary_interface]]).
         if let Some(sec_mcp) = resolve_sec_mcp_path() {
-            sidecar = sidecar.env("SECRETARIAT_SEC_MCP_PATH", sec_mcp.to_string_lossy().as_ref());
+            sidecar = sidecar.env(
+                "SECRETARIAT_SEC_MCP_PATH",
+                sec_mcp.to_string_lossy().as_ref(),
+            );
         }
         if let Some(claude) = resolve_claude_path() {
             sidecar = sidecar.env("SECRETARIAT_CLAUDE_PATH", claude.to_string_lossy().as_ref());
@@ -102,7 +105,8 @@ impl ClaudeCodeSdkAdapter {
             .map_err(|e| SessionError::Unavailable(format!("spawn sidecar: {e}")))?;
 
         let (cmd_tx, mut cmd_rx) = unbounded_channel::<String>();
-        let sinks: Arc<RwLock<HashMap<String, SessionSink>>> = Arc::new(RwLock::new(HashMap::new()));
+        let sinks: Arc<RwLock<HashMap<String, SessionSink>>> =
+            Arc::new(RwLock::new(HashMap::new()));
 
         // Writer task — drains command channel, writes JSON lines to sidecar stdin.
         tauri::async_runtime::spawn(async move {
@@ -135,9 +139,7 @@ impl ClaudeCodeSdkAdapter {
                                     dispatch(&sinks_for_reader, inbound).await;
                                 }
                                 Err(e) => {
-                                    log::warn!(
-                                        "cognition sidecar: unparseable line {line:?}: {e}"
-                                    );
+                                    log::warn!("cognition sidecar: unparseable line {line:?}: {e}");
                                 }
                             }
                         }
@@ -173,10 +175,7 @@ impl ClaudeCodeSdkAdapter {
     }
 }
 
-async fn dispatch(
-    sinks: &Arc<RwLock<HashMap<String, SessionSink>>>,
-    msg: Inbound,
-) {
+async fn dispatch(sinks: &Arc<RwLock<HashMap<String, SessionSink>>>, msg: Inbound) {
     let session_id_opt: Option<&str> = match &msg {
         Inbound::Ready => None,
         Inbound::TextDelta { session_id, .. }
@@ -188,7 +187,9 @@ async fn dispatch(
         | Inbound::Error { session_id, .. } => Some(session_id.as_str()),
     };
 
-    let Some(session_id) = session_id_opt else { return };
+    let Some(session_id) = session_id_opt else {
+        return;
+    };
     if session_id.is_empty() {
         log::warn!("cognition sidecar: event with empty session_id: {msg:?}");
         return;

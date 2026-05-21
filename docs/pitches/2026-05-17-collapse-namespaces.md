@@ -1,7 +1,7 @@
 # collapse namespaces — one primitive, one layout
 
 Pitch — 2026-05-17. Filed against the v0.4.x vault layout after a
-review session surfaced that `~/.secretariat/` has *three* namespaces
+review session surfaced that `~/.secretariat/` has _three_ namespaces
 doing overlapping work:
 
 ```
@@ -12,7 +12,7 @@ peers/                ← empty (dead)
 did, key, profile.json, contacts.json, relay-state.json ← naked at root
 ```
 
-There is one primitive — *a queue-root with channels under it* — and
+There is one primitive — _a queue-root with channels under it_ — and
 the layout should make that primitive impossible to miss. Two kinds of
 queue-root: the principal (`_self`) and an org (`orgs/<alias>`).
 `inbox`, `area:articles`, `project:autonomous-enterprise` are not three
@@ -31,7 +31,7 @@ layout teaches the model instead of contradicting it, and so adding a
 new conversational surface means picking a name, not picking a
 namespace.
 
-*When*: today's three-namespace layout is the substrate's surface area
+_When_: today's three-namespace layout is the substrate's surface area
 for every load/save call site, every CLI verb, every MCP tool, every
 agent prompt that walks the tree. The split-brain leaks. The
 `CaptureRoots { flat_queues, channel_tree }` parameter in
@@ -77,6 +77,7 @@ three-namespace tax forever.
   is `mv`-only on the envelope bodies, never `rm`, never nuke-and-
   reinstall. The substrate's promise is sovereignty over
   correspondence; breaking that promise once corrodes it forever.
+
 - **Pre-v0.3 surface cleanups** carried by the same slice (sediment
   the new layout has no answer for; better to clear with the rename):
   - `sec list peers` walks the now-deleted `peers/` dir — drop the
@@ -109,7 +110,7 @@ three-namespace tax forever.
 
 - Peer/Contact primitive collapse — the "DM is just a 2-roster
   channel" refactor is its own pitch ([[project_contracts_attach_to_queues]]).
-  This pitch organizes *the existing primitives*; collapsing
+  This pitch organizes _the existing primitives_; collapsing
   `Recipient::Peer` is a separate domain refactor.
 - Channel manifest (`channel.md` vs `.channelDef`) — already in flight
   on a separate branch, will land first; this pitch picks up after.
@@ -186,11 +187,11 @@ machine config.
 ```markdown
 ---
 did: did:web:rafa.equanimi.tech
-display_name: "Rafael T. Ballestiero"
-key_path: identity/key            # relative to this file
+display_name: 'Rafael T. Ballestiero'
+key_path: identity/key # relative to this file
 key_type: ed25519
 key_created_at: 2026-05-12T05:55:00Z
-key_rotations: []                 # append on rotation; old entries point at archived key paths
+key_rotations: [] # append on rotation; old entries point at archived key paths
 ---
 
 # Identity
@@ -212,6 +213,7 @@ directory depth. The root context (`_self` vs `orgs/<alias>`) is
 carried by the `Recipient` or the resolution call, not the handle.
 
 Examples:
+
 - Old `inbox:triage` → new handle `triage` under `_self` root.
 - Old `area:articles:equanimitech` → new handle
   `articles:equanimitech` under `_self` root.
@@ -332,7 +334,7 @@ Why a practice rule is enough right now:
 - The lexicons aren't published yet (`AGENTS.md` "Out of scope")
   so external consumers can't be broken by drift. The cost of a
   miss is internal confusion, not a wire incompatibility.
-- Codegen + runtime validation are real options *later* — when
+- Codegen + runtime validation are real options _later_ — when
   publishing the lexicon or when a second implementation (mobile,
   web) appears. Today they'd be cost without payoff.
 
@@ -400,8 +402,8 @@ migrate.
   someone other than Rafa lands a record-shape PR — that's the
   moment to escalate practice → CI gate.
 - **CHANGELOG migration loses context.** The historic `// Note:`
-  comments at `server.rs:995/1000/1075/1080/1135` document *why* a
-  tool was removed, not just *that* it was. Mitigation: move
+  comments at `server.rs:995/1000/1075/1080/1135` document _why_ a
+  tool was removed, not just _that_ it was. Mitigation: move
   verbatim, link from `CHANGELOG.md` back to the commit + the
   superseding tool's section in the file.
 
@@ -435,7 +437,7 @@ migrate.
   inconsistency erosion; the `_self/` surface lands incomplete.
 
 (Pre-revision "defer migration tool" fat cut deleted — there is no
-migration tool, and the script-only path *is* the chosen approach.
+migration tool, and the script-only path _is_ the chosen approach.
 Pre-revision "no shim" fat cut deleted — already accepted into the
 main scope.)
 
@@ -487,6 +489,7 @@ fresh. Envelopes are never deleted, only moved; that invariant
 holds for this migration and every future one.
 
 The bet pays off when:
+
 - A new contributor opens `~/.secretariat/` and the layout is
   self-explanatory in 60 seconds.
 - Adding a new conversational surface means picking a name, not
@@ -550,5 +553,5 @@ The bet pays off when:
 - `crates/cli/src/commands/list.rs` — `Peers`/`Inbox`/`Outbox`
   targets, retiring or moving under `sec debug`
 - AGENTS.md "Out of scope" list — counter-stamp + lexicon
-  publication still deferred; this pitch lifts only the *internal*
+  publication still deferred; this pitch lifts only the _internal_
   lexicon SoT, not on-wire publication

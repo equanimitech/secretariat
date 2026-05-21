@@ -14,7 +14,7 @@ As the principal of an org with a multi-level channel tree (e.g. `themia.pro` wi
 2. **MCP tools to edit those artifacts** — `set_channel_contract` / `set_channel_role_spec` / `clear_channel_role_spec`, mirrored at the CLI.
 3. **Contracts to ACCUMULATE up the tree like CLAUDE.md** — org-root → trunk → leaf stack. Roster unions; cadence + trust-gate take the most-restrictive value. Sovereignty flows top-down; children can only narrow, not widen.
 
-Today's baseline: contracts are a *description in the channel-create call's `description` field*. Nothing is enforceable, nothing is inherited, nothing is editable as a structured artifact. The current 15-channel Themia tree has zero `contract.md` files, one hand-scaffolded `module:baux_commerciaux/contract.md` + `.claude/CLAUDE.md` from earlier this session (which now needs deletion + regeneration once the create-flow lands).
+Today's baseline: contracts are a _description in the channel-create call's `description` field_. Nothing is enforceable, nothing is inherited, nothing is editable as a structured artifact. The current 15-channel Themia tree has zero `contract.md` files, one hand-scaffolded `module:baux_commerciaux/contract.md` + `.claude/CLAUDE.md` from earlier this session (which now needs deletion + regeneration once the create-flow lands).
 
 ### Appetite
 
@@ -34,7 +34,7 @@ Breadboard: places (where artifacts live), affordances (verbs), connections (acc
   channel: channel:module:baux_commerciaux
   org: themia.pro
   cadence_floor_minutes: 15
-  trust_gate: signed-only          # | stamp-required
+  trust_gate: signed-only # | stamp-required
   roster:
     - did:web:rafa.equanimi.tech
   preferred_transports:
@@ -44,7 +44,7 @@ Breadboard: places (where artifacts live), affordances (verbs), connections (acc
 
 - **Place — `<org-dir>/contract.md`** — org-root contract. Top of the accumulate chain. Same shape as channel contracts. Empty handle = org-root in MCP calls.
 
-- **Place — `<channel-dir>/.claude/CLAUDE.md`** — optional role spec for channels with a designated home agent. Auto-generated *only when* `create_channel` is called with `role_spec` or when `set_channel_role_spec` is invoked. Otherwise absent; channel inherits `.claude/` walk from ancestors per Claude Code's existing convention.
+- **Place — `<channel-dir>/.claude/CLAUDE.md`** — optional role spec for channels with a designated home agent. Auto-generated _only when_ `create_channel` is called with `role_spec` or when `set_channel_role_spec` is invoked. Otherwise absent; channel inherits `.claude/` walk from ancestors per Claude Code's existing convention.
 
 - **Affordance — extended `mcp__secretariat__create_channel`**:
 
@@ -141,31 +141,31 @@ Breadboard: places (where artifacts live), affordances (verbs), connections (acc
 
   Each level contributes per field type per [[project-contracts-accumulate]] memory:
 
-  | Field | Merge rule | Rationale |
-  |---|---|---|
-  | `cadence_floor_minutes` | MAX | Larger floor = more restrictive; can tighten down |
-  | `trust_gate` | MAX-RESTRICTIVE (stamp-required > signed-only) | Sovereignty flows top-down |
-  | `roster` | UNION | Adding members is monotonic |
-  | `preferred_transports` | UNION | More transport options OK |
+  | Field                   | Merge rule                                     | Rationale                                         |
+  | ----------------------- | ---------------------------------------------- | ------------------------------------------------- |
+  | `cadence_floor_minutes` | MAX                                            | Larger floor = more restrictive; can tighten down |
+  | `trust_gate`            | MAX-RESTRICTIVE (stamp-required > signed-only) | Sovereignty flows top-down                        |
+  | `roster`                | UNION                                          | Adding members is monotonic                       |
+  | `preferred_transports`  | UNION                                          | More transport options OK                         |
 
   No `inherit_from_parent` flag — accumulate is the only model. (`assemblee_generale: stamp-required` works naturally even with org-root at `signed-only`: max-restrictive wins.)
 
 - **Connection — five anchor contracts to set for Themia after pitch lands:**
 
-  | Level | Override |
-  |---|---|
-  | `themia.pro` (org root) | `cadence_floor_minutes: 15`, `trust_gate: signed-only`, `roster: [rafa]` (christophe + agent DIDs added when minted) |
-  | `assemblee_generale` | `trust_gate: stamp-required` (accumulate-max raises org's signed-only to stamp-required for this channel) |
-  | `module:*` (trunk, only if needed) | `roster: [agent:module@themia.pro]` (agent gets write rights across all module:* leaves via union) |
-  | `module:baux_commerciaux` | (none — pure accumulate from trunk) |
-  | `clients` | `cadence_floor_minutes: 60` (max with org's 15 = 60; this channel polls slower) |
+  | Level                              | Override                                                                                                             |
+  | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+  | `themia.pro` (org root)            | `cadence_floor_minutes: 15`, `trust_gate: signed-only`, `roster: [rafa]` (christophe + agent DIDs added when minted) |
+  | `assemblee_generale`               | `trust_gate: stamp-required` (accumulate-max raises org's signed-only to stamp-required for this channel)            |
+  | `module:*` (trunk, only if needed) | `roster: [agent:module@themia.pro]` (agent gets write rights across all module:\* leaves via union)                  |
+  | `module:baux_commerciaux`          | (none — pure accumulate from trunk)                                                                                  |
+  | `clients`                          | `cadence_floor_minutes: 60` (max with org's 15 = 60; this channel polls slower)                                      |
 
 ## Risks
 
 ### 🐇 Rabbit holes
 
-- **`assemblee_generale` trust-gate accumulate edge case.** Org-root signed-only + leaf stamp-required → max-restrictive picks stamp-required. ✓ But what if a sibling channel wants signed-only and is *parented* under a trunk that says stamp-required? Children can't loosen — they're stuck at stamp-required even if it's wrong. Concrete decision: design says no — security property. If a channel genuinely needs laxer access than its parent, it should be reparented (different namespace), not bypass the inheritance rule. Document the constraint explicitly so principals don't get surprised.
-- **Roster monotonicity on relay disconnect.** When a principal leaves a channel, "remove from roster" is the operation — but roster accumulates. Removing at the leaf doesn't propagate up. Concrete decision: roster removal happens at the level where the principal was *added*; lower levels of the chain don't shadow it. Loaders walk top-down + handle explicit `roster_remove: [<did>...]` field in v0.4+. v0.3 = additive only; deal with `did:key` revocation separately.
+- **`assemblee_generale` trust-gate accumulate edge case.** Org-root signed-only + leaf stamp-required → max-restrictive picks stamp-required. ✓ But what if a sibling channel wants signed-only and is _parented_ under a trunk that says stamp-required? Children can't loosen — they're stuck at stamp-required even if it's wrong. Concrete decision: design says no — security property. If a channel genuinely needs laxer access than its parent, it should be reparented (different namespace), not bypass the inheritance rule. Document the constraint explicitly so principals don't get surprised.
+- **Roster monotonicity on relay disconnect.** When a principal leaves a channel, "remove from roster" is the operation — but roster accumulates. Removing at the leaf doesn't propagate up. Concrete decision: roster removal happens at the level where the principal was _added_; lower levels of the chain don't shadow it. Loaders walk top-down + handle explicit `roster_remove: [<did>...]` field in v0.4+. v0.3 = additive only; deal with `did:key` revocation separately.
 - **Auto-scaffold on `create_channel` with empty contract.** What does the `contract.md` look like if the caller passed no contract? Concrete decision: write an empty frontmatter (`---\n---\n`) + a short prose header explaining inheritance. Resolver treats empty frontmatter as "contribute nothing to merge."
 - **Merge-rule consistency across field types.** Easy for current 4 fields; gets thorny as fields multiply (e.g. v0.4 adds `attention_envelope`, `notification_rules`). Concrete decision: every new field declares its merge rule in the lexicon at the moment it's added; resolver consults that.
 
@@ -199,7 +199,7 @@ Breadboard: places (where artifacts live), affordances (verbs), connections (acc
 
 ### Problem
 
-After the Themia channels restructure landed 15 channels in v0.3.0, contracts are *promises in description fields*, not enforceable artifacts. Today, `assemblee_generale`'s "STAMP-REQUIRED at channel level" lives in the channel's description text — not in any structured form the daemon could enforce. The 14 other channels share defaults that ought to be inherited from an org-root contract, but no org-root contract exists either.
+After the Themia channels restructure landed 15 channels in v0.3.0, contracts are _promises in description fields_, not enforceable artifacts. Today, `assemblee_generale`'s "STAMP-REQUIRED at channel level" lives in the channel's description text — not in any structured form the daemon could enforce. The 14 other channels share defaults that ought to be inherited from an org-root contract, but no org-root contract exists either.
 
 Worse: scaffolding contracts post-hoc is a maintenance trap. The one channel scaffolded earlier this session (`module:baux_commerciaux/contract.md` + `.claude/CLAUDE.md`) was hand-written — the other 13 stayed blank. As soon as a second principal (Christophe) joins, the discrepancy between "what we say the contract is" and "what's encoded" becomes a real risk.
 

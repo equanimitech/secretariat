@@ -8,13 +8,14 @@ Pitch — 2026-05-18. Source: free-text — "review the pain for outboxes in sec
 
 ### Job to be done
 
-As Claude (scribe) and the daemon (sender), I want a single deterministic place where a draft envelope lives — both before and after the principal stamps it — so that the "is this ready to go on the wire?" question is answered by *state on the envelope* (signature present, draft flag absent), not by *which subdirectory the file sits in*.
+As Claude (scribe) and the daemon (sender), I want a single deterministic place where a draft envelope lives — both before and after the principal stamps it — so that the "is this ready to go on the wire?" question is answered by _state on the envelope_ (signature present, draft flag absent), not by _which subdirectory the file sits in_.
 
-**The *when*:** Claude finishes drafting a peer envelope (or an org-channel post). Today it writes to `<queue-dir>/outbox/<file>.md`; on stamp, the daemon moves it to `<queue-dir>/outbox/sent/<file>.md`. Two moves, three states (draft / stamped-but-undelivered / sent), one extra subtree, and a daemon watcher whose entire purpose is to notice files appearing in `outbox/`.
+**The _when_:** Claude finishes drafting a peer envelope (or an org-channel post). Today it writes to `<queue-dir>/outbox/<file>.md`; on stamp, the daemon moves it to `<queue-dir>/outbox/sent/<file>.md`. Two moves, three states (draft / stamped-but-undelivered / sent), one extra subtree, and a daemon watcher whose entire purpose is to notice files appearing in `outbox/`.
 
-**The baseline:** today the principal has three signals to track — `outbox/` (waiting for stamp), `outbox/sent/` (post-delivery), `envelopes/YYYY/MM/DD/` (received). A draft to a single peer can live in *both* `outbox/` and `envelopes/` mental models depending on which surface (CLI `list`, MCP `review`, daemon log) is naming it.
+**The baseline:** today the principal has three signals to track — `outbox/` (waiting for stamp), `outbox/sent/` (post-delivery), `envelopes/YYYY/MM/DD/` (received). A draft to a single peer can live in _both_ `outbox/` and `envelopes/` mental models depending on which surface (CLI `list`, MCP `review`, daemon log) is naming it.
 
 ### Appetite
+
 `medium`
 
 Picked because the conceptual change is small (collapse one subtree) but the surface area is wide — domain has no outbox concept already, but application (`compose_ops`, `review_queue`, `list_outbox_files`, `drain_outbox`), daemon (`outbox_watcher`), CLI (`compose`, `stamp`, `list`), and MCP (`compose` tool, review prompts) all name `outbox` in load-bearing ways. Override with `--appetite=big` if migration shape proves nastier than the in-place sketch below.
@@ -29,7 +30,7 @@ Fat-marker sketch — five primary elements, no more.
 
 - **Affordance — review queue filter:** `list_review_queue` (currently `list_outbox_queue`) walks the envelope trees and returns files matching `*.draft.md`. The "unstamped + locally-captured" union that `review_queue.rs` already builds collapses to one walk.
 
-- **Connection — daemon trigger:** `outbox_watcher` becomes `envelope_watcher`. It still watches the queue trees recursively but fires `drain` only on `.md` rename-from-`.draft.md` events (or fresh `.md` files whose siblings indicate no draft). Stamp ceremony's atomic rename *is* the wire-send signal. False-send prevention is the safety axis (see Risks).
+- **Connection — daemon trigger:** `outbox_watcher` becomes `envelope_watcher`. It still watches the queue trees recursively but fires `drain` only on `.md` rename-from-`.draft.md` events (or fresh `.md` files whose siblings indicate no draft). Stamp ceremony's atomic rename _is_ the wire-send signal. False-send prevention is the safety axis (see Risks).
 
 - **Connection — compose contract:** `sec compose` and the MCP `compose` tool write to `<queue-dir>/envelopes/YYYY/MM/DD/<ts>-<hash>.draft.md` directly. No more "outbox" in tool descriptions, prompts, or return shapes — they speak in "draft envelopes."
 
@@ -37,7 +38,7 @@ Fat-marker sketch — five primary elements, no more.
 
 ### 🐇 Rabbit holes
 
-- **Daemon false-send on rename storms.** If the watcher fires on every `.md` it sees and a migration script renames 200 historical envelopes, the daemon thinks 200 new sends queued. Mitigation: trigger only on `notify::EventKind::Modify(ModifyKind::Name(RenameMode::Both))` *from* a `.draft.md` source, not on raw `Create` of `.md`. Need to verify `notify` exposes the from-path cleanly on macOS FSEvents — the watcher today already filters; the new rule is one match deeper.
+- **Daemon false-send on rename storms.** If the watcher fires on every `.md` it sees and a migration script renames 200 historical envelopes, the daemon thinks 200 new sends queued. Mitigation: trigger only on `notify::EventKind::Modify(ModifyKind::Name(RenameMode::Both))` _from_ a `.draft.md` source, not on raw `Create` of `.md`. Need to verify `notify` exposes the from-path cleanly on macOS FSEvents — the watcher today already filters; the new rule is one match deeper.
 - **Stamp ceremony's atomic rename across volumes.** `~/.secretariat/` is one filesystem in practice, but if a future passport sits on an external disk and the daemon process renames cross-volume, atomicity is gone. Unknown how `KeyPaths` will handle multi-volume passports — punt by documenting "passport must be single-volume" as an invariant for now.
 - **`.draft.md` files committed by accident.** If a channel-dir is a git repo (per the channel-dir-as-Claude-project rule), an accidental `git add .` ships draft envelopes upstream. Mitigation: every channel-dir's auto-generated `.gitignore` excludes `*.draft.md`. The migration touches `.gitignore` everywhere.
 - **MCP `review_queue` prompt churn.** Tool descriptions and the `stamp.md` / `compose.md` prompt files have "outbox" baked into the agent-facing vocabulary. Search-and-replace risks soft semantic drift if any "outbox" referred to something else (it shouldn't, but verify before bulk-replacing).
@@ -50,7 +51,7 @@ Fat-marker sketch — five primary elements, no more.
 
 ### 🥩 Fat to cut
 
-- **The `sent/` subdir entirely.** Today drafts are in `outbox/`, stamped envelopes move to `outbox/sent/`. Both go. Stamped envelopes go straight into `envelopes/YYYY/MM/DD/` — *the same tree that holds received envelopes*. Verify this doesn't break `list_inbox_files`'s "skip `sent/`" filter (`inbox_ops.rs:87,172`) — it'll get simpler, not more complex.
+- **The `sent/` subdir entirely.** Today drafts are in `outbox/`, stamped envelopes move to `outbox/sent/`. Both go. Stamped envelopes go straight into `envelopes/YYYY/MM/DD/` — _the same tree that holds received envelopes_. Verify this doesn't break `list_inbox_files`'s "skip `sent/`" filter (`inbox_ops.rs:87,172`) — it'll get simpler, not more complex.
 - **Per-recipient outbox subdir.** `crates/cli/src/commands/stamp.rs:107` mentions `outbox/<recipient>/`. Drop. Peer-alias dir + handle-path already addresses the recipient.
 
 ### 🧪 Domain knowledge
@@ -63,11 +64,11 @@ Fat-marker sketch — five primary elements, no more.
 
 ### Problem
 
-Today, "is this envelope ready to send?" is encoded as a *location* — `outbox/` means draft, `outbox/sent/` means delivered, `envelopes/` means received. Three locations, two daemon moves, one watcher whose existence is justified solely by the location-as-state choice. The state model is on the filesystem, not on the envelope.
+Today, "is this envelope ready to send?" is encoded as a _location_ — `outbox/` means draft, `outbox/sent/` means delivered, `envelopes/` means received. Three locations, two daemon moves, one watcher whose existence is justified solely by the location-as-state choice. The state model is on the filesystem, not on the envelope.
 
-The cost shows up in five places that all touched in v0.5–v0.7 work: `outbox_watcher.rs` exists at all; `list_outbox_files` is a sibling of `list_inbox_files` instead of one walk; `review_queue.rs` carries explicit comments distinguishing "outbox files" from "review queue" because the file location overloads three meanings; MCP tool descriptions and stamp prompt drift toward "outbox vocabulary" instead of "draft vocabulary"; and the v0.7.0 migration had to special-case empty-`outbox/`-dir cleanup (commit `4d3daeb`). The recent migration commits (`13df900`, `4d3daeb`) are evidence that the outbox subtree is load-bearing in ways the substrate decision doc (`2026-05-12-substrate-layout-v03.md`) didn't intend — that doc shows `outbox/` as a peer of `envelopes/`, but never says *why* drafts deserve a separate tree.
+The cost shows up in five places that all touched in v0.5–v0.7 work: `outbox_watcher.rs` exists at all; `list_outbox_files` is a sibling of `list_inbox_files` instead of one walk; `review_queue.rs` carries explicit comments distinguishing "outbox files" from "review queue" because the file location overloads three meanings; MCP tool descriptions and stamp prompt drift toward "outbox vocabulary" instead of "draft vocabulary"; and the v0.7.0 migration had to special-case empty-`outbox/`-dir cleanup (commit `4d3daeb`). The recent migration commits (`13df900`, `4d3daeb`) are evidence that the outbox subtree is load-bearing in ways the substrate decision doc (`2026-05-12-substrate-layout-v03.md`) didn't intend — that doc shows `outbox/` as a peer of `envelopes/`, but never says _why_ drafts deserve a separate tree.
 
-The answer is they don't. Drafts deserve a *marker* (so the daemon doesn't send them and the principal can find them), not a *tree*. A filename suffix carries the marker; the stamp ceremony's atomic rename flips it.
+The answer is they don't. Drafts deserve a _marker_ (so the daemon doesn't send them and the principal can find them), not a _tree_. A filename suffix carries the marker; the stamp ceremony's atomic rename flips it.
 
 ### The bet
 

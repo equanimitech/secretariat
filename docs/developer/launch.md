@@ -60,7 +60,7 @@ _ciphertext/
 ## Choosing the cognition substrate
 
 `launch_command` + `launch_args` + `launch_env` in
-`~/.secretariat/preferences.toml` decide *what* gets launched. Default
+`~/.secretariat/preferences.toml` decide _what_ gets launched. Default
 ships as Claude Code (`claude`); LM Studio routes Claude Code's wire
 protocol at a local OpenAI-compatible endpoint via env vars only —
 no fork of the CLI needed.
@@ -129,10 +129,10 @@ platforms `sec` spawns the command and waits.
 
 ## Errors
 
-| Error | Meaning |
-| --- | --- |
-| `invalid handle ...` | Handle didn't parse — see `QueueHandle::parse` |
-| `not a channel handle` | Use `channel:foo` / `channel:foo:bar`, not `inbox:` / `area:` |
-| `channel ... does not exist` | No `channel.md` at the resolved path — `sec channels create` first |
-| `launch_command is empty in preferences` | `[cognition] launch_command = ""` — pick a real binary |
-| `could not launch ...` | OS-level spawn failure — typically the binary isn't on `$PATH` |
+| Error                                    | Meaning                                                            |
+| ---------------------------------------- | ------------------------------------------------------------------ |
+| `invalid handle ...`                     | Handle didn't parse — see `QueueHandle::parse`                     |
+| `not a channel handle`                   | Use `channel:foo` / `channel:foo:bar`, not `inbox:` / `area:`      |
+| `channel ... does not exist`             | No `channel.md` at the resolved path — `sec channels create` first |
+| `launch_command is empty in preferences` | `[cognition] launch_command = ""` — pick a real binary             |
+| `could not launch ...`                   | OS-level spawn failure — typically the binary isn't on `$PATH`     |

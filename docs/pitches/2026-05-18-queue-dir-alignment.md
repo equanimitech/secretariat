@@ -44,7 +44,7 @@ where `<alias>` ∈ {`_self`, `<org>`, `<peer>`}. So that:
 - Future relay sync for DMs (peer-to-peer publishing) reuses the
   same path layout the org-channel sync will use.
 
-*When*: every time I open a peer's queue directory and notice
+_When_: every time I open a peer's queue directory and notice
 `~/.secretariat/marcelo/inbox/` doesn't have a `channels/` layer in
 between, my mental model breaks. The asymmetry forces
 `queue_dir.rs::queue_dir` to keep a separate code path from the
@@ -56,6 +56,7 @@ resolvers, two metaphors. One should win.
 `small`. ~one focused day, similar profile to slice 3.
 
 Touches:
+
 - `queue_dir.rs::queue_dir` — collapse peer path to insert `channels/`.
 - `sync.rs:236` (and any other callers of `queue_dir`) — unchanged
   semantics, just new path.
@@ -81,6 +82,7 @@ unchanged. Only the on-disk storage location shifts.
 ```
 
 Example mappings:
+
 - `marcelo/inbox/envelopes/...` → `marcelo/channels/inbox/envelopes/...`
 - `christophe/inbox/default/envelopes/...` → `christophe/channels/inbox/default/envelopes/...`
 - `did_key_z6mk.../inbox/envelopes/...` → `did_key_z6mk.../channels/inbox/envelopes/...`
@@ -318,6 +320,7 @@ Migration extends the v0.6.0 hand-script. Same discipline: `mv`-only,
 pre-flight tar snapshot, post-move count check.
 
 The bet pays off when:
+
 - One resolver shape across self/org/peer. Two callers, identical
   output structure.
 - Per-channel template / contract overrides work for DMs without

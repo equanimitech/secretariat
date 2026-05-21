@@ -20,15 +20,15 @@ Baseline today: principal sees the placeholder `<ReviewSurface>` empty state for
 
 Fat-marker sketch of the two screens.
 
-### Screen 1 — *Set yourself up*
+### Screen 1 — _Set yourself up_
 
 Single form. Single button.
 
 - **Place:** centered modal pane, no chrome
 - **Affordances:**
-  - text field — *"What should we call you?"* (placeholder: "Rafa", "Christophe", etc.)
-  - small italic note — *"Your identity will be generated on this device. Touch ID will protect every signature."*
-  - one button — *"Set me up"*
+  - text field — _"What should we call you?"_ (placeholder: "Rafa", "Christophe", etc.)
+  - small italic note — _"Your identity will be generated on this device. Touch ID will protect every signature."_
+  - one button — _"Set me up"_
 - **Connection lines:** click → triggers in this order:
   1. `set_profile(name)`
   2. `init_identity()` (generates ed25519 keypair + did:key)
@@ -37,16 +37,16 @@ Single form. Single button.
   5. Avatar derived from DID hash (no upload yet — deterministic color block + initials from name)
 - on success → screen 2; on Touch ID failure → "We need Touch ID to protect your signatures. [Try again] or [Skip — install Touch ID first]"
 
-### Screen 2 — *Connect*
+### Screen 2 — _Connect_
 
 Three doors. None forced.
 
 - **Place:** same modal, replaces screen 1 inline
 - **Affordances:**
-  - text field — *"Paste an invite URL"* (auto-fills from clipboard if it contains `secretariat://` or `<relay>/v0/invite/`)
-  - button — *"Claim it"* (calls `claim_invite_url`)
-  - secondary button — *"I'll invite someone"* (calls `create_invite`, copies URL to clipboard, principal pastes elsewhere themselves)
-  - tertiary button (link-styled) — *"Skip for now"*
+  - text field — _"Paste an invite URL"_ (auto-fills from clipboard if it contains `secretariat://` or `<relay>/v0/invite/`)
+  - button — _"Claim it"_ (calls `claim_invite_url`)
+  - secondary button — _"I'll invite someone"_ (calls `create_invite`, copies URL to clipboard, principal pastes elsewhere themselves)
+  - tertiary button (link-styled) — _"Skip for now"_
 - **Connection lines:**
   - claim → success → close wizard, land on review surface with "connected to <inviter>" line
   - invite → success → close wizard, "your invite URL is on the clipboard" hint visible briefly

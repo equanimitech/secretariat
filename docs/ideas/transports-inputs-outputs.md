@@ -12,7 +12,7 @@ Raw capture — 2026-05-05.
   - Does Linear-as-input fit the substrate cleanly? Linear issue ≠ envelope-shape (no `from` DID, no recipient queue, no stamp). Wrap in a synthetic envelope `(linear_did, channel:project-X)` on import?
   - Does Slack-as-output collapse into "send to a queue whose owner is a Slack channel adapter"? I.e. `Recipient { owner: slack-workspace-did, handle: channel:eng }`. Adapter on relay side handles fan-out to actual Slack message.
   - What's the unit of trust when an inbound came from Linear/Slack? They're not stamped — the principal didn't sign them. Mark as "unsigned, source-attested" envelopes? Different review track?
-  - Conversely, replies *from* the principal back into Linear/Slack — those ARE stamped (principal signed them locally) but the recipient platform can't verify the stamp. The signature is for the audit log, not for Slack.
+  - Conversely, replies _from_ the principal back into Linear/Slack — those ARE stamped (principal signed them locally) but the recipient platform can't verify the stamp. The signature is for the audit log, not for Slack.
   - Is there a generic adapter contract (read N envelopes, write N envelopes) that any input/output plugs into?
   - Inbound rate limits / cadence — Slack DMs are high-frequency, Linear comments medium, IMAP low. Does the principal's `attention-envelope.md` apply to inbound from these too, or only to peer principals?
 - Don't shape yet.

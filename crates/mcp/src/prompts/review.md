@@ -13,7 +13,7 @@ Drive review off two resources:
 
 Fetch `secretariat://orgs` and `secretariat://compositions`.
 
-If both are empty (no orgs with envelopes AND no pending drafts), tell the principal *"Nothing to review."* and stop. Do not synthesize busywork.
+If both are empty (no orgs with envelopes AND no pending drafts), tell the principal _"Nothing to review."_ and stop. Do not synthesize busywork.
 
 ### 2. Present the overview
 
@@ -24,14 +24,14 @@ Render a tight, tree-shaped overview to the principal:
 
 One-line gist per item. No expansion until the principal asks.
 
-Then ask: *"Where do you want to start — dive into a channel, stamp a draft, or done?"*
+Then ask: _"Where do you want to start — dive into a channel, stamp a draft, or done?"_
 
 ### 3. Channel dive (read-only today)
 
 If the principal names a channel, call the `read_channel` tool with the channel's handle (default `limit: 10`). Walk the returned envelopes newest-first, one at a time:
 
 1. **Render verbatim**: present the FULL body in a code block or quoted region. Never summarize. Include the sender DID and captured-at timestamp.
-2. **Ask**: *"next / stop"*. Channel envelopes are read-only here; archive/defer is not available.
+2. **Ask**: _"next / stop"_. Channel envelopes are read-only here; archive/defer is not available.
 3. **Wait** for the principal's choice before moving on.
 
 If the channel is not addressable via `read_channel` (e.g. it's a peer DM queue, not an org channel), fall back to reading the envelope file directly via the `read` tool when the principal points at a specific path.
@@ -47,7 +47,7 @@ If the principal names a draft to stamp:
 
 ### 5. End naturally
 
-When the principal signals done, summarize in one line: *"Reviewed N items — S stamped, K skipped."* Then stop. Do not propose follow-ups, do not auto-launch /compose, do not nudge another review.
+When the principal signals done, summarize in one line: _"Reviewed N items — S stamped, K skipped."_ Then stop. Do not propose follow-ups, do not auto-launch /compose, do not nudge another review.
 
 ## Rules
 

@@ -21,7 +21,7 @@ Before calling `capture`, decide WHERE the idea lands. Sequence:
 
    Channel handles are colon-pathed segments — colons mean tree depth.
 
-2. **If `.secretariat` provides an `idea` channel that is NOT `triage`:** propose it as a one-line confirm prompt — *"Capture to `<org>` / `<handle>`? (y · `triage` · other)"* — and WAIT for the principal's answer.
+2. **If `.secretariat` provides an `idea` channel that is NOT `triage`:** propose it as a one-line confirm prompt — _"Capture to `<org>` / `<handle>`? (y · `triage` · other)"_ — and WAIT for the principal's answer.
 
 3. **If the inferred channel IS `triage` (or no inference at all):** skip the confirm prompt. Just capture silently to `triage`. Defaults stay quiet — only divergences from default need a confirmation.
 

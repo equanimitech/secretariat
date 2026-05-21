@@ -5,10 +5,7 @@
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { useUIStore as _useUIStore } from '@/store/ui-store'
-import {
-  executeCommand,
-  useCommandContext,
-} from '@/lib/commands'
+import { executeCommand, useCommandContext } from '@/lib/commands'
 import {
   PanelLeft as _PanelLeft,
   PanelLeftClose as _PanelLeftClose,
@@ -22,7 +19,6 @@ import {
  * Hidden for v0.2.x — no sidebars rendered. Function returns null.
  */
 export function TitleBarLeftActions() {
-
   // Left-sidebar-toggle button hidden for v0.2.x (no sidebars rendered).
   // Preserved for repurposing.
   //

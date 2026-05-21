@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/ban-ts-comment */
 // @ts-nocheck — references legacy load/save/list cognition commands that
 // were consolidated into the unified `preferences.toml` flow
 // (`get_preferences` / `set_cognition_settings`). Pane stays mounted
@@ -123,7 +124,8 @@ export function CognitionPane() {
       ? 'https://api.anthropic.com (default)'
       : 'http://localhost:11434/v1   |   https://openrouter.ai/api/v1'
 
-  const apiKeyHidden = form.provider === 'openai-compat' && isOllamaBase(form.apiBase)
+  const apiKeyHidden =
+    form.provider === 'openai-compat' && isOllamaBase(form.apiBase)
   const apiKeyHelper = apiKeyHidden
     ? "Ollama doesn't need a key."
     : form.provider === 'anthropic'
@@ -140,20 +142,28 @@ export function CognitionPane() {
         <div>
           <Label className="text-sm font-medium">Cognition substrate</Label>
           <p className="text-xs text-muted-foreground">
-            Pick where queue-routing suggestions come from. Default-off:
-            until you save here, captures stay where they were filed.
+            Pick where queue-routing suggestions come from. Default-off: until
+            you save here, captures stay where they were filed.
           </p>
         </div>
 
         <RadioGroup
           value={form.provider}
           onValueChange={value =>
-            setForm(prev => ({ ...prev, provider: value as Provider, model: '' }))
+            setForm(prev => ({
+              ...prev,
+              provider: value as Provider,
+              model: '',
+            }))
           }
           className="grid gap-2"
         >
           <label className="flex cursor-pointer items-start gap-3 rounded-md border p-3 hover:bg-muted/30">
-            <RadioGroupItem value="anthropic" id="prov-anthropic" className="mt-1" />
+            <RadioGroupItem
+              value="anthropic"
+              id="prov-anthropic"
+              className="mt-1"
+            />
             <div className="space-y-0.5">
               <div className="text-sm font-medium">Anthropic (Claude)</div>
               <p className="text-xs text-muted-foreground">
@@ -163,7 +173,11 @@ export function CognitionPane() {
             </div>
           </label>
           <label className="flex cursor-pointer items-start gap-3 rounded-md border p-3 hover:bg-muted/30">
-            <RadioGroupItem value="openai-compat" id="prov-oai" className="mt-1" />
+            <RadioGroupItem
+              value="openai-compat"
+              id="prov-oai"
+              className="mt-1"
+            />
             <div className="space-y-0.5">
               <div className="text-sm font-medium">OpenAI-compatible</div>
               <p className="text-xs text-muted-foreground">
@@ -186,7 +200,9 @@ export function CognitionPane() {
               type="url"
               placeholder={apiBasePlaceholder}
               value={form.apiBase}
-              onChange={e => setForm(prev => ({ ...prev, apiBase: e.target.value }))}
+              onChange={e =>
+                setForm(prev => ({ ...prev, apiBase: e.target.value }))
+              }
             />
             <p className="text-xs text-muted-foreground">
               Ollama: <code>http://localhost:11434/v1</code>. OpenRouter:{' '}
@@ -204,9 +220,13 @@ export function CognitionPane() {
               id="api-key"
               type="password"
               autoComplete="off"
-              placeholder={form.provider === 'anthropic' ? 'sk-ant-…' : 'sk-or-… or sk-…'}
+              placeholder={
+                form.provider === 'anthropic' ? 'sk-ant-…' : 'sk-or-… or sk-…'
+              }
               value={form.apiKey}
-              onChange={e => setForm(prev => ({ ...prev, apiKey: e.target.value }))}
+              onChange={e =>
+                setForm(prev => ({ ...prev, apiKey: e.target.value }))
+              }
             />
             <p className="text-xs text-muted-foreground">{apiKeyHelper}</p>
           </div>
@@ -238,7 +258,9 @@ export function CognitionPane() {
             <select
               id="model"
               value={form.model}
-              onChange={e => setForm(prev => ({ ...prev, model: e.target.value }))}
+              onChange={e =>
+                setForm(prev => ({ ...prev, model: e.target.value }))
+              }
               className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
             >
               {models.map(m => (
@@ -257,7 +279,9 @@ export function CognitionPane() {
                   : 'llama3.1:8b   |   gpt-4o-mini'
               }
               value={form.model}
-              onChange={e => setForm(prev => ({ ...prev, model: e.target.value }))}
+              onChange={e =>
+                setForm(prev => ({ ...prev, model: e.target.value }))
+              }
             />
           )}
           <p className="text-xs text-muted-foreground">
@@ -290,8 +314,8 @@ export function CognitionPane() {
             className="w-full"
           />
           <p className="text-xs text-muted-foreground">
-            Suggestions below this score don&apos;t apply — the capture stays
-            in <code>inbox:triage</code> for you to file by hand.
+            Suggestions below this score don&apos;t apply — the capture stays in{' '}
+            <code>inbox:triage</code> for you to file by hand.
           </p>
         </div>
       </section>
@@ -326,7 +350,8 @@ export function CognitionPane() {
 // ---------------------------------------------------------------------------
 
 function dtoToForm(dto: CognitionConfigDto): FormState {
-  const provider: Provider = dto.provider === 'openai-compat' ? 'openai-compat' : 'anthropic'
+  const provider: Provider =
+    dto.provider === 'openai-compat' ? 'openai-compat' : 'anthropic'
   return {
     provider,
     apiKey: dto.api_key ?? '',

@@ -11,10 +11,10 @@ pub mod markdown;
 mod types;
 mod utils;
 
-#[cfg(target_os = "macos")]
-use tauri::ActivationPolicy;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+#[cfg(target_os = "macos")]
+use tauri::ActivationPolicy;
 use tauri::{Manager, RunEvent, WindowEvent};
 
 // Re-export only what's needed externally
@@ -180,20 +180,10 @@ pub fn run() {
             // discrimination).
             #[cfg(desktop)]
             {
-                let show_item = MenuItem::with_id(
-                    app,
-                    "tray-show",
-                    "Show Secretariat",
-                    true,
-                    None::<&str>,
-                )?;
-                let quit_item = MenuItem::with_id(
-                    app,
-                    "tray-quit",
-                    "Quit Secretariat",
-                    true,
-                    None::<&str>,
-                )?;
+                let show_item =
+                    MenuItem::with_id(app, "tray-show", "Show Secretariat", true, None::<&str>)?;
+                let quit_item =
+                    MenuItem::with_id(app, "tray-quit", "Quit Secretariat", true, None::<&str>)?;
                 let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
 
                 TrayIconBuilder::with_id("main-tray")
@@ -214,9 +204,9 @@ pub fn run() {
                             ..
                         } = event
                         {
-                            if let Err(e) = commands::quick_pane::toggle_quick_pane(
-                                tray.app_handle().clone(),
-                            ) {
+                            if let Err(e) =
+                                commands::quick_pane::toggle_quick_pane(tray.app_handle().clone())
+                            {
                                 log::error!("Tray quick-pane toggle failed: {e}");
                             }
                         }
@@ -296,11 +286,11 @@ pub fn run() {
 
                 loop {
                     let interval_min = match KeyPaths::discover() {
-                        Ok(paths) => CadenceConfig::load_or_default(
-                            &paths.root.join("cadence.toml"),
-                        )
-                        .map(|c| c.poll_interval_minutes)
-                        .unwrap_or(15),
+                        Ok(paths) => {
+                            CadenceConfig::load_or_default(&paths.root.join("cadence.toml"))
+                                .map(|c| c.poll_interval_minutes)
+                                .unwrap_or(15)
+                        }
                         Err(_) => 15,
                     };
                     tauri::async_runtime::spawn_blocking(move || {
@@ -315,7 +305,9 @@ pub fn run() {
                     // if key/DID load fails. Errors don't kill the loop —
                     // try again next tick.
                     use secretariat_core::infrastructure::identity_store::load_identity;
-                    let Ok(paths) = KeyPaths::discover() else { continue };
+                    let Ok(paths) = KeyPaths::discover() else {
+                        continue;
+                    };
                     if !paths.signing_key.exists() {
                         continue;
                     }
@@ -445,7 +437,6 @@ fn surface_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
         let _ = window.set_focus();
     }
 }
-
 
 /// Resolve the bundled `sec` and `sec-mcp` sidecars next to the running
 /// Tauri exe (e.g. `Secretariat.app/Contents/MacOS/`). Returns `Err` for

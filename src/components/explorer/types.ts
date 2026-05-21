@@ -16,7 +16,10 @@ export interface ExplorerNode {
   children?: ExplorerNode[]
 }
 
-export function entryToNode(e: TreeEntry, parentOrg: string | null = null): ExplorerNode {
+export function entryToNode(
+  e: TreeEntry,
+  parentOrg: string | null = null
+): ExplorerNode {
   return {
     id: e.path,
     name: e.name,

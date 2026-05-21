@@ -2,20 +2,21 @@
 
 Date: 2026-05-04. Triggered by Marcelo's first onboarding (see
 `docs/audits/2026-05-04-onboarding-ux.md` and `docs/pain/`). Distribution
-+ update + notification gaps converged to one answer: stop building
-those by hand, use the Tauri shell that's already scaffolded.
+
+- update + notification gaps converged to one answer: stop building
+  those by hand, use the Tauri shell that's already scaffolded.
 
 ## What changes
 
-| Surface | Before | After |
-|---|---|---|
-| `Secretariat.app` | scaffolded, unused | **principal-facing front door** |
-| `sec` CLI | the front door | power-user + scripting |
-| `sec-mcp` | the Claude integration | unchanged; app registers it on first launch |
-| `sec daemon` | LaunchAgent | background loop **inside** the Tauri app |
-| Distribution | tarball + `bash install.sh` | signed `.dmg` (drag-and-drop) |
-| Update | manual re-install | Tauri Updater plugin (Ed25519-signed, silent) |
-| Notification | none | `tauri-plugin-notification` (macOS native) |
+| Surface           | Before                      | After                                         |
+| ----------------- | --------------------------- | --------------------------------------------- |
+| `Secretariat.app` | scaffolded, unused          | **principal-facing front door**               |
+| `sec` CLI         | the front door              | power-user + scripting                        |
+| `sec-mcp`         | the Claude integration      | unchanged; app registers it on first launch   |
+| `sec daemon`      | LaunchAgent                 | background loop **inside** the Tauri app      |
+| Distribution      | tarball + `bash install.sh` | signed `.dmg` (drag-and-drop)                 |
+| Update            | manual re-install           | Tauri Updater plugin (Ed25519-signed, silent) |
+| Notification      | none                        | `tauri-plugin-notification` (macOS native)    |
 
 The CLI and MCP **do not go away**. They remain as alternate surfaces for
 Claude Code users and shell scripts. But the default install gives the
@@ -59,15 +60,15 @@ What changes architecturally:
 
 ## What we get for free from Tauri
 
-| T2FM blocker | Tauri solution |
-|---|---|
-| Install is opaque / Terminal-only | Native macOS install dialog (drag-to-Applications) |
-| No auto-update | Tauri Updater plugin (Ed25519-signed, silent download + relaunch) |
-| No notifications on inbox arrival | `tauri-plugin-notification` (macOS UNUserNotificationCenter) |
-| Daemon orchestration is a separate install step | App lifecycle owns it |
-| MCP `compose` body-drop bug class | Native textarea → IPC → Rust function. No serialization gap. |
-| MCP install is a separate step | App registers `sec-mcp` into Claude on first launch |
-| "Did anything come in?" requires sync_now MCP tool | Tray badge + push notification |
+| T2FM blocker                                       | Tauri solution                                                    |
+| -------------------------------------------------- | ----------------------------------------------------------------- |
+| Install is opaque / Terminal-only                  | Native macOS install dialog (drag-to-Applications)                |
+| No auto-update                                     | Tauri Updater plugin (Ed25519-signed, silent download + relaunch) |
+| No notifications on inbox arrival                  | `tauri-plugin-notification` (macOS UNUserNotificationCenter)      |
+| Daemon orchestration is a separate install step    | App lifecycle owns it                                             |
+| MCP `compose` body-drop bug class                  | Native textarea → IPC → Rust function. No serialization gap.      |
+| MCP install is a separate step                     | App registers `sec-mcp` into Claude on first launch               |
+| "Did anything come in?" requires sync_now MCP tool | Tray badge + push notification                                    |
 
 ## Out of scope for this pivot
 
@@ -85,7 +86,7 @@ Refined after first pass at slicing. The original plan leaned toward a
 chat-like UX (push notifications, real-time delivery, in-app compose
 textarea). That's wrong direction. The tagline locks the model:
 
-> *"Async generative communication for professionals, stamped by humans."*
+> _"Async generative communication for professionals, stamped by humans."_
 
 Three pillars:
 
@@ -93,7 +94,7 @@ Three pillars:
   ChatGPT, etc.) drafts envelopes throughout the day; nothing waits on
   the principal. Drafts queue in the outbox.
 - **Stamping is principal-initiated, batched.** The principal opens
-  Secretariat at a chosen time, runs a *review session* — sees the
+  Secretariat at a chosen time, runs a _review session_ — sees the
   queue, reads bodies, stamps approved drafts. Stamp = approval = send.
 - **No surprises, no notifications.** No push, no banner, no badge that
   pulls attention. Sync happens when the principal initiates it (open
@@ -108,14 +109,14 @@ The app's only jobs are:
    batch-stamp affordance.
 3. **Self-update** silently.
 
-What the app explicitly does *not* do:
+What the app explicitly does _not_ do:
 
 - ✗ Notifications — drop entirely. Principal owns when they look.
 - ✗ Push-on-enqueue (relay-side) — same reason; replaced by an explicit
   "sync now" button / MCP tool / CLI command.
 - ✗ Compose textarea (v0.2) — drafting lives in the AI assistant.
-  *Tiny in-app editing/drafting tools may land in v0.3+ as a quality-of-life
-  add for principals who want to tweak a draft before stamping; not v0.2.*
+  _Tiny in-app editing/drafting tools may land in v0.3+ as a quality-of-life
+  add for principals who want to tweak a draft before stamping; not v0.2._
 
 ## Slices (v2 — review-session model)
 
@@ -124,8 +125,8 @@ Vertical slices, smallest first:
 1. **Identity slice** — Tauri commands `init_identity()`, `current_identity()`,
    `secretariat_root()`. ✅ shipped 2026-05-04.
 
-2. **Correspondence-invite slice** — invites establish *bilateral
-   correspondence*, not platform onboarding. The invite-claim flow is
+2. **Correspondence-invite slice** — invites establish _bilateral
+   correspondence_, not platform onboarding. The invite-claim flow is
    semantically "let's be contacts who exchange stamped envelopes," not
    "join Secretariat via my link." This reframe maps directly to the
    book's Agent Contract concept (every correspondence is a bilateral

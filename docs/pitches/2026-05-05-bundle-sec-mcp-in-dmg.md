@@ -2,13 +2,13 @@
 
 Pitch — 2026-05-05. Source: live conversation 2026-05-05 (principal noticed `mcp__secretariat__*` tools absent in fresh Claude Code session despite v0.2.3 install).
 
-**Hard dependency:** Onboarding wizard pitch (`docs/pitches/2026-05-04-onboarding-wizard.md`) — its screen-1 step 4 (*Best-effort `sec mcp install`*) is the call site this pitch makes work for non-dev principals.
+**Hard dependency:** Onboarding wizard pitch (`docs/pitches/2026-05-04-onboarding-wizard.md`) — its screen-1 step 4 (_Best-effort `sec mcp install`_) is the call site this pitch makes work for non-dev principals.
 
 ## Boundaries
 
 ### Job to be done
 
-When a non-developer principal drags `Secretariat.app` into `/Applications` and opens it for the first time, I want the assistant connection (Claude Code / Claude Desktop MCP wiring) to be live by the time the wizard closes — no Terminal, no `cargo install`, no `claude mcp add` — so that the principal's first instruction to Claude (*"check my outbox"*) actually resolves `mcp__secretariat__list_outbox` instead of hitting a stale-tool error.
+When a non-developer principal drags `Secretariat.app` into `/Applications` and opens it for the first time, I want the assistant connection (Claude Code / Claude Desktop MCP wiring) to be live by the time the wizard closes — no Terminal, no `cargo install`, no `claude mcp add` — so that the principal's first instruction to Claude (_"check my outbox"_) actually resolves `mcp__secretariat__list_outbox` instead of hitting a stale-tool error.
 
 Baseline today: `sec mcp install` exists at `crates/cli/src/commands/mcp.rs:1` and the wizard already calls it (`docs/pitches/2026-05-04-onboarding-wizard.md:36`). But the resolver at `crates/cli/src/commands/mcp.rs:108-130` only looks at `$PATH`, `~/.cargo/bin/sec-mcp`, `~/.local/bin/sec-mcp` — none of which exist for a `.dmg` installer. The wizard call silently no-ops; principal sees no error and discovers the gap only when Claude can't see Secretariat tools.
 
@@ -29,8 +29,8 @@ Three changes, all in existing files.
 - **Connection:** when the wizard calls `sec mcp install` from inside the Tauri app, the resolver finds the bundled binary and `claude mcp add secretariat <bundled-path>` succeeds
 
 - **Place:** wizard screen 1, step 4 (already shipping per the onboarding pitch)
-- **Affordance:** unchanged — *"Best-effort `sec mcp install` (silent)"*
-- **Connection:** with the bundle + resolver in place, *best-effort* becomes *actually-wires* on first launch
+- **Affordance:** unchanged — _"Best-effort `sec mcp install` (silent)"_
+- **Connection:** with the bundle + resolver in place, _best-effort_ becomes _actually-wires_ on first launch
 
 ## Risks
 
@@ -60,9 +60,9 @@ Three changes, all in existing files.
 
 ### Problem
 
-Live failure mode, today (v0.2.3 installed, fresh Claude Code session): principal asks Claude to walk the outbox; Claude reports *"no Secretariat MCP server connected this session"* and AGENTS.md still says *"MCP server — not built yet."* AGENTS.md is stale (the crate exists at `crates/mcp/` with all 13 tools), but the principal's experience is correct: the tools aren't wired. The crate compiled, the wizard calls `sec mcp install`, the resolver finds nothing, the call no-ops silently, and the principal hits the gap only when they try to use the assistant.
+Live failure mode, today (v0.2.3 installed, fresh Claude Code session): principal asks Claude to walk the outbox; Claude reports _"no Secretariat MCP server connected this session"_ and AGENTS.md still says _"MCP server — not built yet."_ AGENTS.md is stale (the crate exists at `crates/mcp/` with all 13 tools), but the principal's experience is correct: the tools aren't wired. The crate compiled, the wizard calls `sec mcp install`, the resolver finds nothing, the call no-ops silently, and the principal hits the gap only when they try to use the assistant.
 
-This is the same failure pattern the audit flagged for the daemon (`docs/audits/2026-05-04-onboarding-ux.md` — *"Daemon not auto-started at install time"*): the install drops a binary, the principal expects everything to work, but a downstream wiring step is gated on a Terminal command they're never told about. For the daemon the missing step is `sec daemon install`; for MCP it's `cargo install --path crates/mcp`. Both are dev-machine assumptions leaking into the .dmg path.
+This is the same failure pattern the audit flagged for the daemon (`docs/audits/2026-05-04-onboarding-ux.md` — _"Daemon not auto-started at install time"_): the install drops a binary, the principal expects everything to work, but a downstream wiring step is gated on a Terminal command they're never told about. For the daemon the missing step is `sec daemon install`; for MCP it's `cargo install --path crates/mcp`. Both are dev-machine assumptions leaking into the .dmg path.
 
 ### The bet
 
@@ -74,7 +74,7 @@ Three small edits, betting `tiny`:
 
 The wizard step that already exists starts working on first launch, end-to-end, for a principal who has only ever seen the .dmg drag-to-Applications motion.
 
-This pays off the same audit thread the onboarding-wizard pitch opened. After this lands, *the install IS the configuration* — same shape we want for `sec daemon install` next.
+This pays off the same audit thread the onboarding-wizard pitch opened. After this lands, _the install IS the configuration_ — same shape we want for `sec daemon install` next.
 
 ### No-gos
 

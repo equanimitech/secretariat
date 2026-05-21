@@ -31,37 +31,34 @@ export function ShortcutPane() {
     })()
   }, [])
 
-  const handleChange = useCallback(
-    async (next: string | null) => {
-      setShortcut(next)
-      setBusy(true)
-      setError(null)
-      setSavedNote(null)
-      try {
-        const prefs = await commands.loadPreferences()
-        if (prefs.status === 'error') {
-          setError(prefs.error)
-          return
-        }
-        const updated = { ...prefs.data, quick_pane_shortcut: next }
-        const save = await commands.savePreferences(updated)
-        if (save.status === 'error') {
-          setError(save.error)
-          return
-        }
-        const apply = await commands.updateQuickPaneShortcut(next)
-        if (apply.status === 'error') {
-          setError(apply.error)
-          return
-        }
-        setSavedNote('Saved.')
-        setTimeout(() => setSavedNote(null), 2000)
-      } finally {
-        setBusy(false)
+  const handleChange = useCallback(async (next: string | null) => {
+    setShortcut(next)
+    setBusy(true)
+    setError(null)
+    setSavedNote(null)
+    try {
+      const prefs = await commands.loadPreferences()
+      if (prefs.status === 'error') {
+        setError(prefs.error)
+        return
       }
-    },
-    []
-  )
+      const updated = { ...prefs.data, quick_pane_shortcut: next }
+      const save = await commands.savePreferences(updated)
+      if (save.status === 'error') {
+        setError(save.error)
+        return
+      }
+      const apply = await commands.updateQuickPaneShortcut(next)
+      if (apply.status === 'error') {
+        setError(apply.error)
+        return
+      }
+      setSavedNote('Saved.')
+      setTimeout(() => setSavedNote(null), 2000)
+    } finally {
+      setBusy(false)
+    }
+  }, [])
 
   return (
     <div className="space-y-6 p-2">
@@ -69,9 +66,9 @@ export function ShortcutPane() {
         <div>
           <Label className="text-sm font-medium">Quick capture</Label>
           <p className="text-xs text-muted-foreground">
-            Hit this from anywhere on the system to drop an idea or note
-            into Secretariat without context-switching. The capture stays
-            local — you&apos;ll review it at the next review session.
+            Hit this from anywhere on the system to drop an idea or note into
+            Secretariat without context-switching. The capture stays local —
+            you&apos;ll review it at the next review session.
           </p>
         </div>
         <div className="flex items-center gap-2 max-w-sm">

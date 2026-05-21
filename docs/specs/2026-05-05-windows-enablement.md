@@ -12,7 +12,7 @@
 is more conservative than the code. Investigation:
 
 - `BiometricGate` is already a clean trait (`crates/core/src/infrastructure/ed25519_signer.rs:18`).
-- Touch ID is just a *gate* in front of file-key signing (key lives at `~/.secretariat/key`, PKCS#8 PEM 0600). The gate has no access to the key.
+- Touch ID is just a _gate_ in front of file-key signing (key lives at `~/.secretariat/key`, PKCS#8 PEM 0600). The gate has no access to the key.
 - `pick_gate()` (`crates/core/src/infrastructure/biometric.rs:42`) dispatches by env + `cfg`. Adding a Windows gate is a one-impl extension, not an architectural change.
 - The MCP server is **built** (`crates/mcp/`, `sec-mcp` binary, `sec mcp install` wires Claude Code) — `AGENTS.md` is stale on this point.
 - `sec init` already `cfg`-gates its only macOS-specific side effect (`swiftc` for the Touch ID helper). Init on Windows compiles and runs as-is.
@@ -49,6 +49,7 @@ Goal: a `BiometricGate` impl that prompts via `Windows.Security.Credentials.UI.U
 - **MODIFY** `crates/core/src/ports/mod.rs` — add `SignerError::BiometricUnavailable`. Distinguishes "user declined / failed Hello" from "no Hello configured" — the latter is actionable (set up Hello in Windows Settings).
 
 - **MODIFY** `crates/core/src/infrastructure/mod.rs` — register module + re-export, mirroring the existing `cfg(target_os = "macos")` pattern for `touchid`:
+
   ```rust
   #[cfg(target_os = "windows")]
   pub mod windows_hello;
@@ -65,6 +66,7 @@ Goal: a `BiometricGate` impl that prompts via `Windows.Security.Credentials.UI.U
     - macOS branch + `always_allow|always_deny` debug paths unchanged.
 
 - **MODIFY** `crates/core/Cargo.toml`
+
   ```toml
   [target.'cfg(target_os = "windows")'.dependencies]
   windows = { version = "0.59", features = [
@@ -72,6 +74,7 @@ Goal: a `BiometricGate` impl that prompts via `Windows.Security.Credentials.UI.U
       "Security_Credentials_UI",
   ] }
   ```
+
   Target-gated — no change to mac/linux build.
 
 - **MODIFY** `crates/cli/src/commands/biometric.rs` — add `#[cfg(target_os = "windows")] fn require_windows_hello_available()` paralleling the existing `require_touchid_binary()`. Calls `CheckAvailabilityAsync()` once at init/verify time so failure happens at `sec init`, not on first stamp.
@@ -79,7 +82,7 @@ Goal: a `BiometricGate` impl that prompts via `Windows.Security.Credentials.UI.U
 **Tests:**
 
 - Unit: `cargo test --workspace` continues to pass on macOS (new module is `cfg`-gated out). Existing `AlwaysAllowGate` / `AlwaysDenyGate` tests remain the platform-agnostic coverage of the trait contract.
-- Windows CI integration test: smoke test under `#[cfg(target_os = "windows")]` constructs `WindowsHelloGate` and asserts `CheckAvailability` returns *some* result without panicking. Real `Verified` requires user presence — manual end-to-end step.
+- Windows CI integration test: smoke test under `#[cfg(target_os = "windows")]` constructs `WindowsHelloGate` and asserts `CheckAvailability` returns _some_ result without panicking. Real `Verified` requires user presence — manual end-to-end step.
 
 ## Workstream B — Windows release pipeline
 

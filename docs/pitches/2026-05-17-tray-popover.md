@@ -1,6 +1,7 @@
 # tray popover — primary verbs at glance, native menu as fallback
 
 Pitch — 2026-05-17. Source: principal feedback on the v0.4.3 tray:
+
 > "Right now we right-click and see Show and Quit. When we click on it
 > it just shows the page. I wonder if we shouldn't think of an
 > intermediary experience a bit like LM Studio or TomatoBar (in form,
@@ -23,7 +24,7 @@ to the three motions I make most (review, launch, surface the
 window), plus a quiet status block telling me the daemon is alive —
 so I never have to fully "open the app" just to dispatch a verb.
 
-*When*: many times a day. The tray is *the* surface I have constant
+_When_: many times a day. The tray is _the_ surface I have constant
 access to; the main window is something I open deliberately.
 Baseline today: right-click → "Show Secretariat" → window opens →
 click the Review-themia.pro button → terminal opens. That's three
@@ -42,7 +43,7 @@ menu fallback). Cuts can land slice by slice if appetite tightens
 ## Elements
 
 Four primary elements. The popover replaces the native menu's
-*left-click* behavior; right-click keeps the native menu as a fallback
+_left-click_ behavior; right-click keeps the native menu as a fallback
 (macOS convention + reliability under launcher edge cases).
 
 ### 1. NSPanel popover anchored to the tray icon
@@ -174,7 +175,7 @@ is the only persistent surface. But today's tray is a one-trick
 menu — left-click toggles the window, right-click shows two items.
 Every action requires opening the window first. The popover-as-control-
 panel pattern (TomatoBar, LM Studio, Things' menu bar) treats the
-tray as *the* surface; the window becomes the exception.
+tray as _the_ surface; the window becomes the exception.
 
 The three verbs the principal actually uses from the tray are: review,
 launch, surface. All three exist as Tauri commands already. The work

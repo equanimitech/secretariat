@@ -2,7 +2,8 @@
 name: idea
 description: Capture a raw idea — a product thought, a fleeting note, anything worth keeping. Use when the user says "/idea", "/ideas", "save this idea", "capture this", or floats a thought mid-conversation (often prefixed "idea:", "what if", or "I wonder"). Do NOT shape into a pitch — that's for /review.
 user-invocable: true
-allowed-tools: [mcp__secretariat__capture, mcp__secretariat__list_channels, Read, Bash]
+allowed-tools:
+  [mcp__secretariat__capture, mcp__secretariat__list_channels, Read, Bash]
 ---
 
 # Capturing ideas

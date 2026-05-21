@@ -6,8 +6,8 @@ envelope of my own." Dad as proxy for Christophe and beyond.
 
 ## Field feedback (Marcelo, first attempt, 2026-05-04)
 
-Direct quote from Rafa relaying dad: *"It was very clunky. He didn't know
-if it was installed or not. Didn't really make that much sense for them."*
+Direct quote from Rafa relaying dad: _"It was very clunky. He didn't know
+if it was installed or not. Didn't really make that much sense for them."_
 
 Specific signals:
 
@@ -42,22 +42,22 @@ via Sparkle (or simpler: GitHub releases polling at first; Sparkle in v0.3).
 
 ## Surface walk
 
-| #  | Step                | Today                                                     | Should be                                              | Sev |
-|----|---------------------|-----------------------------------------------------------|--------------------------------------------------------|-----|
-| 0  | Install feedback    | stderr scrolling, no clear "done" signal                  | Visible end-state: green check + next-step instruction | **L** |
-| 1  | Receive install msg | Rafa hand-writes one-liner per recipient arch             | Stable URL, arch auto-detected                         | M   |
-| 2  | Install             | `curl \| tar \| bash` in Terminal                         | One-click .pkg or `brew install equanimi/tap/sec`      | L   |
-| 3  | Restart Claude      | Manual quit + reopen, no prompt                           | Installer shows "now restart Claude" + verifies        | S   |
-| 4  | Receive invite URL  | Hand-pasted by Rafa via iMessage                          | Same (acceptable — it's a personal invitation)         | —   |
-| 5  | Claim invite        | "Ask Claude to claim this URL"                            | Same — works via `invite_claim` MCP tool, but Claude needs to confirm "you're now connected to <inviter>" | S |
-| 6  | Send DID to Rafa    | Manual copy-paste from Claude output                      | Auto-bidirectional contact (relay returns claimer DID) | L   |
-| 7  | Wait for envelope   | Silence — no notification when one arrives                | macOS push or daemon → Claude prompt                   | L   |
-| 8  | Check inbox         | `inbox_sync` MCP tool **MISSING** — only `list_inbox` exists | `inbox_sync` tool: poll relay, return new count    | L   |
-| 9  | Read envelope       | `read` MCP tool exists ✅                                  | Same                                                   | —   |
-| 10 | Compose reply       | `compose` MCP tool exists ✅                               | Same                                                   | —   |
-| 11 | Stamp reply         | `stamp` MCP tool exists, Touch ID gates                   | Same — the stamp is the principal moment, keep it      | —   |
-| 12 | Send reply          | Daemon ticks every 60min                                  | Push on stamp, or 1–5 min poll                         | L   |
-| 13 | Receive updates     | Manual: re-run install                                    | `sec self-update`, daemon checks `/healthz` weekly     | M   |
+| #   | Step                | Today                                                        | Should be                                                                                                 | Sev   |
+| --- | ------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- | ----- |
+| 0   | Install feedback    | stderr scrolling, no clear "done" signal                     | Visible end-state: green check + next-step instruction                                                    | **L** |
+| 1   | Receive install msg | Rafa hand-writes one-liner per recipient arch                | Stable URL, arch auto-detected                                                                            | M     |
+| 2   | Install             | `curl \| tar \| bash` in Terminal                            | One-click .pkg or `brew install equanimi/tap/sec`                                                         | L     |
+| 3   | Restart Claude      | Manual quit + reopen, no prompt                              | Installer shows "now restart Claude" + verifies                                                           | S     |
+| 4   | Receive invite URL  | Hand-pasted by Rafa via iMessage                             | Same (acceptable — it's a personal invitation)                                                            | —     |
+| 5   | Claim invite        | "Ask Claude to claim this URL"                               | Same — works via `invite_claim` MCP tool, but Claude needs to confirm "you're now connected to <inviter>" | S     |
+| 6   | Send DID to Rafa    | Manual copy-paste from Claude output                         | Auto-bidirectional contact (relay returns claimer DID)                                                    | L     |
+| 7   | Wait for envelope   | Silence — no notification when one arrives                   | macOS push or daemon → Claude prompt                                                                      | L     |
+| 8   | Check inbox         | `inbox_sync` MCP tool **MISSING** — only `list_inbox` exists | `inbox_sync` tool: poll relay, return new count                                                           | L     |
+| 9   | Read envelope       | `read` MCP tool exists ✅                                    | Same                                                                                                      | —     |
+| 10  | Compose reply       | `compose` MCP tool exists ✅                                 | Same                                                                                                      | —     |
+| 11  | Stamp reply         | `stamp` MCP tool exists, Touch ID gates                      | Same — the stamp is the principal moment, keep it                                                         | —     |
+| 12  | Send reply          | Daemon ticks every 60min                                     | Push on stamp, or 1–5 min poll                                                                            | L     |
+| 13  | Receive updates     | Manual: re-run install                                       | `sec self-update`, daemon checks `/healthz` weekly                                                        | M     |
 
 Severity: **L** = blocker for next attempt. **M** = ship for v0.3. **S** = keep but document.
 

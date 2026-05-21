@@ -3,13 +3,13 @@
 Raw capture — 2026-05-05.
 
 - "How do we handle AI agents being recipients too?"
-- The substrate's `Recipient::Peer(Did)` already accommodates AI agents — DIDs identify *anyone*, human or otherwise. An agent with its own ed25519 keypair has a DID; addressing it is identical to addressing Marcelo. The substrate needs no new variant.
-- What the substrate *doesn't* solve is the **authorization model**: under what circumstances can an agent act on behalf of a principal? Three sub-questions:
-  - **Identity provenance.** Does an agent's DID stand alone (the agent owns its own key, like any peer), or is it a *sub-DID* derived from a principal's (e.g. `did:key:z6Mk…/agents/marcelo-scribe`)? Stand-alone keeps the substrate uniform; sub-DID encodes the trust relationship in the identifier itself.
-  - **Delegation contract.** What document authorizes the agent to receive / send / stamp on behalf of? AGENTS.md invariant 5 says cognition is pluggable; this is the contractual form of that. Maps to the book's *Agent Contract* (Marcelo's *Autonomous Enterprise*, ch. 12) — the agent operates within an envelope of permitted actions.
+- The substrate's `Recipient::Peer(Did)` already accommodates AI agents — DIDs identify _anyone_, human or otherwise. An agent with its own ed25519 keypair has a DID; addressing it is identical to addressing Marcelo. The substrate needs no new variant.
+- What the substrate _doesn't_ solve is the **authorization model**: under what circumstances can an agent act on behalf of a principal? Three sub-questions:
+  - **Identity provenance.** Does an agent's DID stand alone (the agent owns its own key, like any peer), or is it a _sub-DID_ derived from a principal's (e.g. `did:key:z6Mk…/agents/marcelo-scribe`)? Stand-alone keeps the substrate uniform; sub-DID encodes the trust relationship in the identifier itself.
+  - **Delegation contract.** What document authorizes the agent to receive / send / stamp on behalf of? AGENTS.md invariant 5 says cognition is pluggable; this is the contractual form of that. Maps to the book's _Agent Contract_ (Marcelo's _Autonomous Enterprise_, ch. 12) — the agent operates within an envelope of permitted actions.
   - **Stamp authority.** A human's stamp = "I attested." An agent's stamp would be = "my policy attested." Same cryptographic primitive, different trust semantics. Recipients of an agent-stamped envelope need to know it's agent-stamped to weigh accordingly.
 - Two distinct uses of "AI as recipient" worth disentangling:
-  1. **Cognition-as-tool** (already supported): Claude drafts, the principal stamps. The principal is the recipient of the *thinking*, but the envelope's `Peer(Did)` still points at a human. Agent has no identity in the wire format.
+  1. **Cognition-as-tool** (already supported): Claude drafts, the principal stamps. The principal is the recipient of the _thinking_, but the envelope's `Peer(Did)` still points at a human. Agent has no identity in the wire format.
   2. **Agent-as-peer** (substrate-ready, auth-model-not): an agent has its own DID. It receives envelopes, processes them, replies. `Recipient::Peer(agent_did)` works without substrate change.
 - Adjacent flows the auth model unlocks:
   - **A↔H reply.** Agent processes an inbound and writes back. Trust: recipient knows it's agent-authored.

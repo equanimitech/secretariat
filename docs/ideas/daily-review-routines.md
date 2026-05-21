@@ -6,7 +6,7 @@ Raw capture — 2026-05-05.
 - Concrete instance of the cadenced-reviews idea (`docs/ideas/two-buttons-cadenced-reviews.md`). Schedule = "8am: review inbox" + "6pm: review outbox" (configurable per principal).
 - Three design tensions:
   1. **Notification vs ambient signal.** Equanimitech red lines forbid notifications (`equanimitech_principles.md` red lines, `feedback_review_session_model.md`). So the routine cannot pop a banner. It can only shift an ambient signal — the menubar dot color, for example.
-  2. **Compulsion vs intention.** The whole point of the review-session model is that the principal *enters* the session; if the system says "it's review time now", that flips back into the compulsive mode. Solution: the time is a *self-set* anchor, like a meditation alarm — the principal sets it for themselves, the system reflects "you said you'd do this around now," nothing more.
+  2. **Compulsion vs intention.** The whole point of the review-session model is that the principal _enters_ the session; if the system says "it's review time now", that flips back into the compulsive mode. Solution: the time is a _self-set_ anchor, like a meditation alarm — the principal sets it for themselves, the system reflects "you said you'd do this around now," nothing more.
   3. **In-app vs terminal.** Both can work. Terminal is good for power users + cron integration. In-app is more discoverable for non-developers. Given the wedge audience (Marcelo, Christophe — non-developers), in-app should be primary; terminal is the power-user surface.
 - Proposed shape:
   - **Settings → Review routines** pane (in the menubar dropdown / Settings dialog):
@@ -14,7 +14,7 @@ Raw capture — 2026-05-05.
     - "Evening review time: [picker, optional, e.g. 18:00]"
     - Default: both empty (no routines)
   - **At each configured time:**
-    - The menubar dot transitions to a distinct color (e.g. *blue* — "it's review time") regardless of queue state. Stays blue for ~30 min or until the principal opens the surface.
+    - The menubar dot transitions to a distinct color (e.g. _blue_ — "it's review time") regardless of queue state. Stays blue for ~30 min or until the principal opens the surface.
     - No notification, no popup, no sound.
     - Once the principal opens the menubar dropdown OR a review session, the dot returns to its normal state (green/amber).
   - **CLI mirror:** `sec routine set --morning 08:00 --evening 18:00`. `sec routine show`. For people who want to set it via terminal or sync via dotfiles.

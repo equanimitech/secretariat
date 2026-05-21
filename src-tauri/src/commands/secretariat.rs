@@ -13,8 +13,7 @@ use std::path::PathBuf;
 use secretariat_core::application::{
     archive_envelope as core_archive_envelope, defer_envelope as core_defer_envelope,
     list_inbox_files, list_review_queue as core_list_review_queue,
-    read_envelope as core_read_envelope, sync_now as core_sync_now,
-    SyncOutcome as CoreSyncOutcome,
+    read_envelope as core_read_envelope, sync_now as core_sync_now, SyncOutcome as CoreSyncOutcome,
 };
 use secretariat_core::domain::DisplayName;
 use secretariat_core::infrastructure::keys::{
@@ -53,8 +52,8 @@ pub async fn init_identity() -> Result<IdentityState, String> {
         .map_err(|e| format!("creating directories under {}: {e}", paths.root.display()))?;
 
     // Already initialized? Surface the existing DID.
-    if let Some(existing) = load_identity(&paths.identity_md)
-        .map_err(|e| format!("loading identity: {e}"))?
+    if let Some(existing) =
+        load_identity(&paths.identity_md).map_err(|e| format!("loading identity: {e}"))?
     {
         return Ok(IdentityState {
             did: existing.did.as_str().to_string(),
@@ -75,8 +74,12 @@ pub async fn init_identity() -> Result<IdentityState, String> {
     let key = generate_keypair();
     let did = Did::from_ed25519_public_key(&key.verifying_key().to_bytes());
 
-    save_signing_key(&paths.signing_key, &key)
-        .map_err(|e| format!("writing signing key to {}: {e}", paths.signing_key.display()))?;
+    save_signing_key(&paths.signing_key, &key).map_err(|e| {
+        format!(
+            "writing signing key to {}: {e}",
+            paths.signing_key.display()
+        )
+    })?;
 
     let now = Utc::now();
     let display_name = DisplayName::parse("Principal")
@@ -115,9 +118,7 @@ pub async fn current_identity() -> Result<Option<IdentityState>, String> {
     if !paths.signing_key.exists() {
         return Ok(None);
     }
-    match load_identity(&paths.identity_md)
-        .map_err(|e| format!("loading identity: {e}"))?
-    {
+    match load_identity(&paths.identity_md).map_err(|e| format!("loading identity: {e}"))? {
         Some(id) => Ok(Some(IdentityState {
             did: id.did.as_str().to_string(),
             created: false,
@@ -169,19 +170,21 @@ pub async fn claim_invite_url(deep_link_or_url: String) -> Result<InviteClaimRep
 
     let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
     let claimant_did = load_self_did(&paths)?;
-    let key = load_signing_key(&paths.signing_key)
-        .map_err(|e| format!("loading signing key: {e}"))?;
+    let key =
+        load_signing_key(&paths.signing_key).map_err(|e| format!("loading signing key: {e}"))?;
 
     // claim_invite is sync (uses reqwest::blocking). Call via Tauri's
     // bundled tokio so we don't block the runtime thread.
-    let result = tauri::async_runtime::spawn_blocking(move || {
-        claim_invite(&claim_url, &claimant_did, &key)
-    })
-    .await
-    .map_err(|e| format!("join error: {e}"))?
-    .map_err(|e| format!("claim failed: {e}"))?;
+    let result =
+        tauri::async_runtime::spawn_blocking(move || claim_invite(&claim_url, &claimant_did, &key))
+            .await
+            .map_err(|e| format!("join error: {e}"))?
+            .map_err(|e| format!("claim failed: {e}"))?;
 
-    log::info!("claim_invite_url succeeded; inviter = {}", result.inviter_did);
+    log::info!(
+        "claim_invite_url succeeded; inviter = {}",
+        result.inviter_did
+    );
 
     Ok(InviteClaimReport {
         inviter_did: result.inviter_did.as_str().to_string(),
@@ -294,8 +297,8 @@ pub async fn list_inbox() -> Result<Vec<EnvelopeListing>, String> {
 #[specta::specta]
 pub async fn list_review_queue() -> Result<Vec<EnvelopeListing>, String> {
     let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
-    let listed = core_list_review_queue(&paths.root)
-        .map_err(|e| format!("list_review_queue: {e}"))?;
+    let listed =
+        core_list_review_queue(&paths.root).map_err(|e| format!("list_review_queue: {e}"))?;
     Ok(listed.into_iter().map(EnvelopeListing::from).collect())
 }
 
@@ -397,8 +400,7 @@ pub async fn sync_now() -> Result<SyncReport, String> {
 pub async fn defer_inbox_envelope(file_path: String) -> Result<String, String> {
     let _paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
     let p = std::path::PathBuf::from(file_path);
-    let dest = core_defer_envelope(&p)
-        .map_err(|e| format!("defer_envelope: {e}"))?;
+    let dest = core_defer_envelope(&p).map_err(|e| format!("defer_envelope: {e}"))?;
     Ok(dest.display().to_string())
 }
 
@@ -409,8 +411,7 @@ pub async fn defer_inbox_envelope(file_path: String) -> Result<String, String> {
 pub async fn archive_inbox_envelope(file_path: String) -> Result<String, String> {
     let _paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
     let p = std::path::PathBuf::from(file_path);
-    let dest = core_archive_envelope(&p)
-        .map_err(|e| format!("archive_envelope: {e}"))?;
+    let dest = core_archive_envelope(&p).map_err(|e| format!("archive_envelope: {e}"))?;
     Ok(dest.display().to_string())
 }
 
@@ -444,8 +445,8 @@ pub async fn stamp_envelope(file_path: String) -> Result<StampReport, String> {
 
     let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
     let did = load_self_did(&paths)?;
-    let key = load_signing_key(&paths.signing_key)
-        .map_err(|e| format!("loading signing key: {e}"))?;
+    let key =
+        load_signing_key(&paths.signing_key).map_err(|e| format!("loading signing key: {e}"))?;
 
     let path = std::path::PathBuf::from(file_path);
 
@@ -457,7 +458,13 @@ pub async fn stamp_envelope(file_path: String) -> Result<StampReport, String> {
     let stamp_result = tauri::async_runtime::spawn_blocking(move || -> Result<_, String> {
         let signer = build_signer(did_for_stamp, key_for_stamp, false)
             .map_err(|e| format!("biometric gate setup: {e}"))?;
-        match stamp_document(&path_for_stamp, &signer, StampAct::Attest, false, chrono::Utc::now()) {
+        match stamp_document(
+            &path_for_stamp,
+            &signer,
+            StampAct::Attest,
+            false,
+            chrono::Utc::now(),
+        ) {
             Ok(out) => Ok(out),
             Err(StampError::AlreadyStamped) => Err("file is already stamped".to_string()),
             Err(StampError::Signer(SignerError::BiometricRefused)) => {
@@ -488,8 +495,7 @@ pub async fn stamp_envelope(file_path: String) -> Result<StampReport, String> {
     let contacts = match ContactBook::load(&paths.contacts) {
         Ok(c) => c,
         Err(e) => {
-            report.delivery_warning =
-                Some(format!("loading contacts for delivery: {e}"));
+            report.delivery_warning = Some(format!("loading contacts for delivery: {e}"));
             return Ok(report);
         }
     };
@@ -529,18 +535,17 @@ pub async fn create_invite(purpose: Option<String>) -> Result<String, String> {
 
     let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
     let did = load_self_did(&paths)?;
-    let key = load_signing_key(&paths.signing_key)
-        .map_err(|e| format!("loading signing key: {e}"))?;
+    let key =
+        load_signing_key(&paths.signing_key).map_err(|e| format!("loading signing key: {e}"))?;
 
-    let state = RelayState::load(&paths.relay_state)
-        .map_err(|e| format!("loading relay state: {e}"))?;
+    let state =
+        RelayState::load(&paths.relay_state).map_err(|e| format!("loading relay state: {e}"))?;
     let endpoint = state
         .iter()
         .find(|r| r.registered)
         .map(|r| r.endpoint.clone())
         .ok_or_else(|| {
-            "no registered relay yet. Use Settings → Transports to register first."
-                .to_string()
+            "no registered relay yet. Use Settings → Transports to register first.".to_string()
         })?;
 
     // create_invite is sync (reqwest::blocking).
@@ -587,8 +592,7 @@ pub async fn get_profile() -> Result<Option<Profile>, String> {
     use secretariat_core::infrastructure::identity_store::load_identity;
 
     let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
-    let identity = load_identity(&paths.identity_md)
-        .map_err(|e| format!("load_identity: {e}"))?;
+    let identity = load_identity(&paths.identity_md).map_err(|e| format!("load_identity: {e}"))?;
     Ok(identity.map(|id| Profile {
         display_name: id.display_name.to_string(),
     }))
@@ -606,14 +610,12 @@ pub async fn set_profile(display_name: String) -> Result<Profile, String> {
     paths
         .ensure_dirs()
         .map_err(|e| format!("creating directories: {e}"))?;
-    let parsed = DisplayName::parse(&display_name)
-        .map_err(|e| format!("invalid name: {e}"))?;
+    let parsed = DisplayName::parse(&display_name).map_err(|e| format!("invalid name: {e}"))?;
     let mut identity = load_identity(&paths.identity_md)
         .map_err(|e| format!("load_identity: {e}"))?
         .ok_or_else(|| "no identity yet — initialize first".to_string())?;
     identity.display_name = parsed.clone();
-    save_identity(&paths.identity_md, &identity)
-        .map_err(|e| format!("save_identity: {e}"))?;
+    save_identity(&paths.identity_md, &identity).map_err(|e| format!("save_identity: {e}"))?;
     Ok(Profile {
         display_name: parsed.to_string(),
     })
@@ -764,9 +766,7 @@ fn launch_macos_in(
                 .status()
                 .map_err(|e| format!("spawning `open` for Alacritty: {e}"))?;
             if !status.success() {
-                return Err(
-                    "could not open Alacritty — is it installed?".to_string(),
-                );
+                return Err("could not open Alacritty — is it installed?".to_string());
             }
             return Ok(());
         }
@@ -886,7 +886,8 @@ pub async fn review_org(
     let cwd = if alias == "_self" {
         paths.root.clone()
     } else {
-        let parsed = OrgAlias::parse(&alias).map_err(|e| format!("invalid alias `{alias}`: {e}"))?;
+        let parsed =
+            OrgAlias::parse(&alias).map_err(|e| format!("invalid alias `{alias}`: {e}"))?;
         org_dir(&paths.orgs_root, &parsed)
     };
     if !cwd.is_dir() {
@@ -1005,13 +1006,11 @@ pub async fn delete_channel(handle: String, org: Option<String>) -> Result<(), S
     let channels_root = match org.as_deref() {
         None => paths.personal_channels_root(),
         Some(s) => {
-            let alias =
-                OrgAlias::parse(s).map_err(|e| format!("invalid org alias `{s}`: {e}"))?;
+            let alias = OrgAlias::parse(s).map_err(|e| format!("invalid org alias `{s}`: {e}"))?;
             org_channels_root(&paths.orgs_root, &alias)
         }
     };
-    app_delete_channel(&channels_root, &parsed_handle)
-        .map_err(|e| format!("delete_channel: {e}"))
+    app_delete_channel(&channels_root, &parsed_handle).map_err(|e| format!("delete_channel: {e}"))
 }
 
 /// Launch Claude at the channel-dir enclosing the given path. Walks up
@@ -1019,10 +1018,7 @@ pub async fn delete_channel(handle: String, org: Option<String>) -> Result<(), S
 /// the path; then calls `launch_channel_from_pane` semantics.
 #[tauri::command]
 #[specta::specta]
-pub async fn launch_claude_at(
-    path: String,
-    terminal: Option<String>,
-) -> Result<(), String> {
+pub async fn launch_claude_at(path: String, terminal: Option<String>) -> Result<(), String> {
     let start = std::path::PathBuf::from(&path);
     let channel_dir = find_enclosing_channel_dir(&start)
         .ok_or_else(|| format!("no enclosing channel.md found for `{path}`"))?;
@@ -1051,9 +1047,7 @@ fn find_enclosing_channel_dir(start: &std::path::Path) -> Option<std::path::Path
     }
 }
 
-fn derive_org_and_handle(
-    channel_dir: &std::path::Path,
-) -> Option<(Option<String>, String)> {
+fn derive_org_and_handle(channel_dir: &std::path::Path) -> Option<(Option<String>, String)> {
     let mut segments: Vec<String> = Vec::new();
     let mut cur = channel_dir;
     loop {
@@ -1095,8 +1089,7 @@ pub async fn create_channel(
     let channels_root = match org.as_deref() {
         None => paths.personal_channels_root(),
         Some(s) => {
-            let alias =
-                OrgAlias::parse(s).map_err(|e| format!("invalid org alias `{s}`: {e}"))?;
+            let alias = OrgAlias::parse(s).map_err(|e| format!("invalid org alias `{s}`: {e}"))?;
             org_channels_root(&paths.orgs_root, &alias)
         }
     };
@@ -1152,8 +1145,7 @@ pub async fn launch_channel_from_pane(
     let channels_root = match org.as_deref() {
         None => paths.personal_channels_root(),
         Some(s) => {
-            let alias = OrgAlias::parse(s)
-                .map_err(|e| format!("invalid org alias `{s}`: {e}"))?;
+            let alias = OrgAlias::parse(s).map_err(|e| format!("invalid org alias `{s}`: {e}"))?;
             org_channels_root(&paths.orgs_root, &alias)
         }
     };
@@ -1168,9 +1160,8 @@ pub async fn launch_channel_from_pane(
     let (_p, binding) = launch_channel_with_binding(&channels_root, &parsed_handle, &base)
         .map_err(|e| format!("{e}"))?;
     let launcher = PrefsLauncher::from_prefs_with_binding(&prefs.cognition, &binding);
-    let (plan, _b) =
-        launch_channel_with_binding(&channels_root, &parsed_handle, &launcher)
-            .map_err(|e| format!("{e}"))?;
+    let (plan, _b) = launch_channel_with_binding(&channels_root, &parsed_handle, &launcher)
+        .map_err(|e| format!("{e}"))?;
 
     let mut shell = String::new();
     for (k, v) in &plan.env {
@@ -1200,8 +1191,7 @@ pub async fn quick_capture(text: String) -> Result<String, String> {
     let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
     paths.ensure_dirs().map_err(|e| format!("{e}"))?;
     let did = load_self_did(&paths)?;
-    let queue =
-        QueueHandle::parse("triage").map_err(|e| format!("invalid queue: {e}"))?;
+    let queue = QueueHandle::parse("triage").map_err(|e| format!("invalid queue: {e}"))?;
     let req = CaptureRequest {
         from: did,
         queue,
@@ -1219,8 +1209,8 @@ pub async fn quick_capture(text: String) -> Result<String, String> {
 fn load_self_did(paths: &KeyPaths) -> Result<Did, String> {
     use secretariat_core::infrastructure::identity_store::load_identity;
 
-    let identity = load_identity(&paths.identity_md)
-        .map_err(|e| format!("loading identity: {e}"))?;
+    let identity =
+        load_identity(&paths.identity_md).map_err(|e| format!("loading identity: {e}"))?;
     identity
         .map(|id| id.did)
         .ok_or_else(|| "no identity — run `sec init` first".to_string())

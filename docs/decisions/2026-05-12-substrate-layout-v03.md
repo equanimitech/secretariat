@@ -4,6 +4,7 @@
 **Status:** accepted (Rafa, 2026-05-12)
 **Supersedes:** the v0.2.x flat `~/.secretariat/{key,did,inbox/,outbox/,queues/}` layout
 **Predecessor docs:**
+
 - `docs/ideas/2026-05-12-secretariat-as-autonomous-enterprise-substrate.md`
 - `docs/ideas/2026-05-12-workspace-registry-and-repo-local-substrate.md` (deferred)
 - `docs/ideas/2026-05-12-end-state-substrate-monoslice.md` (alternative path, rejected)
@@ -89,12 +90,13 @@ cryptographically explicit rather than convention-based.
 
 ### 3. Handle derivation by DID method
 
-| DID method | Handle (= on-disk dir name) | Source |
-|---|---|---|
-| `did:web:DOMAIN` | `DOMAIN` (e.g. `rafa.equanimi.tech`) | derived from DID, no user prompt |
-| `did:key:KEY` | `slug(profile.display_name)` (e.g. `rafa`) | from profile at `sec init` |
+| DID method       | Handle (= on-disk dir name)                | Source                           |
+| ---------------- | ------------------------------------------ | -------------------------------- |
+| `did:web:DOMAIN` | `DOMAIN` (e.g. `rafa.equanimi.tech`)       | derived from DID, no user prompt |
+| `did:key:KEY`    | `slug(profile.display_name)` (e.g. `rafa`) | from profile at `sec init`       |
 
 Rejected alternatives for did:key:
+
 - Full multibase tail (`z6MkrgSFp29uMmpaB28LZx3W5RpwGFydA3LcyjjyHysSqRWa`)
   — visually noisy.
 - Truncated prefix (`z6MkrgSFp29uMmpa`) — still looks like a key.
@@ -110,11 +112,11 @@ a different slug at init time.
 
 Three role classes share a single detection rule (`key` file presence).
 
-| Top-level dir | Role | `key` file | `.identity` `role:` |
-|---|---|---|---|
-| The principal's own | passport | **yes** (0600) | `passport` |
-| Another principal (peer subscription) | peer subscription | no | `peer-subscription` |
-| An org (org subscription) | org subscription | no | `org-subscription` |
+| Top-level dir                         | Role              | `key` file     | `.identity` `role:` |
+| ------------------------------------- | ----------------- | -------------- | ------------------- |
+| The principal's own                   | passport          | **yes** (0600) | `passport`          |
+| Another principal (peer subscription) | peer subscription | no             | `peer-subscription` |
+| An org (org subscription)             | org subscription  | no             | `org-subscription`  |
 
 Contacts are NOT top-level dirs. They live in
 `<passport>/contacts.json` (cross-passport contact independence).
@@ -125,6 +127,7 @@ The layout natively accommodates N passports — each is just another
 top-level dir with its own `key`. v0.3 ships single-passport invariant
 (detection asserts exactly one `key` match). Multi-passport additions
 arrive later:
+
 - `~/.secretariat/current` — text file with active passport handle
   (UX preference only, not identity claim)
 - `sec switch <handle>` CLI
@@ -137,6 +140,7 @@ Project-local channel-tree extensions via repo-committed
 `docs/ideas/2026-05-12-workspace-registry-and-repo-local-substrate.md`.
 Slice 1 ships passport-home only. Two structural moves now to avoid
 future refactor:
+
 - Substrate root resolution takes a single root (passport home), but
   the API shape (e.g. `Substrate::resolve_channel(handle) -> Path`)
   presupposes resolution could span multiple roots later.
@@ -146,6 +150,7 @@ future refactor:
 ### 7. Customizable substrate root
 
 Default: `~/.secretariat/`. Override:
+
 - `SECRETARIAT_HOME` environment variable
 - `--home <path>` CLI flag (where applicable)
 
@@ -161,6 +166,7 @@ small blast radius.
 ## Consequences
 
 **Positive:**
+
 - Identity is provable from disk state alone (key + did cross-check).
 - One passport = one tar-able sovereignty unit.
 - Top-level taxonomy is recognizable at a glance.
@@ -170,6 +176,7 @@ small blast radius.
 - Workspaces (deferred) bolt on cleanly to this base.
 
 **Negative:**
+
 - Every existing `KeyPaths` caller updates (~15-20 sites).
 - `sec init` rewritten end-to-end.
 - v0.2.x users lose their existing inbox/outbox/queues unless they

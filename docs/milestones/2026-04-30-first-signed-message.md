@@ -15,11 +15,12 @@ $attestation:
   stampedAt: 2026-04-30T16:01:35.220898Z
   signature: ed25519:TENFy3k2MYKI1XsVDy1h9eo16U6bEKieoS1wZneH6VuMz3lHnm6O0sUXiJ9u+Kk/swaLVA4Bljd5kGVIZRQtDQ==
 ---
+
 # Secretariat — first signed message
 
 **Lede:** Day 1 of Secretariat is functionally end-to-end. This file proves it.
 
-**Why it matters:** the architectural lineage in *Autonomous Enterprise* — humans govern, machines operate (p131); bounds propagate, goals don't cascade (p67); signals, not reports (p88) — now has a working operational artifact, scoped to a single principal. The wedge is real, in code, hours after planning ended.
+**Why it matters:** the architectural lineage in _Autonomous Enterprise_ — humans govern, machines operate (p131); bounds propagate, goals don't cascade (p67); signals, not reports (p88) — now has a working operational artifact, scoped to a single principal. The wedge is real, in code, hours after planning ended.
 
 ## What works today
 
@@ -44,7 +45,7 @@ If you change a single byte of the body below this line and re-run `sec verify`,
 - Repo: `github.com/equanimitech/secretariat`
 - Plan: `~/.claude/plans/wait-you-have-a-zazzy-aurora.md`
 - Pitch: `equanimitech/docs/pitches/2026-04-30-secretariat-stamping-client-mvp.md`
-- Primer with the *Autonomous Enterprise* page-by-page mapping: `equanimitech/docs/share/2026-04-30-primer-for-marcelo.md`
+- Primer with the _Autonomous Enterprise_ page-by-page mapping: `equanimitech/docs/share/2026-04-30-primer-for-marcelo.md`
 
 ---
 

@@ -82,8 +82,7 @@ pub async fn add_relay(endpoint: String) -> Result<(), String> {
         return Err("endpoint must start with `https://` or `http://`".to_string());
     }
     let paths = key_paths()?;
-    let mut state =
-        RelayState::load(&paths.relay_state).map_err(|e| format!("loading: {e}"))?;
+    let mut state = RelayState::load(&paths.relay_state).map_err(|e| format!("loading: {e}"))?;
     state.entry_mut(trimmed); // upserts an entry if missing
     state
         .save(&paths.relay_state)
@@ -202,16 +201,14 @@ fn claude_code_status() -> IntegrationStatus {
     IntegrationStatus {
         wired,
         binary_path,
-        config_location: dirs::home_dir()
-            .map(|h| h.join(".claude.json").display().to_string()),
+        config_location: dirs::home_dir().map(|h| h.join(".claude.json").display().to_string()),
         client_detected,
     }
 }
 
 fn claude_desktop_status() -> IntegrationStatus {
-    let config_path = dirs::home_dir().map(|h| {
-        h.join("Library/Application Support/Claude/claude_desktop_config.json")
-    });
+    let config_path = dirs::home_dir()
+        .map(|h| h.join("Library/Application Support/Claude/claude_desktop_config.json"));
     let client_detected = PathBuf::from("/Applications/Claude.app").exists();
     let mut wired = false;
     let mut binary_path = None;

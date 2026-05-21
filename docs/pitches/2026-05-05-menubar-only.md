@@ -1,10 +1,11 @@
 # Menubar-only Secretariat — out of the way by default
 
 Pitch — 2026-05-05. Sources:
+
 - `docs/ideas/menubar-only-no-main-window.md`
 - `docs/ideas/quick-pane-for-message-ideas.md`
 
-**Hard dependency:** the v0.2.x onboarding wizard remains the first-launch path. The menubar-only behavior kicks in *after* onboarding completes.
+**Hard dependency:** the v0.2.x onboarding wizard remains the first-launch path. The menubar-only behavior kicks in _after_ onboarding completes.
 
 **Combined scope:** menubar tray (ambient state) + quick-pane (ambient capture). Both are summoned-only surfaces; both ride on existing template scaffolding (`tauri-nspanel` + `quick_pane.rs` are already wired but unused for Secretariat). Two halves of the same "stay out of the way" thesis.
 
@@ -36,7 +37,7 @@ Four elements, breadboarded.
   template's NSPanel scaffolding from `src-tauri/src/commands/quick_pane.rs`
   (already wired with `tauri-nspanel`, currently unused).
 - **Affordance:** the same two big buttons (Review inbox / Review outbox)
-  + counts. Plus a "Settings…" link and "Sync now" link.
+  - counts. Plus a "Settings…" link and "Sync now" link.
 - **Connection:** click Review inbox → spawn focused review window
   (placeholder for cadenced walker — copies prompt + toast for now).
   Click Settings → spawn separate Preferences window. Click Sync now →
@@ -44,7 +45,7 @@ Four elements, breadboarded.
 
 ### Place: focused review window (ephemeral)
 
-- **Place:** standalone window that opens *only* when a review session
+- **Place:** standalone window that opens _only_ when a review session
   is in progress. Currently routed by MainWindowContent; on session end
   the window closes (not just hides — closes).
 - **Affordance:** the cadenced walker (separate pitch) lives here.
@@ -96,7 +97,7 @@ Four elements, breadboarded.
   `promote_idea_to_envelope` (the last one is what Claude calls when
   the principal approves a draft from an idea).
 - **Tray badge updates on inbox arrival.** Today the daemon polls every
-  15 min in-process *inside the Tauri app*; without a window, does the
+  15 min in-process _inside the Tauri app_; without a window, does the
   app process keep running? Answer: yes — Tauri tray apps stay
   resident. The background sync loop in `lib.rs` already runs
   independent of window state. Tray reads the same state.
@@ -180,7 +181,7 @@ walker (separate pitch, future) renders inside the ephemeral
 window. Daemon, MCP, and stamp ceremony all unchanged.
 
 The bet pays off if Marcelo + Christophe can install the app and
-genuinely *forget it's there* until they choose to look — at which
+genuinely _forget it's there_ until they choose to look — at which
 point the menubar dot tells them whether to bother, and one click
 takes them straight into a focused review.
 

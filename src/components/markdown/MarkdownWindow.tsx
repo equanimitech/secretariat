@@ -28,9 +28,15 @@ interface MarkdownWindowProps {
   embedded?: boolean
 }
 
-type PendingSave = { frontmatter: Frontmatter; body: string }
+interface PendingSave {
+  frontmatter: Frontmatter
+  body: string
+}
 
-export function MarkdownWindow({ filePath, embedded = false }: MarkdownWindowProps) {
+export function MarkdownWindow({
+  filePath,
+  embedded = false,
+}: MarkdownWindowProps) {
   const [frontmatter, setFrontmatter] = useState<Frontmatter>({})
   const [body, setBody] = useState('')
   const [sha256, setSha256] = useState('')
@@ -85,7 +91,7 @@ export function MarkdownWindow({ filePath, embedded = false }: MarkdownWindowPro
 
   const title = useMemo(
     () => resolveTitle(frontmatter, body, filePath),
-    [frontmatter, body, filePath],
+    [frontmatter, body, filePath]
   )
 
   useEffect(() => {
@@ -118,7 +124,7 @@ export function MarkdownWindow({ filePath, embedded = false }: MarkdownWindowPro
       sha256Ref.current = res.data.sha256
       return true
     },
-    [filePath],
+    [filePath]
   )
 
   const scheduleSave = useCallback(
@@ -132,7 +138,7 @@ export function MarkdownWindow({ filePath, embedded = false }: MarkdownWindowPro
         if (pending) await performSave(pending)
       }, 800)
     },
-    [performSave],
+    [performSave]
   )
 
   const flushSave = useCallback(async (): Promise<boolean> => {
@@ -168,7 +174,9 @@ export function MarkdownWindow({ filePath, embedded = false }: MarkdownWindowPro
 
   if (!loaded) {
     return (
-      <div className="text-muted-foreground p-6 text-sm">Loading {filePath}…</div>
+      <div className="text-muted-foreground p-6 text-sm">
+        Loading {filePath}…
+      </div>
     )
   }
 

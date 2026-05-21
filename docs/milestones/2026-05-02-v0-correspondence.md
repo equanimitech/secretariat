@@ -5,7 +5,7 @@ Builds on: `docs/milestones/2026-04-30-first-signed-message.md` (Day 1, single-p
 
 ## Thesis
 
-Smallest demonstration that the *correspondence loop* — not just the stamp —
+Smallest demonstration that the _correspondence loop_ — not just the stamp —
 works end-to-end. Two principals, one transport (**self-hosted relay**:
 WebSocket + HTTP, run by either principal or a trusted peer), MCP-first
 surface with CLI alongside, body end-to-end encrypted, manual DID exchange.
@@ -56,7 +56,7 @@ key. Gmail sees ciphertext attachments only.
 - **Railway deployment kit** in `crates/relay/`: `Dockerfile` (multi-stage Rust build → distroless runtime) + `railway.json` (persistent volume mount, healthcheck, restart policy) + README "Deploy on Railway" button. Custom domain via Railway dashboard → CNAME → automatic TLS. Alternatives documented: Render, Hetzner/DigitalOcean VPS, self-hosted on Mac via Tailscale
 - **Relay client adapter** (`crates/core/src/infrastructure/transport/relay.rs`): implements the `Transport` trait. Connects via WebSocket (or HTTP polling fallback), registers on first use, polls inbox on cadence, POSTs outbound encrypted envelopes
 - DID document `serviceEndpoint` extension for `did:web` users — relay URL advertised in `did.json` per DID Core spec. No new lexicon needed for discovery
-- Daemon: long-running process — *cadence-respecting*, *attention-envelope-aware*, *notification-free* (see "Anti-compulsion rituals" below)
+- Daemon: long-running process — _cadence-respecting_, _attention-envelope-aware_, _notification-free_ (see "Anti-compulsion rituals" below)
 - MCP server (rmcp-based, stdio transport): `compose`, `list_outbox`, `list_inbox`, `read`, `verify`, `list_contacts`, `add_contact`. **`stamp` and `send` are deliberately not exposed** — stamp is principal-only (rule 4); send is daemon-only (auto-fires on stamped envelopes per recipient's window)
 - CLI surface: `sec contact`, `sec relay {serve,register,status}`, `sec daemon`, `sec read`, `sec stamp`
 - macOS only (relay binary cross-compiles to Linux for VPS hosting; client stays macOS-only in v0)
@@ -120,18 +120,18 @@ sec send <new-draft>
 
 ## Components to build
 
-| # | Component | Path | Estimate |
-|---|---|---|---|
-| 1 | Contact aggregate + JSON persistence + CLI | `crates/core/src/domain/contact.rs`, `crates/core/src/infrastructure/contact_store.rs`, `crates/cli/src/commands/contact.rs` | ~400 LoC |
-| 2 | x25519 conversion + sealed-box encryption | `crates/core/src/infrastructure/crypto/sealed.rs` | ~400 LoC |
-| 3 | Encrypted envelope wire format | extend `crates/core/src/infrastructure/markdown.rs`, add `EncryptedEnvelope` value object in domain | ~250 LoC |
-| 4a | Relay server crate (axum + tokio + per-tenant queue + sig verification) | new crate `crates/relay`, binary `sec-relay` | ~600 LoC |
-| 4b | Relay client adapter implementing `Transport` trait (WebSocket primary, HTTP polling fallback) | `crates/core/src/infrastructure/transport/{mod.rs,relay.rs}` + `RelayEndpoint` value object | ~400 LoC |
-| 5 | Cadence policy: attention-envelope-aware delivery + polling | `crates/core/src/application/delivery_policy.rs` | ~200 LoC |
-| 6 | Daemon loop (cadence-respecting, notification-free) | `crates/cli/src/commands/daemon.rs` | ~300 LoC |
-| 7 | MCP server (rmcp, stdio transport) | new crate `crates/mcp` exposing 7 tools listed above | ~400 LoC |
-| 8 | CLI command wiring | `crates/cli/src/commands/{contact,relay,daemon,read}.rs` | ~250 LoC |
-| 9 | Round-trip integration test (two daemons + in-process relay) | `crates/core/tests/v0_correspondence.rs` | ~300 LoC |
+| #   | Component                                                                                      | Path                                                                                                                         | Estimate |
+| --- | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | -------- |
+| 1   | Contact aggregate + JSON persistence + CLI                                                     | `crates/core/src/domain/contact.rs`, `crates/core/src/infrastructure/contact_store.rs`, `crates/cli/src/commands/contact.rs` | ~400 LoC |
+| 2   | x25519 conversion + sealed-box encryption                                                      | `crates/core/src/infrastructure/crypto/sealed.rs`                                                                            | ~400 LoC |
+| 3   | Encrypted envelope wire format                                                                 | extend `crates/core/src/infrastructure/markdown.rs`, add `EncryptedEnvelope` value object in domain                          | ~250 LoC |
+| 4a  | Relay server crate (axum + tokio + per-tenant queue + sig verification)                        | new crate `crates/relay`, binary `sec-relay`                                                                                 | ~600 LoC |
+| 4b  | Relay client adapter implementing `Transport` trait (WebSocket primary, HTTP polling fallback) | `crates/core/src/infrastructure/transport/{mod.rs,relay.rs}` + `RelayEndpoint` value object                                  | ~400 LoC |
+| 5   | Cadence policy: attention-envelope-aware delivery + polling                                    | `crates/core/src/application/delivery_policy.rs`                                                                             | ~200 LoC |
+| 6   | Daemon loop (cadence-respecting, notification-free)                                            | `crates/cli/src/commands/daemon.rs`                                                                                          | ~300 LoC |
+| 7   | MCP server (rmcp, stdio transport)                                                             | new crate `crates/mcp` exposing 7 tools listed above                                                                         | ~400 LoC |
+| 8   | CLI command wiring                                                                             | `crates/cli/src/commands/{contact,relay,daemon,read}.rs`                                                                     | ~250 LoC |
+| 9   | Round-trip integration test (two daemons + in-process relay)                                   | `crates/core/tests/v0_correspondence.rs`                                                                                     | ~300 LoC |
 
 Total: ~3.5k LoC. Roughly 2 weeks focused. Slightly larger than the email
 path because we own the relay binary too — but no provider integrations,
@@ -161,13 +161,13 @@ $attestation:
 ---
 
 $encrypted: |
-  {ephemeral_pubkey}:{nonce}:{ciphertext+tag}
-  base64-of-binary-blob, multi-line ok
+{ephemeral_pubkey}:{nonce}:{ciphertext+tag}
+base64-of-binary-blob, multi-line ok
 ```
 
 **Hash invariant change:** `docHash` is computed over the ciphertext bytes
 (after canonicalization), not the plaintext. Reason: the recipient must
-verify *what was signed* without needing to decrypt first; signature
+verify _what was signed_ without needing to decrypt first; signature
 authenticates the wire bytes. Plaintext is verified separately on
 decryption.
 
@@ -179,14 +179,14 @@ of using email at all.
 
 ## Anti-compulsion rituals
 
-Substrate must *embody* equanimity, not require self-discipline against it.
+Substrate must _embody_ equanimity, not require self-discipline against it.
 The transport must not enable behaviors the principles forbid.
 
 ### Principal-side (Secretariat substrate)
 
 - **Daemon poll cadence:** default hourly. Configurable in
   `~/.secretariat/cadence.toml`. Minimum 15 min. Honors
-  `attention-envelope.md` for both poll cadence *and* delivery windows.
+  `attention-envelope.md` for both poll cadence _and_ delivery windows.
 - **No native notifications:** no banner, badge, sound, dock bounce.
   Inbox state is latent — visible only on user request.
 - **No counts:** envelope titles surfaced; "N unread" excluded.
@@ -215,7 +215,7 @@ no other software is watching the queue. The daemon is the only reader.
 This is a structural improvement over the email path: instead of
 inventing mitigations to keep envelopes out of an INBOX that other
 software watches (filter rules, dedicated mailboxes, custom headers),
-the relay simply *isn't* an INBOX. It's a Secretariat-only queue.
+the relay simply _isn't_ an INBOX. It's a Secretariat-only queue.
 
 ## Auth strategy: DID-signed challenges, no passwords
 
@@ -239,7 +239,7 @@ the credential.
 
 ## Daemon, not agent
 
-Secretariat the substrate is *plumbing* — post office, not editor. It
+Secretariat the substrate is _plumbing_ — post office, not editor. It
 moves sealed bytes between principals according to stamped
 instructions, respects cadence, files inbound. It does not read,
 summarize, draft, or triage.
@@ -255,8 +255,8 @@ Why this separation matters:
 - BYOK / local LLM / vendor choice live in the MCP client, not us.
 - The daemon is the trust-critical path (keys, biometrics, encryption);
   smaller is safer.
-- Invariant #5 (cognition pluggable) is *satisfied by not having
-  cognition in the daemon* — the principal plugs whichever brain they
+- Invariant #5 (cognition pluggable) is _satisfied by not having
+  cognition in the daemon_ — the principal plugs whichever brain they
   want into the MCP surface.
 
 When Secretariat eventually gains cognition (autonomous triage,
@@ -265,22 +265,22 @@ schedule-aware drafting, contract counter-proposal): it goes behind a
 
 ### Process model on macOS
 
-| Phase | Process |
-|---|---|
-| v0 | macOS LaunchAgent (`~/Library/LaunchAgents/tech.equanimi.secretariat.daemon.plist`) registered by `sec daemon install`. User-session scope, Keychain access, auto-restart on crash. |
-| v0.1+ | Tauri menubar app subsumes the daemon — same process, adds UI. LaunchAgent points at the menubar binary instead of the headless one. |
+| Phase | Process                                                                                                                                                                             |
+| ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| v0    | macOS LaunchAgent (`~/Library/LaunchAgents/tech.equanimi.secretariat.daemon.plist`) registered by `sec daemon install`. User-session scope, Keychain access, auto-restart on crash. |
+| v0.1+ | Tauri menubar app subsumes the daemon — same process, adds UI. LaunchAgent points at the menubar binary instead of the headless one.                                                |
 
 ## Risk register
 
-| Risk | Severity | Mitigation |
-|---|---|---|
-| Gmail OAuth scope changes / token expiry | medium | Refresh-token loop + clear error on revoke; document re-auth flow |
-| First-contact emails land in spam | medium (v0 sidesteps — both have whitelisted each other) | DKIM/SPF on did:web domain in v0.1 |
-| Daemon crash leaves user blind to inbound | medium | Health check command (`sec daemon status`); LaunchAgent restart in v0.1 |
-| Hash-over-ciphertext means recipients can't verify *content* before decrypting | low — by design | Decryption + signature check both required; failure of either rejects envelope |
-| x25519 conversion subtleties (clamping, signature compatibility) | medium | Use `ed25519-dalek::SigningKey::to_x25519_static_secret` (or equivalent vetted lib); add property tests |
-| Gmail send rate limits | low | v0 traffic is hand-driven; revisit at scale |
-| User forgets `sec daemon start` after reboot | high (UX friction) | Document explicitly; LaunchAgent in v0.1 |
+| Risk                                                                           | Severity                                                 | Mitigation                                                                                              |
+| ------------------------------------------------------------------------------ | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| Gmail OAuth scope changes / token expiry                                       | medium                                                   | Refresh-token loop + clear error on revoke; document re-auth flow                                       |
+| First-contact emails land in spam                                              | medium (v0 sidesteps — both have whitelisted each other) | DKIM/SPF on did:web domain in v0.1                                                                      |
+| Daemon crash leaves user blind to inbound                                      | medium                                                   | Health check command (`sec daemon status`); LaunchAgent restart in v0.1                                 |
+| Hash-over-ciphertext means recipients can't verify _content_ before decrypting | low — by design                                          | Decryption + signature check both required; failure of either rejects envelope                          |
+| x25519 conversion subtleties (clamping, signature compatibility)               | medium                                                   | Use `ed25519-dalek::SigningKey::to_x25519_static_secret` (or equivalent vetted lib); add property tests |
+| Gmail send rate limits                                                         | low                                                      | v0 traffic is hand-driven; revisit at scale                                                             |
+| User forgets `sec daemon start` after reboot                                   | high (UX friction)                                       | Document explicitly; LaunchAgent in v0.1                                                                |
 
 ## Out-of-band setup (v0 only)
 
@@ -312,7 +312,7 @@ target.
 - The inbound-watcher + outbound-send pattern generalizes — adding a second
   transport is now an adapter swap, not an architecture change.
 
-## What v0 explicitly does *not* prove
+## What v0 explicitly does _not_ prove
 
 - Non-technical user UX (deferred to menubar + invitation flow phase).
 - Multi-agent compatibility (deferred to MCP phase).
@@ -346,7 +346,7 @@ working but Claude can only drive via `Bash` shelling out to `sec`
 ## Next milestones (sketched, not committed)
 
 - **v0.1 — non-technical onboarding.** Menubar stamper. Invitation lexicon
-  + claim URL handler. Static install page. Reaches Marcelo's dad.
+  - claim URL handler. Static install page. Reaches Marcelo's dad.
 - **v0.2 — agent surface.** MCP server. Claude (and any MCP client) drives
   compose/list/verify. CLI demoted to dev tool.
 - **v0.3 — bilateral contracts.** `tech.equanimi.secretariat.contract`

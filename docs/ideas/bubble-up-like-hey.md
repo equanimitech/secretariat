@@ -5,7 +5,7 @@ Raw capture — 2026-05-04.
 - Hey.com's "Bubble Up" lets the user defer a message and have it return to the top of the inbox at a chosen later time. Different from snooze (just hides until time T) — bubble-up is "show me again at T" with the original conversation context intact.
 - Fits Secretariat's review-session model better than reactive notifications. The principal isn't pulled to a buzzing message; they tell the system "remind me about this when I'm next reviewing."
 - Adjacent affordances Hey ships that might fit: Reply Later, Set Aside (longer-term staging), Imbox vs The Feed (separation of correspondence vs newsletters).
-- For Secretariat: bubble-up is the natural "I want to act on this but not now" affordance during a review session. Cheaper than pushing notifications later; pulls when *the principal* re-enters review mode.
+- For Secretariat: bubble-up is the natural "I want to act on this but not now" affordance during a review session. Cheaper than pushing notifications later; pulls when _the principal_ re-enters review mode.
 - Questions:
   - Does bubble-up work per-envelope or per-thread?
   - Where does the bubble-up state live? Local-only metadata (`~/.secretariat/inbox-state.json`) keeps it out of the wire format.

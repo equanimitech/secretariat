@@ -8,18 +8,18 @@ Secretariat today reads as "stamped peer mail tool." Substrate underneath is
 file-system-shaped (outbox dir per recipient DID, inbox dir, drafts as files).
 Stamp ceremony rides on top.
 
-Vision is *"async generative communication for professionals, stamped by
-humans"* — i.e. AI agents in pro comms without losing H2H trust. That requires
+Vision is _"async generative communication for professionals, stamped by
+humans"_ — i.e. AI agents in pro comms without losing H2H trust. That requires
 **one substrate** carrying three traffic kinds, not a stamped-mail tool with
 agent features bolted alongside.
 
 ## Three traffic kinds, one envelope primitive
 
-| Kind | Stamped? | Why |
-|---|---|---|
-| H ↔ H | yes | trust boundary crosses principals |
-| H ↔ A | no | inside principal's sovereignty zone |
-| A ↔ A | no | agents acting on principal's behalf |
+| Kind  | Stamped? | Why                                 |
+| ----- | -------- | ----------------------------------- |
+| H ↔ H | yes      | trust boundary crosses principals   |
+| H ↔ A | no       | inside principal's sovereignty zone |
+| A ↔ A | no       | agents acting on principal's behalf |
 
 If H↔A and A↔A live in a different system (Things, `docs/`, slash commands
 writing files), agents are bolted on — vision unmet. Same substrate is what
@@ -35,6 +35,7 @@ just rhetorical.
 - **Replay possible** because log is append-only
 
 Recipient is either:
+
 - a **peer DID** → stamp required (H↔H)
 - a **local queue handle** (`area:writing`, `project:secretariat`,
   `inbox:triage`) → no stamp (H↔A, A↔A)
@@ -69,7 +70,7 @@ Envelope carries lightweight `kind` tag (`idea` / `pain` / `note` / `task` /
   (Affects backup, sync, replay cost)
 - How do agents register as subscribers to a queue? Local config? MCP
   capability negotiation?
-- Stamped envelopes addressed to a *peer's queue* (not just their root DID) —
+- Stamped envelopes addressed to a _peer's queue_ (not just their root DID) —
   e.g. `did:web:marcelo.example/area:book` — does that make sense, or is
   queue-routing strictly local?
 - Cognition agents writing to A↔A queues (one agent prompting another):

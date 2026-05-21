@@ -23,9 +23,7 @@ pub struct UpdateInfo {
 #[tauri::command]
 #[specta::specta]
 pub async fn check_for_update(app: AppHandle) -> Result<Option<UpdateInfo>, String> {
-    let updater = app
-        .updater()
-        .map_err(|e| format!("updater init: {e}"))?;
+    let updater = app.updater().map_err(|e| format!("updater init: {e}"))?;
     let current_version = app.package_info().version.to_string();
     match updater.check().await {
         Ok(Some(update)) => Ok(Some(UpdateInfo {
@@ -44,9 +42,7 @@ pub async fn check_for_update(app: AppHandle) -> Result<Option<UpdateInfo>, Stri
 #[tauri::command]
 #[specta::specta]
 pub async fn install_update(app: AppHandle) -> Result<(), String> {
-    let updater = app
-        .updater()
-        .map_err(|e| format!("updater init: {e}"))?;
+    let updater = app.updater().map_err(|e| format!("updater init: {e}"))?;
     let update = updater
         .check()
         .await

@@ -49,14 +49,14 @@ slices.
 
 ## Tradeoff vs the slice-by-slice path (the recommended A path)
 
-| Dimension | Monoslice | Slice-by-slice |
-|---|---|---|
-| Time to demoable capture | ~3-5 days | ~3 hours |
-| Time to multi-principal use | ~5 days | ~3-4 weeks |
-| Refactor risk if substrate shape needs to change | Lower (changes happen in one breath, before anyone depends on it) | Higher (each slice adds dependents on the shape; revisiting hurts) |
-| Bug surface in slice 1 | Wider — workspace + agent + merging logic ships together | Tight — single concept per slice |
-| Confidence we've designed the right end-state | Lower until shipped (can't course-correct mid-slice) | Higher (each slice has a real demo and feedback before the next) |
-| Recursive validation with the book | Better (one coherent system to build the book against) | Slightly worse (the book co-authored on a half-built substrate for a few weeks) |
+| Dimension                                        | Monoslice                                                         | Slice-by-slice                                                                  |
+| ------------------------------------------------ | ----------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Time to demoable capture                         | ~3-5 days                                                         | ~3 hours                                                                        |
+| Time to multi-principal use                      | ~5 days                                                           | ~3-4 weeks                                                                      |
+| Refactor risk if substrate shape needs to change | Lower (changes happen in one breath, before anyone depends on it) | Higher (each slice adds dependents on the shape; revisiting hurts)              |
+| Bug surface in slice 1                           | Wider — workspace + agent + merging logic ships together          | Tight — single concept per slice                                                |
+| Confidence we've designed the right end-state    | Lower until shipped (can't course-correct mid-slice)              | Higher (each slice has a real demo and feedback before the next)                |
+| Recursive validation with the book               | Better (one coherent system to build the book against)            | Slightly worse (the book co-authored on a half-built substrate for a few weeks) |
 
 ---
 
@@ -79,7 +79,7 @@ mis-design surfaces immediately rather than 6 weeks later.
 
 ## When this becomes the right call
 
-Not yet. The slice-by-slice path is correct *because*:
+Not yet. The slice-by-slice path is correct _because_:
 
 - Slice 1 today validates the bare passport-home layout against a real
   capture loop. We don't yet know if `<handle>/key` detection feels

@@ -11,11 +11,11 @@ Questions are open dependencies. They land in `inbox:waiting` until a reply arri
 
 ## Scope resolution
 
-| Signal | Behavior |
-|--------|----------|
-| No addressee ("open question about X") | Capture to `inbox:waiting` — self-reminder, address later |
-| Named person ("ask Alice") | Compose envelope to that contact; copy also lands in `inbox:waiting` as tracking stub |
-| Named channel ("for the dev channel") | Compose to that channel; copy in `inbox:waiting` |
+| Signal                                 | Behavior                                                                              |
+| -------------------------------------- | ------------------------------------------------------------------------------------- |
+| No addressee ("open question about X") | Capture to `inbox:waiting` — self-reminder, address later                             |
+| Named person ("ask Alice")             | Compose envelope to that contact; copy also lands in `inbox:waiting` as tracking stub |
+| Named channel ("for the dev channel")  | Compose to that channel; copy in `inbox:waiting`                                      |
 
 ## Body shape
 
@@ -42,11 +42,12 @@ Show draft inline before writing. Wait for confirmation.
 1. **Draft** — fill the shape above with what the user provided. Ask if addressee or blocking context is missing and matters.
 2. **Capture to `inbox:waiting`** always — this is the tracking stub. Use `mcp__secretariat__capture` with `queue: inbox:waiting`, body = the formatted question, `source: question-skill`.
 3. **Compose to addressee** (if named) — `mcp__secretariat__compose` to the contact or channel. Questions are signed but NOT stamped by default — questions are informational. Stamp only if the question carries a formal commitment (e.g., a process-verbaux question that must be on record).
-4. Confirm to user: *"Question parked in inbox:waiting. [Sent to <contact> via DM / posted to channel X.]"*
+4. Confirm to user: _"Question parked in inbox:waiting. [Sent to <contact> via DM / posted to channel X.]"_
 
 ## At review time
 
 The `/review` skill processes `inbox:waiting`. A question there is closed by:
+
 - Reply arrived → link the reply envelope hash to the question stub; archive the stub
 - No reply in >14d → nudge the addressee or kill the question
 - Answer was found another way → archive with one-line resolution note

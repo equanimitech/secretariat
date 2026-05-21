@@ -46,8 +46,8 @@ desktop app).
   `src-tauri/scripts/build-sidecars.sh`, which Tauri's `beforeBuildCommand`
   runs automatically during `pnpm tauri:dev` / `pnpm tauri:build`. For a
   bare `cargo check -p secretariat` on a clean clone you must run that
-  script once first (otherwise `tauri-build` fails with *"resource path
-  `binaries/sec-<triple>` doesn't exist"*).
+  script once first (otherwise `tauri-build` fails with _"resource path
+  `binaries/sec-<triple>` doesn't exist"_).
 
 ## Hard rules
 
@@ -77,15 +77,14 @@ These are non-negotiable. They override the template's defaults where they confl
 4. **Three-layer trust model: signature mandatory, stamp selective,
    counter-stamp multi-party.** Updated 2026-05-12 for the v0.3 substrate
    shift (see `docs/ideas/2026-05-12-secretariat-as-autonomous-enterprise-substrate.md`).
-
    - **Signature** — every envelope carries a detached DID-keyed signature
      from its author (human principal or agent DID). Mandatory. Drives
-     `sec verify` provenance: *"did this come from the claimed author?"*
+     `sec verify` provenance: _"did this come from the claimed author?"_
    - **Stamp** — principal Touch-ID attestation. **Selective, not
      mandatory.** Applied to envelopes the principal elects to elevate
      (decisions, commitments, process-verbaux, external comms, contracts).
      Most envelopes — agent-drafted ambient traffic in particular —
-     flow signed-only. The stamped subset *is* the org's authoritative
+     flow signed-only. The stamped subset _is_ the org's authoritative
      decision ledger.
    - **Counter-stamp** — multi-principal stamp on the same envelope
      (m.3 process-verbaux model). Reserved for v0.4+; the design space is
@@ -95,10 +94,10 @@ These are non-negotiable. They override the template's defaults where they confl
    it didn't survive contact with AI-volume traffic, and resolving the
    tension by reducing per-stamp ceremony friction (batch-stamp Merkle
    roots) was the wrong move; the right move was to make stamping the
-   *curation act* it always wanted to be.
+   _curation act_ it always wanted to be.
 
-   **Stamp ceremony is principal-attested, not Claude-attested.** *When
-   stamping happens*, Claude *may* initiate `stamp` (via the MCP tool
+   **Stamp ceremony is principal-attested, not Claude-attested.** _When
+   stamping happens_, Claude _may_ initiate `stamp` (via the MCP tool
    or `sec stamp`) but MUST first show the principal the full decrypted
    body verbatim — code block or quoted region, never a summary — and
    obtain explicit confirmation in the same turn. Implicit consent from a
@@ -119,9 +118,9 @@ These are non-negotiable. They override the template's defaults where they confl
 
    **Receiver-side discipline:** `sec verify --json` returns layered
    results — `{signature: ok|invalid, stamp: none|ok|invalid,
-   counter_stamps: [...]}`. Recipient policy decides what they require.
-   An unstamped-but-signed envelope is *informational* (the author wrote
-   this); a stamped envelope is *authoritative* (the principal vouches
+counter_stamps: [...]}`. Recipient policy decides what they require.
+   An unstamped-but-signed envelope is _informational_ (the author wrote
+   this); a stamped envelope is _authoritative_ (the principal vouches
    for it). UI MUST surface this distinction; agents acting on received
    envelopes MUST treat signed-only ≠ stamped.
 
@@ -180,7 +179,7 @@ These are non-negotiable. They override the template's defaults where they confl
 
 ## Architectural invariants
 
-These are properties of the *system*, not rules of *behavior*. Violating
+These are properties of the _system_, not rules of _behavior_. Violating
 one means we shipped the wrong thing, not that we acted wrong. They derive
 from the sovereignty/privacy/equanimity stack and shape every adapter we add.
 
@@ -200,7 +199,7 @@ from the sovereignty/privacy/equanimity stack and shape every adapter we add.
 4. **Transports are adapters, not authorities.** Gmail, Slack, IMAP,
    iMessage, SMS, paper QR — each is a dumb pipe. The envelope body is
    end-to-end encrypted to the recipient's DID-derived encryption key
-   (ed25519 → x25519). Transports see *signed ciphertext* — never
+   (ed25519 → x25519). Transports see _signed ciphertext_ — never
    plaintext, never envelope structure beyond outermost addressing,
    never contract terms. Adding a transport must not weaken the trust
    model.
@@ -246,7 +245,7 @@ from the sovereignty/privacy/equanimity stack and shape every adapter we add.
    `~/.secretariat/`. There is no database-as-source-of-truth — optional
    read-caches (e.g. SQLite for cross-channel queries) are regenerable
    from filesystem walks and never authoritative. Each channel directory
-   is *literally* a Claude Code project, using the standard `.claude/`
+   is _literally_ a Claude Code project, using the standard `.claude/`
    convention; `cd <channel-dir> && claude` activates the full context
    for free, with `.claude/{agents,skills,commands}/` tree-walk
    inheritance from org → dept → channel-leaf. Same directory powers
@@ -292,10 +291,10 @@ the wire format, and the threat model.
 Two real downstream use cases shape the wedge:
 
 - **Rafa ↔ Marcelo (the book).** Marcelo Ballestiero is co-authoring
-  *Autonomous Enterprise* (245pp draft, April 2026); Secretariat is the
+  _Autonomous Enterprise_ (245pp draft, April 2026); Secretariat is the
   operational artifact embodying that framework's principles. Recursive
-  validation: the book *about* bounded autonomy is being co-authored
-  *using* bounded autonomy.
+  validation: the book _about_ bounded autonomy is being co-authored
+  _using_ bounded autonomy.
 - **Rafa ↔ Christophe (Themia legal briefs).** Will eventually need
   Windows support; today Mac-only.
 
@@ -337,7 +336,7 @@ When composing envelopes or shaping new primitives, defer to existing skills:
 - **`attentional-granularity`** — content structure (gross → subtle, deepening
   pathway). Drives the default content of `~/.secretariat/template.md`.
 - **`share`** — drafting shareables. The signature line `_Drafted by AI,
-  reviewed by a human._` comes from this skill.
+reviewed by a human._` comes from this skill.
 - **`behavioral-design`** — BCT/PDP analysis. Used pre-build to validate the
   ceremony surface against social-reward anti-patterns (we explicitly avoid
   BCT 10.4 — leaderboards, streaks, counts).
@@ -351,10 +350,10 @@ When composing envelopes or shaping new primitives, defer to existing skills:
 
 Two methods supported. Default is `did:key`.
 
-| Method | When to use | Hosting |
-|---|---|---|
-| **`did:key`** | New users, individuals without a domain (Marcelo, Christophe, dad) | Zero — the DID *is* the public key |
-| **`did:web`** | Users with a domain they control (Rafa) | A static `.well-known/did.json` over HTTPS |
+| Method        | When to use                                                        | Hosting                                    |
+| ------------- | ------------------------------------------------------------------ | ------------------------------------------ |
+| **`did:key`** | New users, individuals without a domain (Marcelo, Christophe, dad) | Zero — the DID _is_ the public key         |
+| **`did:web`** | Users with a domain they control (Rafa)                            | A static `.well-known/did.json` over HTTPS |
 
 `sec init` (no args) auto-derives a `did:key` from the freshly generated
 verifying key. `sec init --did did:web:rafa.equanimi.tech` opts into the

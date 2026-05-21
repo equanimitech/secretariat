@@ -3,14 +3,14 @@
 Raw capture — 2026-05-05.
 
 - "We are showing way too granular information about ids etc, it should never be shown."
-- The DID, file path, doc hash, relay assigned id — none of these are useful to the principal in the review surface or the reader. They're protocol-level. The principal cares about *who*, *what*, and *what it says*.
+- The DID, file path, doc hash, relay assigned id — none of these are useful to the principal in the review surface or the reader. They're protocol-level. The principal cares about _who_, _what_, and _what it says_.
 - Move all of that to: tooltip on the avatar, or a "Provenance" disclosure inside settings/details, or a copy-button that fetches on demand. Never on the primary surface.
 - Adjacent angle: the user's wondering whether to incorporate affordances from other communication media:
   - **Threads** (Slack/Discord/iMessage) — group related envelopes
   - **Tagging** (Linear/Notion) — non-hierarchical organization
   - **Replying to specific parts** (Google Docs comments / Hypothesis annotations) — quote-and-respond
   - **Commenting** (Github PR review comments) — inline marginalia, eventual resolve
-- The vision is "AI-native professional messaging" (`docs/ideas/ai-native-professional-messaging.md`). What makes it AI-native is that the affordances above can all be *generated* by the scribe rather than wholly handcrafted by the principal:
+- The vision is "AI-native professional messaging" (`docs/ideas/ai-native-professional-messaging.md`). What makes it AI-native is that the affordances above can all be _generated_ by the scribe rather than wholly handcrafted by the principal:
   - Threads: scribe groups envelopes by topic/recipient/temporal context automatically; principal renames or merges
   - Tags: scribe proposes tags from envelope content; principal approves or rejects (BCT 4.1 Instruction; PDP Suggestion)
   - Reply-to-part: principal selects a passage in the reader; scribe drafts a response in context

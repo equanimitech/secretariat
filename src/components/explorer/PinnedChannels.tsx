@@ -9,7 +9,10 @@ import {
 } from '@/components/ui/context-menu'
 import { pinnedStore, type PinnedEntry } from './pinnedStore'
 import { activeChannelStore } from './activeChannel'
-import { OPEN_CHANNEL_EVENT, type OpenChannelRequest } from '@/components/layout/LeftSideBar'
+import {
+  OPEN_CHANNEL_EVENT,
+  type OpenChannelRequest,
+} from '@/components/layout/LeftSideBar'
 
 interface PinnedChannelsProps {
   unreadByPath: Record<string, number>
@@ -24,14 +27,22 @@ interface PinnedChannelsProps {
  * either — keep the surface quiet by default).
  */
 export function PinnedChannels({ unreadByPath }: PinnedChannelsProps) {
-  const [entries, setEntries] = useState<PinnedEntry[]>(() => pinnedStore.list())
+  const [entries, setEntries] = useState<PinnedEntry[]>(() =>
+    pinnedStore.list()
+  )
   const [activePath, setActivePath] = useState<string | null>(() =>
     activeChannelStore.get()
   )
 
-  useEffect(() => pinnedStore.subscribe(() => setEntries(pinnedStore.list())), [])
   useEffect(
-    () => activeChannelStore.subscribe(() => setActivePath(activeChannelStore.get())),
+    () => pinnedStore.subscribe(() => setEntries(pinnedStore.list())),
+    []
+  )
+  useEffect(
+    () =>
+      activeChannelStore.subscribe(() =>
+        setActivePath(activeChannelStore.get())
+      ),
     []
   )
 

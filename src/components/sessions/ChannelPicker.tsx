@@ -18,11 +18,13 @@ interface ChannelPickerProps {
   onPick: (channel: LaunchableChannel) => void
 }
 
-type Mode =
-  | { kind: 'list' }
-  | { kind: 'create' }
+type Mode = { kind: 'list' } | { kind: 'create' }
 
-export function ChannelPicker({ open, onOpenChange, onPick }: ChannelPickerProps) {
+export function ChannelPicker({
+  open,
+  onOpenChange,
+  onPick,
+}: ChannelPickerProps) {
   const [channels, setChannels] = useState<LaunchableChannel[] | null>(null)
   const [query, setQuery] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -30,6 +32,9 @@ export function ChannelPicker({ open, onOpenChange, onPick }: ChannelPickerProps
 
   useEffect(() => {
     if (!open) return
+    // Picker open → reset dialog state and fetch channel list via Tauri IPC.
+    // No external store; the open-state transition IS the trigger.
+    /* eslint-disable react-hooks/set-state-in-effect */
     setQuery('')
     setError(null)
     setMode({ kind: 'list' })
@@ -38,6 +43,7 @@ export function ChannelPicker({ open, onOpenChange, onPick }: ChannelPickerProps
       if (res.status === 'ok') setChannels(res.data)
       else setError(res.error)
     })
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [open])
 
   const filtered = (channels ?? []).filter(c => {
@@ -90,7 +96,8 @@ export function ChannelPicker({ open, onOpenChange, onPick }: ChannelPickerProps
                   }}
                 >
                   <span className="font-medium">
-                    {c.org ? `${c.org} / ` : ''}{c.name || c.handle}
+                    {c.org ? `${c.org} / ` : ''}
+                    {c.name || c.handle}
                   </span>
                   <span className="font-mono text-[10px] text-muted-foreground">
                     {c.handle}
@@ -204,13 +211,17 @@ function CreateChannelForm({
         )}
         <div className="flex items-center justify-between">
           <span className="text-[10px] text-muted-foreground">
-            Lives in <span className="font-mono">~/.secretariat/_self/channels/</span>
+            Lives in{' '}
+            <span className="font-mono">~/.secretariat/_self/channels/</span>
           </span>
           <div className="flex gap-2">
             <Button variant="ghost" onClick={onCancel} disabled={busy}>
               Cancel
             </Button>
-            <Button onClick={() => void submit()} disabled={busy || !handle.trim()}>
+            <Button
+              onClick={() => void submit()}
+              disabled={busy || !handle.trim()}
+            >
               {busy ? 'Creating…' : 'Create + open'}
             </Button>
           </div>
