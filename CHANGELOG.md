@@ -4,7 +4,43 @@ All notable changes to Secretariat are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased](https://github.com/equanimitech/secretariat/compare/v0.8.1...HEAD)
+## [Unreleased](https://github.com/equanimitech/secretariat/compare/v0.9.0...HEAD)
+
+## [0.9.0](https://github.com/equanimitech/secretariat/compare/v0.8.1...v0.9.0) — 2026-05-21
+
+### Added
+
+* Explorer sidebar: channel-only filter by default; bottom toggle reveals raw filesystem.
+
+* Right-click rename across the explorer tree, backed by a `rename_path` Tauri command.
+
+* Nested unread counts per channel (and aggregating on parent folders), persisted in `localStorage`; opening a channel marks descendants read.
+
+* Drag-and-drop channels onto another channel/folder via a new `move_path` Tauri command; rejects cross-org moves, cycles, duplicate basenames, and non-channel targets.
+
+* Pinning: right-click → Pin/Unpin; pinned channels surface in a top-of-sidebar strip with org-prefixed labels; shortcut, not relocation.
+
+* Super-channels: every channel — leaf or super — opens a timeline tab. Super-channels aggregate envelopes from every descendant queue. No special "folder channel" primitive; channels are channels, just nested.
+
+* Envelope timeline previews render markdown (headings, lists, emphasis, inline code); 3-line clamp.
+
+* Lexicon: optional `title` / `lede` / `summary` fields on `tech.equanimi.secretariat.envelope` per attentional-granularity (gross → subtle deepening pathway). Backwards-compatible.
+
+* Persistent slim envelope footer hosting the stamp surface — `Stamp` action when unstamped, `Stamped by <name>` pill with popover (stamper, timestamp, sig short-hash, doc-hash) when stamped. Iterates a stamps array so counter-stamps (v0.4+) drop in additively.
+
+* Assistant terminal preference (WezTerm and Alacritty alongside Terminal.app, iTerm2, Ghostty, Claude Desktop); reaches both Launch-Claude call sites (channel header + explorer menu).
+
+### Changed
+
+* Launch-Claude moved from envelope toolbar to channel header — channel-dir is the activation surface, not the envelope.
+
+* Frontmatter panel: `$`-prefixed protocol blocks (`$envelope`, `$attestation`) collapse to labeled cards with key facts; click expands read-only JSON. Other keys remain editable.
+
+* Unread visualization adopts a calm signal: bold label + muted-gray pill, no red, no notification color; active channel never bolds and never shows a badge.
+
+### Fixed
+
+* macOS fullscreen now drops the hardcoded rounded corners and hides the custom traffic-light buttons; observes `onResized` so the geometry assumptions in the custom-titlebar setup no longer leak in fullscreen.
 
 ## [0.8.1](https://github.com/equanimitech/secretariat/compare/v0.7.2...v0.8.1) — 2026-05-21
 
