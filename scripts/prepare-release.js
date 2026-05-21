@@ -1,8 +1,50 @@
 #!/usr/bin/env node
 
 import fs from 'fs'
+import path from 'path'
 import { execSync } from 'child_process'
 import readline from 'readline'
+
+// Every file whose version string must match the release tag.
+// Adding a new versioned manifest? Add it here — the post-bump assertion
+// below will refuse to release if any one of these drifts from the target.
+const VERSION_FILES = [
+  { path: 'package.json', kind: 'json', key: 'version' },
+  { path: 'src-tauri/tauri.conf.json', kind: 'json', key: 'version' },
+  { path: 'src-tauri/Cargo.toml', kind: 'toml-package' },
+  { path: 'crates/core/Cargo.toml', kind: 'toml-package' },
+  { path: 'crates/cli/Cargo.toml', kind: 'toml-package' },
+  { path: 'crates/daemon/Cargo.toml', kind: 'toml-package' },
+  { path: 'crates/mcp/Cargo.toml', kind: 'toml-package' },
+  { path: 'crates/relay/Cargo.toml', kind: 'toml-package' },
+]
+
+// Match the [package] block's `version = "..."` line, anchored at the
+// start of the file or after a newline so it can't drift into a [dependencies]
+// sub-table whose entries also use `version = "..."`.
+const PKG_VERSION_RE = /(^|\n)(\[package\][\s\S]*?\nversion = ")([^"]+)(")/
+
+function readVersion(file) {
+  const raw = fs.readFileSync(file.path, 'utf8')
+  if (file.kind === 'json') return JSON.parse(raw)[file.key]
+  const m = raw.match(PKG_VERSION_RE)
+  return m ? m[3] : null
+}
+
+function writeVersion(file, version) {
+  const raw = fs.readFileSync(file.path, 'utf8')
+  if (file.kind === 'json') {
+    const obj = JSON.parse(raw)
+    obj[file.key] = version
+    fs.writeFileSync(file.path, JSON.stringify(obj, null, 2) + '\n')
+    return
+  }
+  const updated = raw.replace(PKG_VERSION_RE, `$1$2${version}$4`)
+  if (updated === raw) {
+    throw new Error(`No [package] version found in ${file.path}`)
+  }
+  fs.writeFileSync(file.path, updated)
+}
 
 function exec(command, options = {}) {
   try {
@@ -35,7 +77,7 @@ async function prepareRelease() {
 
   if (!version || !version.match(/^v?\d+\.\d+\.\d+$/)) {
     console.error('❌ Usage: node scripts/prepare-release.js v1.0.0')
-    console.error('   or: npm run prepare-release v1.0.0')
+    console.error('   or: pnpm prepare-release v1.0.0')
     process.exit(1)
   }
 
@@ -63,43 +105,39 @@ async function prepareRelease() {
     exec('npm run check:all')
     console.log('✅ All checks passed')
 
-    // Update package.json
-    console.log('\n📝 Updating package.json...')
-    const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'))
-    const oldPkgVersion = pkg.version
-    pkg.version = cleanVersion
-    fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n')
-    console.log(`   ${oldPkgVersion} → ${cleanVersion}`)
+    // Bump every versioned manifest in lockstep.
+    console.log('\n📝 Bumping version across all manifests...')
+    for (const file of VERSION_FILES) {
+      const before = readVersion(file)
+      writeVersion(file, cleanVersion)
+      console.log(`   ${file.path.padEnd(38)} ${before} → ${cleanVersion}`)
+    }
 
-    // Update Cargo.toml
-    console.log('📝 Updating Cargo.toml...')
-    const cargoPath = 'src-tauri/Cargo.toml'
-    const cargoToml = fs.readFileSync(cargoPath, 'utf8')
-    const oldCargoVersion = cargoToml.match(/version = "([^"]*)"/)
-    const updatedCargo = cargoToml.replace(
-      /version = "[^"]*"/,
-      `version = "${cleanVersion}"`
-    )
-    fs.writeFileSync(cargoPath, updatedCargo)
-    console.log(
-      `   ${oldCargoVersion ? oldCargoVersion[1] : 'unknown'} → ${cleanVersion}`
+    // Post-bump assertion: every manifest reports the target version.
+    // This is the guard that would have caught the v0.9.0 incident where
+    // tauri.conf.json drifted while everything else bumped.
+    console.log('\n🔒 Verifying version consistency...')
+    const mismatches = []
+    for (const file of VERSION_FILES) {
+      const v = readVersion(file)
+      if (v !== cleanVersion) mismatches.push(`${file.path}: ${v}`)
+    }
+    if (mismatches.length) {
+      console.error('❌ Version mismatch after bump:')
+      for (const m of mismatches) console.error(`   ${m}`)
+      process.exit(1)
+    }
+    console.log(`✅ All ${VERSION_FILES.length} manifests at ${cleanVersion}`)
+
+    // Hold the tauri config in scope for the bundle/updater warnings below.
+    const tauriConfig = JSON.parse(
+      fs.readFileSync('src-tauri/tauri.conf.json', 'utf8')
     )
 
-    // Update tauri.conf.json
-    console.log('📝 Updating tauri.conf.json...')
-    const tauriConfigPath = 'src-tauri/tauri.conf.json'
-    const tauriConfig = JSON.parse(fs.readFileSync(tauriConfigPath, 'utf8'))
-    const oldTauriVersion = tauriConfig.version
-    tauriConfig.version = cleanVersion
-    fs.writeFileSync(
-      tauriConfigPath,
-      JSON.stringify(tauriConfig, null, 2) + '\n'
-    )
-    console.log(`   ${oldTauriVersion} → ${cleanVersion}`)
-
-    // Run npm install to update lock files
+    // Refresh pnpm lockfile so it pins the new version. Cargo.lock will
+    // be refreshed by the cargo check step below.
     console.log('\n📦 Updating lock files...')
-    exec('npm install', { silent: true })
+    exec('pnpm install', { silent: true })
     console.log('✅ Lock files updated')
 
     // Verify configurations
@@ -119,9 +157,10 @@ async function prepareRelease() {
       console.log('✅ Updater public key configured')
     }
 
-    // Final check that Rust code compiles
+    // Final compile check — also refreshes Cargo.lock to pin the new
+    // workspace versions so the tag commit includes lockfile updates.
     console.log('\n🔍 Running final compilation check...')
-    exec('source ~/.cargo/env && cd src-tauri && cargo check')
+    exec('source ~/.cargo/env && cargo check --workspace')
     console.log('✅ Rust compilation check passed')
 
     console.log(`\n🎉 Successfully prepared release ${tagVersion}!`)

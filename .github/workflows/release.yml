@@ -26,6 +26,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Mirror of the guard in tauri-release.yml. Refuse to ship a CLI
+      # tarball whose embedded crate versions disagree with the tag.
+      - name: Verify version consistency vs tag
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          TAG="${REF_NAME#v}"
+          CLI=$(grep -m1 '^version' crates/cli/Cargo.toml | cut -d'"' -f2)
+          CORE=$(grep -m1 '^version' crates/core/Cargo.toml | cut -d'"' -f2)
+          MCP=$(grep -m1 '^version' crates/mcp/Cargo.toml | cut -d'"' -f2)
+          echo "tag=$TAG cli=$CLI core=$CORE mcp=$MCP"
+          for v in "$CLI" "$CORE" "$MCP"; do
+            if [ "$v" != "$TAG" ]; then
+              echo "::error::Version mismatch — manifests disagree with tag $TAG"
+              exit 1
+            fi
+          done
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:

@@ -61,6 +61,33 @@ jobs:
         with:
           node-version: 20
 
+      # Hard gate. Catches the v0.9.0 incident class: bumped some
+      # manifests, forgot tauri.conf.json → DMG + updater shipped under
+      # the OLD version. Refuse the build if any manifest disagrees
+      # with the pushed tag.
+      - name: Verify version consistency vs tag
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          TAG="${REF_NAME#v}"
+          PKG=$(node -p "require('./package.json').version")
+          TAURI=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          CORE=$(grep -m1 '^version' crates/core/Cargo.toml | cut -d'"' -f2)
+          CLI=$(grep -m1 '^version' crates/cli/Cargo.toml | cut -d'"' -f2)
+          DAEMON=$(grep -m1 '^version' crates/daemon/Cargo.toml | cut -d'"' -f2)
+          MCP=$(grep -m1 '^version' crates/mcp/Cargo.toml | cut -d'"' -f2)
+          RELAY=$(grep -m1 '^version' crates/relay/Cargo.toml | cut -d'"' -f2)
+          TAURI_CARGO=$(grep -m1 '^version' src-tauri/Cargo.toml | cut -d'"' -f2)
+          echo "tag=$TAG pkg=$PKG tauri.conf=$TAURI tauri.cargo=$TAURI_CARGO core=$CORE cli=$CLI daemon=$DAEMON mcp=$MCP relay=$RELAY"
+          fail=0
+          for v in "$PKG" "$TAURI" "$TAURI_CARGO" "$CORE" "$CLI" "$DAEMON" "$MCP" "$RELAY"; do
+            if [ "$v" != "$TAG" ]; then fail=1; fi
+          done
+          if [ "$fail" -ne 0 ]; then
+            echo "::error::Version mismatch — at least one manifest disagrees with tag $TAG"
+            exit 1
+          fi
+
       - name: Install pnpm
         uses: pnpm/action-setup@v2
         with:
