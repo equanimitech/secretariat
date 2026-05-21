@@ -6,6 +6,10 @@ All notable changes to Secretariat are recorded here. Format follows
 
 ## [Unreleased](https://github.com/equanimitech/secretariat/compare/v0.10.2...HEAD)
 
+### Added
+
+- Markdown editor "Reload from disk" — toolbar button (refresh icon) and `⌘R` / `Ctrl+R` shortcut in the markdown reader/editor window. Re-fetches the file, refreshes the SHA-256 conflict guard, and remounts the Crepe editor so the rehydrated body actually renders (Crepe only reads `defaultValue` at mount, so a controlled-prop update wouldn't have worked). When there are unsaved edits the debounced autosave hasn't flushed yet, a VS Code–style confirm dialog offers Save & reload / Discard & reload / Cancel; when clean, the reload is silent with a toast. The shortcut listener uses capture-phase so the editor can't swallow `⌘R`, and `preventDefault` blocks the webview's default reload.
+
 ## [0.10.2](https://github.com/equanimitech/secretariat/compare/v0.10.1...v0.10.2) — 2026-05-21
 
 ### Fixed

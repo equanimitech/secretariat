@@ -4,6 +4,7 @@ import {
   FolderOpen,
   MoreHorizontal,
   PanelRight,
+  RefreshCw,
 } from 'lucide-react'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import { toast } from 'sonner'
@@ -22,6 +23,8 @@ interface MarkdownTitlebarProps {
   title: string
   saving: boolean
   filePath: string
+  onReload: () => void
+  reloading: boolean
 }
 
 // NOTE: "Launch Claude" used to live in this toolbar. It is a
@@ -32,6 +35,8 @@ export function MarkdownTitlebar({
   title,
   saving,
   filePath,
+  onReload,
+  reloading,
 }: MarkdownTitlebarProps) {
   const { toggleSidebar } = useSidebar()
 
@@ -78,6 +83,19 @@ export function MarkdownTitlebar({
         )}
       </div>
       <div className="flex items-center gap-1">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onReload}
+          disabled={reloading}
+          title="Reload from disk (⌘R)"
+          aria-label="Reload from disk"
+        >
+          <RefreshCw
+            size={14}
+            className={reloading ? 'animate-spin' : undefined}
+          />
+        </Button>
         <Button
           variant="ghost"
           size="sm"

@@ -2,6 +2,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { buttonVariants } from '@/components/ui/button'
+import {
   Sidebar,
   SidebarContent,
   SidebarHeader,
@@ -44,6 +55,9 @@ export function MarkdownWindow({
   const [saving, setSaving] = useState(false)
   const [stamping, setStamping] = useState(false)
   const [loaded, setLoaded] = useState(false)
+  // CrepeEditor consumes `initialValue` only at mount. Bumping this key
+  // remounts it with the freshly-loaded body when we reload from disk.
+  const [editorKey, setEditorKey] = useState(0)
   const [selfDid, setSelfDid] = useState<string | null>(null)
   const [selfDisplayName, setSelfDisplayName] = useState<string | null>(null)
   const saveTimer = useRef<number | null>(null)
@@ -153,6 +167,68 @@ export function MarkdownWindow({
     return performSave(pending)
   }, [performSave])
 
+  // Reload-from-disk. VS Code semantics: silent when clean, prompt
+  // (Save / Discard / Cancel) when there are pending unsaved edits the
+  // debounced autosave hasn't flushed yet.
+  const [reloadDialogOpen, setReloadDialogOpen] = useState(false)
+  const [reloading, setReloading] = useState(false)
+
+  const hasUnsavedEdits = useCallback(
+    () => pendingSave.current !== null || saveTimer.current !== null,
+    []
+  )
+
+  const doReload = useCallback(async () => {
+    setReloading(true)
+    const ok = await loadFromDisk()
+    setReloading(false)
+    if (!ok) return
+    setEditorKey(k => k + 1)
+    toast.success('Reloaded from disk')
+  }, [loadFromDisk])
+
+  const requestReload = useCallback(() => {
+    if (hasUnsavedEdits()) {
+      setReloadDialogOpen(true)
+      return
+    }
+    void doReload()
+  }, [hasUnsavedEdits, doReload])
+
+  const onSaveAndReload = useCallback(async () => {
+    setReloadDialogOpen(false)
+    const flushed = await flushSave()
+    if (!flushed) return
+    await doReload()
+  }, [flushSave, doReload])
+
+  const onDiscardAndReload = useCallback(async () => {
+    setReloadDialogOpen(false)
+    if (saveTimer.current) {
+      window.clearTimeout(saveTimer.current)
+      saveTimer.current = null
+    }
+    pendingSave.current = null
+    await doReload()
+  }, [doReload])
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        !e.shiftKey &&
+        !e.altKey &&
+        e.key === 'r'
+      ) {
+        e.preventDefault()
+        requestReload()
+      }
+    }
+    window.addEventListener('keydown', handler, { capture: true })
+    return () =>
+      window.removeEventListener('keydown', handler, { capture: true })
+  }, [requestReload])
+
   const onStamp = useCallback(async () => {
     setStamping(true)
     // The body the principal saw in the editor MUST be the body that gets
@@ -193,11 +269,18 @@ export function MarkdownWindow({
         )}
       >
         {!embedded && (
-          <MarkdownTitlebar title={title} saving={saving} filePath={filePath} />
+          <MarkdownTitlebar
+            title={title}
+            saving={saving}
+            filePath={filePath}
+            onReload={requestReload}
+            reloading={reloading}
+          />
         )}
         <div className="flex-1 overflow-y-auto">
           <main>
             <CrepeEditor
+              key={editorKey}
               initialValue={body}
               onChange={next => {
                 setBody(next)
@@ -231,6 +314,33 @@ export function MarkdownWindow({
           />
         </SidebarContent>
       </Sidebar>
+      <AlertDialog
+        open={reloadDialogOpen}
+        onOpenChange={setReloadDialogOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reload from disk?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This file has unsaved edits that haven&apos;t been written yet.
+              Discarding will replace the editor contents with the version
+              on disk.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className={buttonVariants({ variant: 'destructive' })}
+              onClick={onDiscardAndReload}
+            >
+              Discard &amp; reload
+            </AlertDialogAction>
+            <AlertDialogAction onClick={onSaveAndReload}>
+              Save &amp; reload
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </SidebarProvider>
   )
 }
