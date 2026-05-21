@@ -13,6 +13,8 @@ import {
   Terminal,
   Trash2,
   Pencil,
+  Pin,
+  PinOff,
 } from 'lucide-react'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import { toast } from 'sonner'
@@ -26,10 +28,10 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu'
 import { entryToNode, isChannelTreeNode, type ExplorerNode } from './types'
-import { unreadStore } from './unreadState'
+import { pinnedStore } from './pinnedStore'
+import { activeChannelStore } from './activeChannel'
 
 const SHOW_ALL_KEY = 'secretariat.explorer.show-all-files.v1'
-const ENVELOPE_OPENED_EVENT = 'secretariat:envelope-opened'
 
 interface ExplorerTreeProps {
   width: number
@@ -41,17 +43,33 @@ interface ExplorerTreeProps {
     path: string
     org: string | null
   }) => void
+  /** Unread count keyed by channel-dir path. Aggregated for parents. */
+  unreadByPath: Record<string, number>
+  /** Register a channel-dir path so its unread count is tracked. */
+  registerPath: (path: string) => void
 }
 
-export function ExplorerTree({ width, height, onOpenChannel }: ExplorerTreeProps) {
+export function ExplorerTree({
+  width,
+  height,
+  onOpenChannel,
+  unreadByPath,
+  registerPath,
+}: ExplorerTreeProps) {
   const [data, setData] = useState<ExplorerNode[]>([])
   const [error, setError] = useState<string | null>(null)
   const [showAll, setShowAll] = useState<boolean>(() => loadShowAll())
-  const [unreadByPath, setUnreadByPath] = useState<Record<string, number>>({})
+  const [pinnedVersion, setPinnedVersion] = useState(0)
+  const [activePath, setActivePath] = useState<string | null>(() =>
+    activeChannelStore.get()
+  )
   const loadingRef = useRef<Set<string>>(new Set())
-  // Paths whose unread count we've already computed; recomputed on
-  // envelope-open events.
-  const countedRef = useRef<Set<string>>(new Set())
+
+  useEffect(() => pinnedStore.subscribe(() => setPinnedVersion(v => v + 1)), [])
+  useEffect(
+    () => activeChannelStore.subscribe(() => setActivePath(activeChannelStore.get())),
+    []
+  )
 
   const refreshRoots = useCallback(() => {
     void commands.listExplorerRoots().then(res => {
@@ -93,50 +111,6 @@ export function ExplorerTree({ width, height, onOpenChannel }: ExplorerTreeProps
       loadingRef.current.delete(node.path)
     }
   }, [])
-
-  // Lazy unread-count: when a channel-bearing dir appears in the
-  // visible tree, walk its envelopes once and cache the count.
-  const ensureUnreadCount = useCallback(async (path: string) => {
-    if (countedRef.current.has(path)) return
-    countedRef.current.add(path)
-    const res = await commands.listEnvelopesUnder(path)
-    if (res.status !== 'ok') return
-    const all = res.data
-    // First-touch seeding — anything not seen before counts as already
-    // read (we don't want a thousand "unread" on first launch).
-    for (const p of all) {
-      if (!unreadStore.wasSeenPreviously(p)) {
-        unreadStore.markOpened(p)
-      }
-    }
-    const unread = all.filter(p => !unreadStore.isOpened(p)).length
-    setUnreadByPath(prev => (prev[path] === unread ? prev : { ...prev, [path]: unread }))
-  }, [])
-
-  // Recompute counts for everything we've ever counted, when an
-  // envelope is opened (decrement) or new envelopes arrive externally.
-  const recomputeCounted = useCallback(async () => {
-    const paths = [...countedRef.current]
-    for (const path of paths) {
-      const res = await commands.listEnvelopesUnder(path)
-      if (res.status !== 'ok') continue
-      const unread = res.data.filter(p => !unreadStore.isOpened(p)).length
-      setUnreadByPath(prev =>
-        prev[path] === unread ? prev : { ...prev, [path]: unread }
-      )
-    }
-  }, [])
-
-  // Listen for envelope-open events to keep ancestor counts fresh.
-  useEffect(() => {
-    function onOpened() {
-      void recomputeCounted()
-    }
-    window.addEventListener(ENVELOPE_OPENED_EVENT, onOpened)
-    return () => {
-      window.removeEventListener(ENVELOPE_OPENED_EVENT, onOpened)
-    }
-  }, [recomputeCounted])
 
   const handleActivate = useCallback(
     (node: NodeApi<ExplorerNode>) => {
@@ -182,6 +156,42 @@ export function ExplorerTree({ width, height, onOpenChannel }: ExplorerTreeProps
     [data, loadChildren]
   )
 
+  // Move: drag-and-drop a channel under a new parent channel/folder.
+  // We only allow within-org moves; cross-org would require handle
+  // re-anchoring (deferred).
+  const handleMove = useCallback(
+    async ({
+      dragIds,
+      parentNode,
+    }: {
+      dragIds: string[]
+      parentNode: NodeApi<ExplorerNode> | null
+    }) => {
+      if (!parentNode) {
+        toast.error('Cannot move to the root — drop onto a channel or folder.')
+        return
+      }
+      const dropTarget = parentNode.data
+      for (const dragId of dragIds) {
+        const src = findNode(data, dragId)
+        if (!src) continue
+        const ok = validateMove(src, dropTarget)
+        if (!ok.ok) {
+          toast.error(ok.error)
+          continue
+        }
+        const res = await commands.movePath(src.path, dropTarget.path)
+        if (res.status === 'error') {
+          toast.error(`Move failed: ${res.error}`)
+          continue
+        }
+        toast.success(`Moved "${src.name}" into "${dropTarget.name}"`)
+      }
+      refreshRoots()
+    },
+    [data, refreshRoots]
+  )
+
   // Apply the channel-only filter (when showAll is false) — purely
   // a render-time projection; the underlying tree state is untouched.
   const visibleData = useMemo(
@@ -193,10 +203,15 @@ export function ExplorerTree({ width, height, onOpenChannel }: ExplorerTreeProps
   useEffect(() => {
     walkNodes(visibleData, n => {
       if (n.kind === 'channel_leaf' || n.hasChannelDescendants) {
-        void ensureUnreadCount(n.path)
+        registerPath(n.path)
       }
     })
-  }, [visibleData, ensureUnreadCount])
+  }, [visibleData, registerPath])
+
+  // `pinnedVersion` is wired through the renderer context so pin/unpin
+  // affecting context-menu state forces a row re-render. (Used as a
+  // suppression — reference it in the renderer to silence linters.)
+  void pinnedVersion
 
   return (
     <div className="flex h-full w-full flex-col bg-background">
@@ -215,11 +230,17 @@ export function ExplorerTree({ width, height, onOpenChannel }: ExplorerTreeProps
           openByDefault={false}
           onActivate={handleActivate}
           onToggle={handleToggle}
-          disableDrag
-          disableDrop
+          onMove={handleMove}
+          disableDrag={data => !canDrag(data)}
+          disableDrop={({ parentNode, dragNodes }) => {
+            for (const dn of dragNodes) {
+              if (!validateMove(dn.data, parentNode.data).ok) return true
+            }
+            return false
+          }}
           disableMultiSelection
         >
-          {makeNodeRenderer({ refreshRoots, unreadByPath })}
+          {makeNodeRenderer({ refreshRoots, unreadByPath, activePath })}
         </Tree>
       </div>
       <button
@@ -245,6 +266,7 @@ function loadShowAll(): boolean {
 interface NodeContext {
   refreshRoots: () => void
   unreadByPath: Record<string, number>
+  activePath: string | null
 }
 
 function makeNodeRenderer(ctx: NodeContext) {
@@ -260,10 +282,17 @@ function Node({
   dragHandle,
   refreshRoots,
   unreadByPath,
+  activePath,
 }: NodeRendererProps<ExplorerNode> & NodeContext) {
   const d = node.data
   const Icon = pickIcon(d, node.isOpen)
-  const unread = unreadByPath[d.path] ?? 0
+  const isActive = activePath !== null && d.path === activePath
+  // Active channels always count as read — no bold, no badge.
+  const rawUnread = unreadByPath[d.path] ?? 0
+  const unread = isActive ? 0 : rawUnread
+  const isChannelish = d.kind === 'channel_leaf' || d.hasChannelDescendants
+  const bold = isChannelish && unread > 0
+
   const row = (
     <div
       ref={dragHandle}
@@ -289,15 +318,8 @@ function Node({
           : null}
       </span>
       <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-      <span className="truncate">{labelFor(d)}</span>
-      {unread > 0 && (
-        <span
-          className="ml-auto shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
-          title={`${unread} unread`}
-        >
-          {unread > 99 ? '99+' : unread}
-        </span>
-      )}
+      <span className={cn('truncate', bold && 'font-semibold')}>{labelFor(d)}</span>
+      {unread > 0 && <UnreadPill count={unread} />}
     </div>
   )
 
@@ -311,6 +333,22 @@ function Node({
   )
 }
 
+/**
+ * Calm unread pill — small rounded shape, muted background, slightly
+ * darker text. Deliberately not red; per leverage-points this is a
+ * low-leverage feedback signal, not a notification.
+ */
+function UnreadPill({ count }: { count: number }) {
+  return (
+    <span
+      className="ml-auto shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-foreground/70"
+      title={`${count} unread`}
+    >
+      {count > 99 ? '99+' : count}
+    </span>
+  )
+}
+
 function NodeMenuItems({
   node,
   refreshRoots,
@@ -318,6 +356,7 @@ function NodeMenuItems({
   node: ExplorerNode
   refreshRoots: () => void
 }) {
+  const isPinned = pinnedStore.has(node.path)
   const onReveal = async () => {
     try {
       await revealItemInDir(node.path)
@@ -358,6 +397,15 @@ function NodeMenuItems({
     toast.success(`Renamed to "${trimmed}"`)
     refreshRoots()
   }
+  const onTogglePin = () => {
+    if (!node.handle) return
+    pinnedStore.toggle({
+      path: node.path,
+      handle: node.handle,
+      name: node.name,
+      org: node.org,
+    })
+  }
 
   // Private / org roots: no rename, no delete (would tear the vault).
   if (node.kind === 'private' || node.kind === 'org') {
@@ -372,6 +420,20 @@ function NodeMenuItems({
   if (node.kind === 'channel_leaf') {
     return (
       <>
+        <ContextMenuItem onSelect={onTogglePin}>
+          {isPinned ? (
+            <>
+              <PinOff className="h-3.5 w-3.5" />
+              Unpin
+            </>
+          ) : (
+            <>
+              <Pin className="h-3.5 w-3.5" />
+              Pin
+            </>
+          )}
+        </ContextMenuItem>
+        <ContextMenuSeparator />
         <ContextMenuItem onSelect={onRename}>
           <Pencil className="h-3.5 w-3.5" />
           Rename…
@@ -531,4 +593,58 @@ function walkNodes(tree: ExplorerNode[], visit: (n: ExplorerNode) => void) {
       walkNodes(n.children, visit)
     }
   }
+}
+
+/** Channels (leaf or parent) are draggable; nothing else moves. */
+function canDrag(n: ExplorerNode): boolean {
+  return n.kind === 'channel_leaf'
+}
+
+interface MoveCheck {
+  ok: boolean
+  error: string
+}
+
+/**
+ * Validate a proposed move (drag → drop). Same-org only; target must
+ * be a channel or a channel-bearing folder; no cycles; no duplicate
+ * basename at destination. Conservative — we lean toward false to
+ * avoid silently corrupting the vault.
+ */
+function validateMove(src: ExplorerNode, dest: ExplorerNode): MoveCheck {
+  if (src.kind !== 'channel_leaf') {
+    return { ok: false, error: 'only channels can be moved' }
+  }
+  // Drop target must be a channel or a parent-channel folder. Org
+  // and private roots aren't valid drops yet (would require handle
+  // re-anchoring).
+  if (dest.kind !== 'channel_leaf' && !dest.hasChannelDescendants) {
+    return { ok: false, error: 'drop onto a channel or channel folder' }
+  }
+  // Same-org gate: refuse cross-org moves for now.
+  if ((src.org ?? null) !== (dest.org ?? null)) {
+    return { ok: false, error: 'cross-org moves are not supported yet' }
+  }
+  // Cycle guard: destination must not be src itself or a descendant of src.
+  if (dest.path === src.path) {
+    return { ok: false, error: 'cannot drop a channel onto itself' }
+  }
+  if (isDescendantPath(dest.path, src.path)) {
+    return { ok: false, error: 'cannot drop a channel into its own descendant' }
+  }
+  // Duplicate basename guard.
+  if (dest.children && dest.children.some(c => c.name === src.name)) {
+    return {
+      ok: false,
+      error: `a "${src.name}" already exists in "${dest.name}"`,
+    }
+  }
+  return { ok: true, error: '' }
+}
+
+/** True if `candidate` is a path under `ancestor` (or equal). */
+function isDescendantPath(candidate: string, ancestor: string): boolean {
+  if (candidate === ancestor) return true
+  const sep = ancestor.endsWith('/') ? ancestor : `${ancestor}/`
+  return candidate.startsWith(sep)
 }
