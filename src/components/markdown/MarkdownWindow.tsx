@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Stamp } from 'lucide-react'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
-import { Button } from '@/components/ui/button'
 import {
   Sidebar,
   SidebarContent,
@@ -18,6 +16,7 @@ import {
 } from '@/lib/markdown/parse'
 import { resolveTitle } from '@/lib/markdown/title'
 import { CrepeEditor } from './CrepeEditor'
+import { EnvelopeFooter } from './EnvelopeFooter'
 import { FrontmatterPanel } from './FrontmatterPanel'
 import { MarkdownTitlebar } from './MarkdownTitlebar'
 
@@ -38,6 +37,8 @@ export function MarkdownWindow({ filePath, embedded = false }: MarkdownWindowPro
   const [saving, setSaving] = useState(false)
   const [stamping, setStamping] = useState(false)
   const [loaded, setLoaded] = useState(false)
+  const [selfDid, setSelfDid] = useState<string | null>(null)
+  const [selfDisplayName, setSelfDisplayName] = useState<string | null>(null)
   const saveTimer = useRef<number | null>(null)
   const pendingSave = useRef<PendingSave | null>(null)
   // sha256 is captured into a ref so flushSave can await the latest value
@@ -67,6 +68,20 @@ export function MarkdownWindow({ filePath, embedded = false }: MarkdownWindowPro
       if (ok) setLoaded(true)
     })()
   }, [filePath, loadFromDisk])
+
+  // Identity + profile feed the "Stamped by <you|name>" pill label.
+  // Both are static for the lifetime of the window — load once.
+  useEffect(() => {
+    void (async () => {
+      const [ident, prof] = await Promise.all([
+        commands.currentIdentity(),
+        commands.getProfile(),
+      ])
+      if (ident.status === 'ok' && ident.data) setSelfDid(ident.data.did)
+      if (prof.status === 'ok' && prof.data)
+        setSelfDisplayName(prof.data.display_name)
+    })()
+  }, [])
 
   const title = useMemo(
     () => resolveTitle(frontmatter, body, filePath),
@@ -171,13 +186,15 @@ export function MarkdownWindow({ filePath, embedded = false }: MarkdownWindowPro
               }}
             />
           </main>
-          <footer className="border-border flex justify-center border-t px-6 py-8">
-            <Button size="lg" onClick={onStamp} disabled={stamping || saving}>
-              <Stamp size={16} className="mr-2" />
-              {stamping ? 'Stamping…' : 'Stamp this envelope'}
-            </Button>
-          </footer>
         </div>
+        <EnvelopeFooter
+          frontmatter={frontmatter}
+          selfDid={selfDid}
+          selfDisplayName={selfDisplayName}
+          stamping={stamping}
+          saving={saving}
+          onStamp={onStamp}
+        />
       </SidebarInset>
       <Sidebar side="right" collapsible="offcanvas">
         <SidebarHeader>

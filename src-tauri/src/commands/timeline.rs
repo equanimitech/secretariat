@@ -27,10 +27,22 @@ pub struct EnvelopePreview {
     /// preview).
     pub encrypted: bool,
     /// First few lines of the body, plain text. Empty for encrypted
-    /// envelopes.
+    /// envelopes. The frontend renders this as markdown when the
+    /// envelope has no sender-declared `lede`.
     pub preview: String,
     /// Filename basename — useful as a card title when no headline.
     pub filename: String,
+    /// Sender-declared AG headline (envelope.title). Optional.
+    /// Renderers SHOULD use this as the card title in timelines when
+    /// present; otherwise fall back to first heading / filename.
+    pub title: Option<String>,
+    /// Sender-declared AG one-liner (envelope.lede). Optional.
+    /// Renderers SHOULD use this as the preview line in compact
+    /// timeline rows when present, in lieu of `preview` (body slice).
+    pub lede: Option<String>,
+    /// Sender-declared AG multi-sentence summary (envelope.summary).
+    /// Optional. Surfaced in expanded views, not compact rows.
+    pub summary: Option<String>,
 }
 
 const PREVIEW_LINES: usize = 3;
@@ -83,6 +95,9 @@ pub async fn read_channel_envelopes(
                 encrypted: env.encrypted,
                 preview,
                 filename,
+                title: env.title,
+                lede: env.lede,
+                summary: env.summary,
             }
         })
         .collect())

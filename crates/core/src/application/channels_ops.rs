@@ -95,6 +95,13 @@ pub struct ChannelEnvelope {
     /// performed (we leave decryption to a future slice that wires the
     /// key — for self-owned channel captures the body is plaintext).
     pub body: String,
+    /// Optional AG headline declared by the sender (envelope.title).
+    pub title: Option<String>,
+    /// Optional AG one-liner declared by the sender (envelope.lede).
+    pub lede: Option<String>,
+    /// Optional AG multi-sentence summary declared by the sender
+    /// (envelope.summary).
+    pub summary: Option<String>,
 }
 
 /// Walk `<channels_root>/` and emit one `ChannelSummary` per dir that
@@ -256,13 +263,16 @@ fn read_one(path: &Path) -> Result<ChannelEnvelope, ChannelOpError> {
         path: path.to_path_buf(),
         source,
     })?;
-    let (from, source, encrypted) = match &parsed.envelope {
+    let (from, source, encrypted, title, lede, summary) = match &parsed.envelope {
         Some(e) => (
             Some(e.from.as_str().to_string()),
             e.source.clone(),
             e.is_encrypted(),
+            e.title.clone(),
+            e.lede.clone(),
+            e.summary.clone(),
         ),
-        None => (None, String::new(), false),
+        None => (None, String::new(), false, None, None, None),
     };
     Ok(ChannelEnvelope {
         file_path: path.display().to_string(),
@@ -272,6 +282,9 @@ fn read_one(path: &Path) -> Result<ChannelEnvelope, ChannelOpError> {
         stamped: parsed.stamp.is_some(),
         encrypted,
         body: parsed.body,
+        title,
+        lede,
+        summary,
     })
 }
 

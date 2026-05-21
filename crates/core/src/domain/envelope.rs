@@ -90,6 +90,17 @@ pub struct Envelope {
     /// thread). Orphan replies (parent not yet seen) are valid; the
     /// substrate does not enforce parent reachability.
     pub reply_to: Option<DocHash>,
+    /// Optional AG-shape headline (gross surface). Author-populated in
+    /// v0.3; future slices may have the scribe auto-summarize.
+    /// Renderers SHOULD use this as the card title in timelines.
+    pub title: Option<String>,
+    /// Optional AG-shape one-line summary (subtle layer). Author-populated
+    /// in v0.3. Renderers SHOULD prefer this over slicing the body in
+    /// compact timeline rows.
+    pub lede: Option<String>,
+    /// Optional multi-sentence abstract (deepening pathway). Author-populated
+    /// in v0.3. Renderers MAY surface this in expanded card / detail views.
+    pub summary: Option<String>,
 }
 
 impl Envelope {
@@ -132,6 +143,12 @@ struct EnvelopeWire {
     encryption: Option<EncryptionScheme>,
     #[serde(rename = "replyTo", default, skip_serializing_if = "Option::is_none")]
     reply_to: Option<DocHash>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    lede: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    summary: Option<String>,
 }
 
 impl Serialize for Envelope {
@@ -148,6 +165,9 @@ impl Serialize for Envelope {
             cadence_hint: self.cadence_hint.clone(),
             encryption: self.encryption,
             reply_to: self.reply_to.clone(),
+            title: self.title.clone(),
+            lede: self.lede.clone(),
+            summary: self.summary.clone(),
         }
         .serialize(s)
     }
@@ -183,6 +203,9 @@ impl<'de> Deserialize<'de> for Envelope {
             cadence_hint: w.cadence_hint,
             encryption: w.encryption,
             reply_to: w.reply_to,
+            title: w.title,
+            lede: w.lede,
+            summary: w.summary,
         })
     }
 }
@@ -204,6 +227,9 @@ pub struct EnvelopeBuilder {
     cadence_hint: Option<String>,
     encryption: Option<EncryptionScheme>,
     reply_to: Option<DocHash>,
+    title: Option<String>,
+    lede: Option<String>,
+    summary: Option<String>,
 }
 
 impl EnvelopeBuilder {
@@ -217,6 +243,9 @@ impl EnvelopeBuilder {
             cadence_hint: None,
             encryption: None,
             reply_to: None,
+            title: None,
+            lede: None,
+            summary: None,
         }
     }
 
@@ -250,6 +279,21 @@ impl EnvelopeBuilder {
         self
     }
 
+    pub fn title(mut self, t: impl Into<String>) -> Self {
+        self.title = Some(t.into());
+        self
+    }
+
+    pub fn lede(mut self, l: impl Into<String>) -> Self {
+        self.lede = Some(l.into());
+        self
+    }
+
+    pub fn summary(mut self, s: impl Into<String>) -> Self {
+        self.summary = Some(s.into());
+        self
+    }
+
     pub fn build(self) -> Envelope {
         Envelope {
             from: self.from,
@@ -260,6 +304,9 @@ impl EnvelopeBuilder {
             cadence_hint: self.cadence_hint,
             encryption: self.encryption,
             reply_to: self.reply_to,
+            title: self.title,
+            lede: self.lede,
+            summary: self.summary,
         }
     }
 }

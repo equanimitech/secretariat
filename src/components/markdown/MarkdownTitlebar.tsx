@@ -1,9 +1,7 @@
-import { FolderOpen, PanelRight, Terminal } from 'lucide-react'
+import { FolderOpen, PanelRight } from 'lucide-react'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
-import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { useSidebar } from '@/components/ui/sidebar'
-import { commands } from '@/lib/bindings'
 
 interface MarkdownTitlebarProps {
   title: string
@@ -11,6 +9,10 @@ interface MarkdownTitlebarProps {
   filePath: string
 }
 
+// NOTE: "Launch Claude" used to live in this toolbar. It is a
+// channel-level action (it `cd`s into the channel root, not the
+// envelope file), so it now lives in the channel header — see
+// `ChannelTimeline.tsx`.
 export function MarkdownTitlebar({
   title,
   saving,
@@ -23,13 +25,6 @@ export function MarkdownTitlebar({
       await revealItemInDir(filePath)
     } catch (err) {
       console.warn('revealItemInDir failed', err)
-    }
-  }
-
-  const onLaunchClaude = async () => {
-    const res = await commands.launchClaudeAt(filePath, null)
-    if (res.status === 'error') {
-      toast.error(`Launch Claude failed: ${res.error}`)
     }
   }
 
@@ -50,14 +45,6 @@ export function MarkdownTitlebar({
         )}
       </div>
       <div className="flex items-center gap-1">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onLaunchClaude}
-          title="Launch Claude in this channel"
-        >
-          <Terminal size={14} />
-        </Button>
         <Button
           variant="ghost"
           size="sm"

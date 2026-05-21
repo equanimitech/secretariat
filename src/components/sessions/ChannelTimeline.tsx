@@ -1,10 +1,16 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Check, Lock, Hash } from 'lucide-react'
+import { Check, Lock, Hash, Terminal } from 'lucide-react'
+import { toast } from 'sonner'
 import { commands, type EnvelopePreview } from '@/lib/bindings'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { unreadStore } from '@/components/explorer/unreadState'
+import { renderPreviewMarkdown } from '@/lib/markdown/preview-render'
+import { usePreferences } from '@/services/preferences'
 import { OPEN_MARKDOWN_EVENT, type OpenMarkdownRequest } from './SessionTabs'
 import type { ChannelTab } from './types'
+
+const ENVELOPE_OPENED_EVENT = 'secretariat:envelope-opened'
 
 interface ChannelTimelineProps {
   tab: ChannelTab
@@ -13,6 +19,7 @@ interface ChannelTimelineProps {
 export function ChannelTimeline({ tab }: ChannelTimelineProps) {
   const [envelopes, setEnvelopes] = useState<EnvelopePreview[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const { data: preferences } = usePreferences()
 
   const refresh = useCallback(async () => {
     setError(null)
@@ -26,11 +33,28 @@ export function ChannelTimeline({ tab }: ChannelTimelineProps) {
   }, [refresh])
 
   const openEnvelope = useCallback((env: EnvelopePreview) => {
+    unreadStore.markOpened(env.file_path)
+    window.dispatchEvent(new CustomEvent(ENVELOPE_OPENED_EVENT))
     const detail: OpenMarkdownRequest = { path: env.file_path, name: env.filename }
     window.dispatchEvent(
       new CustomEvent(OPEN_MARKDOWN_EVENT, { detail })
     )
   }, [])
+
+  // Launch Claude is a *channel-level* action — it opens the cognition
+  // substrate with cwd set to this channel's root, not the envelope's
+  // file. Hence it lives in the channel header, not the envelope
+  // toolbar. See AGENTS.md notes + Hard Rule #8 (channel-dir IS the
+  // activation surface).
+  const onLaunchClaude = useCallback(async () => {
+    const res = await commands.launchClaudeAt(
+      tab.channelPath,
+      preferences?.assistant_terminal ?? null
+    )
+    if (res.status === 'error') {
+      toast.error(`Launch Claude failed: ${res.error}`)
+    }
+  }, [tab.channelPath, preferences])
 
   return (
     <div className="flex h-full w-full flex-col">
@@ -44,9 +68,19 @@ export function ChannelTimeline({ tab }: ChannelTimelineProps) {
             {tab.channelPath}
           </span>
         </div>
-        <Button variant="ghost" size="sm" onClick={() => void refresh()}>
-          Refresh
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => void onLaunchClaude()}
+            title="Launch Claude in this channel"
+          >
+            <Terminal className="h-3.5 w-3.5" />
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => void refresh()}>
+            Refresh
+          </Button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-3">
@@ -87,6 +121,12 @@ function EnvelopeCard({
   onOpen: () => void
 }) {
   const when = env.at ? formatWhen(env.at) : 'unknown time'
+  // AG-shape preference: sender-declared `title` wins over body slice
+  // for the headline; `lede` wins over body slice for the one-liner.
+  // When neither is present we render the markdown preview from Rust
+  // (first ~3 lines of the body).
+  const title = env.title?.trim() ? env.title.trim() : null
+  const lede = env.lede?.trim() ? env.lede.trim() : null
   return (
     <li>
       <button
@@ -109,13 +149,20 @@ function EnvelopeCard({
             <span>{when}</span>
           </div>
         </div>
-        <div className="whitespace-pre-wrap text-sm text-foreground">
+        {title && (
+          <div className="text-sm font-semibold text-foreground">{title}</div>
+        )}
+        <div className="line-clamp-3 text-sm text-foreground">
           {env.encrypted ? (
             <span className="italic text-muted-foreground">
               [sealed — open to decrypt]
             </span>
+          ) : lede ? (
+            <span className="text-foreground/90">{lede}</span>
           ) : env.preview ? (
-            env.preview
+            <div className="flex flex-col gap-0.5">
+              {renderPreviewMarkdown(env.preview, { maxLines: 3 })}
+            </div>
           ) : (
             <span className="italic text-muted-foreground">[empty]</span>
           )}
