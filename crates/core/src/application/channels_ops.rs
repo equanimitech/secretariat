@@ -219,30 +219,36 @@ fn parse_timestamp_from_filename(path: &Path) -> Option<DateTime<Utc>> {
     Some(Utc.from_utc_datetime(&naive))
 }
 
-/// Resolve the on-disk envelopes directory for a channel handle.
-fn channel_envelopes_dir(channels_root: &Path, handle: &QueueHandle) -> PathBuf {
+/// Resolve the on-disk segment directory for a channel handle (parent
+/// of the channel's `envelopes/` subdir; also the parent of any nested
+/// subchannel dirs for super-channels).
+fn channel_segment_dir(channels_root: &Path, handle: &QueueHandle) -> PathBuf {
     let mut dir = channels_root.to_path_buf();
     for seg in handle.segments() {
         dir.push(seg);
     }
-    dir.push("envelopes");
     dir
 }
 
 /// Read the `limit` most-recent envelopes from a channel, newest-first.
+/// Super-channel behavior: aggregates envelopes from every descendant
+/// `envelopes/` directory beneath the channel's segment dir, so opening
+/// a parent channel surfaces traffic from all subchannels. Leaf channels
+/// (no subchannels) collapse to reading their own `envelopes/` only.
 /// Returns an empty vec if the channel exists but has no envelopes;
-/// returns `ChannelNotFound` if the on-disk envelopes/ dir is absent.
+/// returns `ChannelNotFound` if the on-disk segment dir is absent.
 pub fn read_channel(
     channels_root: &Path,
     handle: &QueueHandle,
     limit: usize,
 ) -> Result<Vec<ChannelEnvelope>, ChannelOpError> {
-    let envelopes_dir = channel_envelopes_dir(channels_root, handle);
-    if !envelopes_dir.exists() {
+    let segment_dir = channel_segment_dir(channels_root, handle);
+    if !segment_dir.exists() {
         return Err(ChannelOpError::ChannelNotFound(handle.as_str().to_string()));
     }
 
-    let mut files = walk_md_files(&envelopes_dir)?;
+    let mut files = Vec::new();
+    collect_envelope_files(&segment_dir, false, &mut files)?;
     // Sort newest-first by parsed timestamp; unparseable sort last.
     files.sort_by_key(|p| std::cmp::Reverse(parse_timestamp_from_filename(p)));
     files.truncate(limit);
@@ -252,6 +258,31 @@ pub fn read_channel(
         out.push(read_one(&path)?);
     }
     Ok(out)
+}
+
+/// Walk from a channel segment dir, collecting `.md` files whose path
+/// crosses an `envelopes/` directory. Non-envelope siblings (channel.md,
+/// contract.local.md, template.md, .claude/, etc.) are skipped.
+fn collect_envelope_files(
+    dir: &Path,
+    in_envelopes: bool,
+    out: &mut Vec<PathBuf>,
+) -> Result<(), ChannelOpError> {
+    for entry in read_dir(dir)? {
+        let entry = entry.map_err(|e| ChannelOpError::Io {
+            path: dir.to_path_buf(),
+            source: e,
+        })?;
+        let path = entry.path();
+        let name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+        if path.is_dir() {
+            let next = in_envelopes || name == "envelopes";
+            collect_envelope_files(&path, next, out)?;
+        } else if in_envelopes && path.extension().and_then(|x| x.to_str()) == Some("md") {
+            out.push(path);
+        }
+    }
+    Ok(())
 }
 
 fn read_one(path: &Path) -> Result<ChannelEnvelope, ChannelOpError> {

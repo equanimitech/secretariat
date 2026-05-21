@@ -116,12 +116,10 @@ export function ExplorerTree({
     (node: NodeApi<ExplorerNode>) => {
       const d = node.data
       if (d.kind === 'channel_leaf' && d.handle) {
-        // Parent channels (those with channel-subdirs) behave as
-        // folders only — expand/collapse, never open a tab.
-        if (d.hasChannelDescendants) {
-          node.toggle()
-          return
-        }
+        // Channels open a timeline tab — including super-channels (those
+        // with subchannel descendants), which aggregate envelopes from
+        // every descendant queue. Expansion toggle is handled by the
+        // tree's own chevron control.
         onOpenChannel({
           handle: d.handle,
           name: d.name,
@@ -494,13 +492,10 @@ function pickIcon(d: ExplorerNode, isOpen: boolean) {
     case 'org':
       return Building2
     case 'channel_leaf':
-      // Parent channels (those with channel-subdirs) read as folders
-      // in the tree — only true leaves get the channel-hash icon.
-      return d.hasChannelDescendants
-        ? isOpen
-          ? FolderOpen
-          : Folder
-        : Hash
+      // Every channel — leaf or super — gets the channel-hash icon.
+      // The chevron expander signals "has subchannels" structurally.
+      void isOpen
+      return Hash
     case 'dir':
       return isOpen ? FolderOpen : Folder
     case 'file':
