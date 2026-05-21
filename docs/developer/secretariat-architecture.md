@@ -1,8 +1,9 @@
 # Secretariat — architecture
 
-This document describes the system as it exists today (v0.3 — channels,
-orgs, MCP-primary). It is the orientation read for Claude and for any
-developer landing on the repo. For the _why_ behind v0.3, see
+This document describes the system as it exists today — channels, orgs,
+MCP-primary. It is the orientation read for Claude and for any developer
+landing on the repo. For shipping state see `CHANGELOG.md`; for the _why_
+behind the current substrate, see
 [`../ideas/2026-05-12-secretariat-as-autonomous-enterprise-substrate.md`](../ideas/2026-05-12-secretariat-as-autonomous-enterprise-substrate.md);
 for the substrate layout decision, see
 [`../decisions/2026-05-12-substrate-layout-v03.md`](../decisions/2026-05-12-substrate-layout-v03.md).
@@ -26,8 +27,9 @@ Three trust layers, composed over two records (envelope + stamp):
    subset is the org's authoritative ledger, the unstamped remainder
    is ambient context.
 3. **Counter-stamp** — multi-principal stamp on the same envelope
-   (process-verbaux model). **Reserved** for v0.4+; design space defined
-   in the lexicon, no record type ships in v0.3.
+   (process-verbaux model). **Reserved.** Design space defined in the
+   lexicon; no record type ships yet — Themia's annual AG is the
+   concrete driver.
 
 Composition layered on top:
 
@@ -63,8 +65,8 @@ secretariat/
 ├── lexicons/                     AT-proto-shaped record schemas (truth)
 └── docs/
     ├── developer/                ← you are here
-    ├── decisions/                ADRs (v0.3 substrate layout, etc.)
-    ├── ideas/                    raw captures (incl. the v0.3 pivot)
+    ├── decisions/                ADRs (substrate layout, etc.)
+    ├── ideas/                    raw captures
     ├── pitches/                  Shape Up pitches for in-flight work
     └── milestones/               historical milestones
 ```
@@ -88,7 +90,7 @@ crates/core::domain         ──▶ codec (multibase only)
 parameters or ports. The architectural guardrail keeps domain testable
 as pure logic and makes illegal states unrepresentable at construction.
 
-## Filesystem layout (passport-rooted, v0.3)
+## Filesystem layout (passport-rooted)
 
 Each principal-controlled identity is a **passport** — a self-contained
 subtree under `~/.secretariat/` (override via `SECRETARIAT_HOME`).
@@ -152,7 +154,7 @@ only ever saw signed ciphertext.
 - **`DocHash`** — sha256 over canonical body. Serializes `sha256:<hex>`.
 - **`Signature`** — detached ed25519. Serializes `ed25519:<base64>`.
 - **`StampAct`** — `Attest | Defer | Vouch | Dispute | Redirect`. Only
-  `Attest` ships in v0.3; others reserved in the lexicon.
+  `Attest` ships today; others reserved in the lexicon.
 - **`EnvelopeDepth`** — `Gross | Subtle`.
 - **`EnvelopeUrgency`** — `Now | Soon | Whenever`.
 - **`QueueHandle`** — `inbox:<seg>[:<seg>...]` |
@@ -242,7 +244,8 @@ only ever saw signed ciphertext.
 ### Persistence (`*_store.rs`)
 
 - **`Substrate`** (formerly `KeyPaths`) — substrate root resolution;
-  ready for multi-passport API even though v0.3 enforces single.
+  ready for multi-passport API even though the substrate currently
+  enforces single.
 - **`ProfileStore`, `ContactStore`, `OrgStore`, `ChannelDefStore`,
   `ContractStore`, `QueueDir`** — filesystem-backed stores. Each is the
   read+write boundary for one aggregate.
@@ -446,9 +449,9 @@ is _authoritative_ (the principal vouches). UI surfaces this
 distinction; agents acting on received envelopes MUST treat
 signed-only ≠ stamped.
 
-Counter-stamps are designed in the lexicon but no record type ships in
-v0.3 — deferred until concrete driver (Themia's annual `assemblee_generale`
-process-verbaux).
+Counter-stamps are designed in the lexicon but no record type ships
+yet — deferred until concrete driver (Themia's annual
+`assemblee_generale` process-verbaux).
 
 ## Threat model
 
@@ -490,17 +493,17 @@ These are properties of the _system_, not rules of _behavior_. See
 
 ## What's not built yet
 
-| Component                                                           | Trigger                                   |
-| ------------------------------------------------------------------- | ----------------------------------------- |
-| Counter-stamp record + multi-party stamping ceremony                | Themia `assemblee_generale` driver — v0.4 |
-| Attention routing daemon (compose from `depth`/`urgency`/contract)  | 2–3 weeks of real channel traffic — v0.4  |
-| SQLite read-cache for cross-channel queries                         | When query latency demands — v0.4+        |
-| Multi-passport same-device sync (key migration UX)                  | v0.4 wedge                                |
-| Channel ownership transfer (`rosterUpdate.op = transfer_ownership`) | Concrete driver                           |
-| Lexicon publication                                                 | After self-use stabilizes the schema      |
-| Windows support                                                     | When Christophe's brief workflow needs it |
-| `defer` / `vouch` / `dispute` / `redirect` stamp acts               | As cadence + multi-party land             |
-| Webhook adapter for external sources                                | DID-keyed external services — v0.4 wedge  |
+| Component                                                           | Trigger                                            |
+| ------------------------------------------------------------------- | -------------------------------------------------- |
+| Counter-stamp record + multi-party stamping ceremony                | Themia `assemblee_generale` annual AG              |
+| Attention routing daemon (cadence + `queue_handle` + `kind`)        | 2–3 weeks of real channel traffic                  |
+| SQLite read-cache for cross-channel queries                         | When query latency demands                         |
+| Multi-passport same-device sync (key migration UX)                  | Concrete driver                                    |
+| Channel ownership transfer (`rosterUpdate.op = transfer_ownership`) | Concrete driver                                    |
+| Lexicon publication                                                 | After self-use stabilizes the schema               |
+| Windows support                                                     | When Christophe's brief workflow needs it          |
+| `defer` / `vouch` / `dispute` / `redirect` stamp acts               | As cadence + multi-party land                      |
+| Webhook adapter for external sources                                | DID-keyed external services or agent-proxied       |
 
 See [`../milestones/`](../milestones/) for the historical sequence and
-the v0.3 substrate decision in [`../decisions/2026-05-12-substrate-layout-v03.md`](../decisions/2026-05-12-substrate-layout-v03.md).
+the substrate decision in [`../decisions/2026-05-12-substrate-layout-v03.md`](../decisions/2026-05-12-substrate-layout-v03.md).

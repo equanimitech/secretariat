@@ -49,6 +49,17 @@ desktop app).
   script once first (otherwise `tauri-build` fails with _"resource path
   `binaries/sec-<triple>` doesn't exist"_).
 
+## Vocabulary
+
+Two-layer naming. Same actor, two names depending on layer of discussion. Be precise about which layer is in scope:
+
+- **Protocol / cryptographic layer — `agent`.** Any non-principal DID-keyed identity that signs envelopes on a principal's behalf. The neutral term used in low-level descriptions (the DID, the signature, the keychain entry, the `authorized_agents` identity-record field). Future-proofs for non-scribe roles (auditors, schedulers, readers).
+- **Substrate / UX layer — `scribe`.** An agent with `role: "scribe"`. The role surfaced in CLI (`sec scribe add/list/remove/rotate`), onboarding screens ("Add Claude as your scribe?"), and user-facing prose. Today the only role; future roles (`auditor`, `scheduler`, `reader`) reuse the same `authorized_agents` field shape with different `role` values.
+
+Hard rule #4 below uses "agent" because it's a protocol rule. User-facing docs and CLI use "scribe." Both terms are correct; the layer of discussion picks the term.
+
+Identity-record `authorized_agents` entries are shaped `{did, role, name, substrate, added_at}` — `name` is the principal-chosen nickname (free-form), `substrate` is the cognition provider identifier (`claude-code`, `opencode`, `ollama-<model>`, `anthropic-api`, etc.). Granting a scribe is an explicit act of authority delegation tied to a cognition-provider choice (per architectural invariant #5). `sec init` does NOT auto-provision scribes; the principal explicitly runs `sec scribe add <name> --substrate <substrate>` (or selects a cognition provider on the Tauri onboarding screen, which invokes the same CLI under the hood).
+
 ## Hard rules
 
 These are non-negotiable. They override the template's defaults where they conflict.
@@ -75,8 +86,9 @@ These are non-negotiable. They override the template's defaults where they confl
    implementation appears) — until then, the practice is the gate.
 
 4. **Three-layer trust model: signature mandatory, stamp selective,
-   counter-stamp multi-party.** Updated 2026-05-12 for the v0.3 substrate
-   shift (see `docs/ideas/2026-05-12-secretariat-as-autonomous-enterprise-substrate.md`).
+   counter-stamp multi-party.** See
+   `docs/ideas/2026-05-12-secretariat-as-autonomous-enterprise-substrate.md`
+   for the substrate shift that drove this.
    - **Signature** — every envelope carries a detached DID-keyed signature
      from its author (human principal or agent DID). Mandatory. Drives
      `sec verify` provenance: _"did this come from the claimed author?"_
@@ -87,8 +99,9 @@ These are non-negotiable. They override the template's defaults where they confl
      flow signed-only. The stamped subset _is_ the org's authoritative
      decision ledger.
    - **Counter-stamp** — multi-principal stamp on the same envelope
-     (m.3 process-verbaux model). Reserved for v0.4+; the design space is
-     defined but no record type ships in v0.3.
+     (m.3 process-verbaux model). Design space defined in the lexicon;
+     no record type ships yet — the Themia annual AG is the concrete
+     driver that will force it in.
 
    The earlier model ("every sent envelope is stamped") is superseded —
    it didn't survive contact with AI-volume traffic, and resolving the
@@ -361,34 +374,30 @@ domain-anchored variant.
 
 ## Out of scope (for now)
 
-Pruned 2026-05-12 against the v0.3 direction shift (see
-`docs/ideas/2026-05-12-secretariat-as-autonomous-enterprise-substrate.md`).
+Current shipping state lives in `CHANGELOG.md`; this list records what
+is deliberately not built yet. See
+`docs/ideas/2026-05-12-secretariat-as-autonomous-enterprise-substrate.md`
+for the substrate shift that defined the boundary.
 
-**Shipped or in-flight (no longer out of scope):**
-
-- Tauri GUI — scaffold + tray + sidecar wiring shipped in v0.2.x; review/onboarding surfaces moving to MCP per the MCP-primary direction.
-- MCP server — shipped (`crates/mcp/`).
-- Bilateral correspondence transport — relay + invite ship in v0.3; multi-subscriber poll + owner-as-sequencer push come with channels.
-
-**Still out of scope (v0.3 boundary):**
+**Still out of scope:**
 
 - AT-proto network federation, Iroh, IPFS
 - Lexicon publication (schemas remain mutable until self-use validates)
 - Cross-platform — Mac-only; Windows when Christophe needs it
 - Defer / vouch / dispute / redirect stamp acts (only `attest` for now; reserved values present in the lexicon)
-- Counter-stamp record + multi-party stamping ceremony (m.3 process-verbaux — design space defined, v0.4+)
+- Counter-stamp record + multi-party stamping ceremony (m.3 process-verbaux — design space defined; Themia annual AG is the driver)
 - PDF / docx embedding (markdown only; PDF-share of a stamped envelope is a separate future feature)
 - Cryptographic stamp chain (each stamp signing the previous hash)
-- Multi-device same-principal sync (key migration UX — v0.4 wedge)
+- Multi-device same-principal sync (key migration UX)
 - Channel ownership transfer (`rosterUpdate.op = transfer_ownership` — defer until concrete driver)
-- SQLite read-cache for cross-channel queries (defer to v0.4+ when query latency demands it)
+- SQLite read-cache for cross-channel queries (defer until query latency demands it)
 - Shared-git skill iteration adapter (optional upstream pattern; not authoritative store)
-- Attention routing daemon + UI (composes from existing `depth`/`urgency` envelope fields + per-channel `contract.local.md` cadence — v0.4 wedge)
-- Webhook adapter for external sources (DID-keyed external services or agent-proxied — v0.4 wedge)
+- Attention routing daemon + UI (composes from per-channel `contract.local.md` cadence + envelope `queue_handle` + envelope `kind`)
+- Webhook adapter for external sources (DID-keyed external services or agent-proxied)
 
 ## Reference paths
 
-- v0.3 design report: `docs/ideas/2026-05-12-secretariat-as-autonomous-enterprise-substrate.md`
+- Substrate design report: `docs/ideas/2026-05-12-secretariat-as-autonomous-enterprise-substrate.md`
 - Pitch (Day 1): `equanimitech/docs/pitches/2026-04-30-secretariat-stamping-client-mvp.md`
 - Plan: `~/.claude/plans/wait-you-have-a-zazzy-aurora.md`
 - Source idea: `equanimitech/docs/ideas/secretariat-pitch.md`
