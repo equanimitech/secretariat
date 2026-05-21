@@ -7,6 +7,9 @@ import {
   OPEN_CHANNEL_EVENT,
   type OpenChannelRequest,
 } from '@/components/layout/LeftSideBar'
+import { unreadStore } from '@/components/explorer/unreadState'
+import { activeChannelStore } from '@/components/explorer/activeChannel'
+import { commands } from '@/lib/bindings'
 import { MarkdownWindow } from '@/components/markdown/MarkdownWindow'
 import { ChannelPicker } from './ChannelPicker'
 import { ChannelTimeline } from './ChannelTimeline'
@@ -37,7 +40,19 @@ export function SessionTabs() {
     [state]
   )
 
+  // Mirror the active channel-tab path into the shared store so the
+  // explorer can suppress unread badges + bold styling on the channel
+  // the principal is actively viewing.
+  useEffect(() => {
+    if (activeTab && activeTab.kind === 'channel') {
+      activeChannelStore.set(activeTab.channelPath)
+    } else {
+      activeChannelStore.set(null)
+    }
+  }, [activeTab])
+
   const openChannelFromPicker = useCallback((channel: LaunchableChannel) => {
+    void markChannelRead(channel.root_path)
     const tab = makeChannelTab({
       handle: channel.handle,
       name: channel.name,
@@ -55,6 +70,7 @@ export function SessionTabs() {
   useEffect(() => {
     function onOpenChannel(e: Event) {
       const detail = (e as CustomEvent<OpenChannelRequest>).detail
+      void markChannelRead(detail.path)
       setState(prev => {
         const existing = prev.tabs.find(
           t => t.kind === 'channel' && t.channelPath === detail.path
@@ -224,6 +240,26 @@ function TabHeader({
       </button>
     </div>
   )
+}
+
+/**
+ * Mark every envelope under a channel-dir as opened. Fires the
+ * envelope-opened event so the explorer recomputes ancestor unread
+ * counts.
+ */
+async function markChannelRead(channelPath: string) {
+  const res = await commands.listEnvelopesUnder(channelPath)
+  if (res.status !== 'ok') return
+  let touched = false
+  for (const p of res.data) {
+    if (!unreadStore.isOpened(p)) {
+      unreadStore.markOpened(p)
+      touched = true
+    }
+  }
+  if (touched) {
+    window.dispatchEvent(new CustomEvent('secretariat:envelope-opened'))
+  }
 }
 
 function EmptyState({ onOpen }: { onOpen: () => void }) {

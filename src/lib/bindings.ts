@@ -502,6 +502,55 @@ async listDir(path: string) : Promise<Result<TreeEntry[], string>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Rename a directory or file on disk. The frontend supplies the
+ * absolute current path and the new basename (not a full path). The
+ * resulting path is the sibling of the original with the supplied
+ * name. Intentionally minimal — no DID/handle rewriting, no envelope
+ * fixups; the user is responsible for keeping consistency with the
+ * channel handle if they rename a channel-dir.
+ */
+async renamePath(path: string, newName: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("rename_path", { path, newName }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Move a directory or file under a new parent directory. The basename
+ * is preserved (use `rename_path` first if you want to rename + move).
+ * Intentionally minimal — no DID/handle rewriting, no envelope fixups.
+ * The caller (frontend) is responsible for cycle / cross-root /
+ * duplicate-name validation; this command also re-checks the cheap
+ * invariants on the Rust side.
+ */
+async movePath(src: string, destParent: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("move_path", { src, destParent }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Collect every envelope file path under the given root directory
+ * — recursively walks any `envelopes/` subtree(s) and returns all
+ * `.md` files. Used by the explorer to compute unread counts for
+ * channel-leaf entries (and their parent folders by descendant
+ * aggregation).
+ * 
+ * Bounded depth (16) to guard against pathological symlink loops.
+ */
+async listEnvelopesUnder(root: string) : Promise<Result<string[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_envelopes_under", { root }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async readChannelEnvelopes(channelPath: string, limit: number) : Promise<Result<EnvelopePreview[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("read_channel_envelopes", { channelPath, limit }) };
@@ -776,13 +825,31 @@ stamped: boolean;
 encrypted: boolean; 
 /**
  * First few lines of the body, plain text. Empty for encrypted
- * envelopes.
+ * envelopes. The frontend renders this as markdown when the
+ * envelope has no sender-declared `lede`.
  */
 preview: string; 
 /**
  * Filename basename — useful as a card title when no headline.
  */
-filename: string }
+filename: string; 
+/**
+ * Sender-declared AG headline (envelope.title). Optional.
+ * Renderers SHOULD use this as the card title in timelines when
+ * present; otherwise fall back to first heading / filename.
+ */
+title: string | null; 
+/**
+ * Sender-declared AG one-liner (envelope.lede). Optional.
+ * Renderers SHOULD use this as the preview line in compact
+ * timeline rows when present, in lieu of `preview` (body slice).
+ */
+lede: string | null; 
+/**
+ * Sender-declared AG multi-sentence summary (envelope.summary).
+ * Optional. Surfaced in expanded views, not compact rows.
+ */
+summary: string | null }
 export type EnvelopeRead = { body: string; from: string | null; 
 /**
  * DID of the queue *owner* (recipient).
@@ -910,6 +977,14 @@ export type TreeEntry = { name: string; path: string; kind: EntryKind;
  * child. Lets the tree render disclosure triangles without expanding.
  */
 has_children: boolean; 
+/**
+ * True for directories that contain (at any depth) at least one
+ * directory with a `channel.md`. Used by the frontend to filter
+ * the tree to channel-only view, and to detect "parent channel"
+ * entries (channel-leaves whose descendants include further
+ * channel-leaves — those should expand/collapse, not open).
+ */
+has_channel_descendants: boolean; 
 /**
  * Extension without the dot. Empty for dirs and extension-less files.
  */
