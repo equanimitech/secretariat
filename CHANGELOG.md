@@ -4,7 +4,31 @@ All notable changes to Secretariat are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased](https://github.com/equanimitech/secretariat/compare/v0.9.0...HEAD)
+## [Unreleased](https://github.com/equanimitech/secretariat/compare/v0.10.0...HEAD)
+
+## [0.10.0](https://github.com/equanimitech/secretariat/compare/v0.9.0...v0.10.0) — 2026-05-21
+
+### Added
+
+* AI auto-population of envelope `title` / `lede` / `summary` at compose and capture time via a new `CognitionAg` port; dispatched on Claude and OpenAI-compatible adapters. Substrate-pluggable per architectural invariant #5; degrades silently when no cognition is configured. Gate: body ≥ 280 chars OR contains a paragraph break, plaintext only.
+
+* Lexicon: optional `agSource` ("human" | "ai") on `tech.equanimi.secretariat.envelope`. Absent means human (back-compat). Receivers MAY surface the distinction.
+
+* CLI `--title` / `--lede` / `--summary` flags on `sec compose` and `sec capture`; same fields on MCP `compose` and `capture` params.
+
+* `sec migrate outbox-to-drafts [--dry-run]` — one-shot migration command. Per-queue tar snapshot under `.archive/migrations/<ts>/`, pre/post `.md` count gate, `fs::rename` only (per envelopes-never-destroyed rule). Idempotent. Handles concurrent writers via atomic renames + path-disjoint writers.
+
+### Changed
+
+* Substrate: per-queue `outbox/` staging directory dropped. New shape: `<queue>/_drafts/<ts>-<hash>.md` for unstamped drafts, `<queue>/envelopes/YYYY/MM/DD/...` for received and stamped-pending-send envelopes (mixed timeline tree), `<queue>/sent/YYYY/MM/DD/...` for post-delivery archive. The stamp ceremony's atomic `_drafts/ → envelopes/` rename IS the wire-send signal; daemon drain is the safety net.
+
+* Transition shims: `drain_outbox` aliases `drain_pending_sends`; `list_outbox_files` aliases `list_draft_files`; `SyncOutcome.outbox_warnings` field name preserved on the Tauri `SyncReport` wire shape. Remove once all v0.8 daemon/CLI callers migrate.
+
+* MCP `compose` and `capture` tool descriptions updated to surface auto-AG behavior; `compose` / `review` / `stamp` prompts updated to the new drafts vocabulary.
+
+### Fixed
+
+* `App.test.tsx > renders title bar with traffic light buttons` — jsdom `ResizeObserver` shim added; `@/lib/bindings` mock expanded to cover the explorer + main-window surface. Pre: 50 pass / 1 fail. Post: 51/51 across 9 files.
 
 ## [0.9.0](https://github.com/equanimitech/secretariat/compare/v0.8.1...v0.9.0) — 2026-05-21
 
