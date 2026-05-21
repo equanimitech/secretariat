@@ -7,6 +7,7 @@ interface UIState {
   commandPaletteOpen: boolean
   preferencesOpen: boolean
   lastQuickPaneEntry: string | null
+  isFullscreen: boolean
 
   toggleLeftSidebar: () => void
   setLeftSidebarVisible: (visible: boolean) => void
@@ -18,6 +19,7 @@ interface UIState {
   setPreferencesOpen: (open: boolean) => void
   setLastQuickPaneEntry: (text: string) => void
   setSquareCorners: (enabled: boolean) => void
+  setIsFullscreen: (fullscreen: boolean) => void
 }
 
 export const useUIStore = create<UIState>()(
@@ -28,6 +30,7 @@ export const useUIStore = create<UIState>()(
       commandPaletteOpen: false,
       preferencesOpen: false,
       lastQuickPaneEntry: null,
+      isFullscreen: false,
 
       toggleLeftSidebar: () =>
         set(
@@ -83,6 +86,9 @@ export const useUIStore = create<UIState>()(
       setSquareCorners: (enabled: boolean) => {
         document.documentElement.classList.toggle('square-corners', enabled)
       },
+
+      setIsFullscreen: (fullscreen: boolean) =>
+        set({ isFullscreen: fullscreen }, undefined, 'setIsFullscreen'),
     }),
     {
       name: 'ui-store',

@@ -123,6 +123,17 @@ pub struct CognitionPrefs {
     /// See `docs/developer/launch.md` for the full LM Studio recipe.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub launch_env: BTreeMap<String, String>,
+
+    /// Preferred terminal application used by the Tauri shell's
+    /// "Launch Claude" actions and any future CLI front-door that
+    /// forks rather than execvp's into the current shell. Free-form
+    /// to avoid coupling the substrate-level prefs to a hard-coded
+    /// list; today the Tauri shell recognises `terminal`, `iterm`,
+    /// `ghostty`, `wezterm`, `alacritty`, `claude-desktop`. Anything
+    /// else falls back to Terminal.app. `None` means "use the system
+    /// default" (Terminal.app on macOS).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminal_app: Option<String>,
 }
 
 fn default_launch_command() -> String {
@@ -140,6 +151,7 @@ impl Default for CognitionPrefs {
             launch_command: default_launch_command(),
             launch_args: Vec::new(),
             launch_env: BTreeMap::new(),
+            terminal_app: None,
         }
     }
 }

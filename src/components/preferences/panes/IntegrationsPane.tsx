@@ -13,12 +13,20 @@ import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { usePreferences, useSavePreferences } from '@/services/preferences'
 
-type TerminalChoice = 'terminal' | 'iterm' | 'ghostty' | 'claude-desktop'
+type TerminalChoice =
+  | 'terminal'
+  | 'iterm'
+  | 'ghostty'
+  | 'wezterm'
+  | 'alacritty'
+  | 'claude-desktop'
 
 const TERMINAL_OPTIONS: { value: TerminalChoice; label: string; hint: string }[] = [
   { value: 'terminal', label: 'Terminal.app', hint: 'macOS default' },
   { value: 'iterm', label: 'iTerm2', hint: 'iTerm.app' },
   { value: 'ghostty', label: 'Ghostty', hint: 'Ghostty.app' },
+  { value: 'wezterm', label: 'WezTerm', hint: 'WezTerm.app' },
+  { value: 'alacritty', label: 'Alacritty', hint: 'Alacritty.app' },
   { value: 'claude-desktop', label: 'Claude Desktop', hint: 'no terminal — opens Claude.app directly' },
 ]
 

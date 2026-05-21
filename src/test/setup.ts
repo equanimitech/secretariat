@@ -23,6 +23,20 @@ vi.mock('@tauri-apps/api/event', () => ({
   }),
 }))
 
+// Mock the window API so hooks that observe fullscreen state don't blow
+// up in jsdom. `onResized` returns a Promise<UnlistenFn> in real Tauri.
+vi.mock('@tauri-apps/api/window', () => ({
+  getCurrentWindow: vi.fn(() => ({
+    isFullscreen: vi.fn().mockResolvedValue(false),
+    onResized: vi.fn().mockResolvedValue(() => {
+      // Mock unlisten function
+    }),
+    onFocusChanged: vi.fn().mockResolvedValue(() => {
+      // Mock unlisten function
+    }),
+  })),
+}))
+
 vi.mock('@tauri-apps/plugin-updater', () => ({
   check: vi.fn().mockResolvedValue(null),
 }))

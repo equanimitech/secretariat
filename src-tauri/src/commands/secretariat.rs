@@ -673,6 +673,8 @@ enum AssistantTarget {
     Terminal,
     ITerm,
     Ghostty,
+    WezTerm,
+    Alacritty,
     ClaudeDesktop,
 }
 
@@ -681,6 +683,8 @@ impl AssistantTarget {
         match s.map(|x| x.trim().to_ascii_lowercase()).as_deref() {
             Some("iterm") | Some("iterm2") => Self::ITerm,
             Some("ghostty") => Self::Ghostty,
+            Some("wezterm") => Self::WezTerm,
+            Some("alacritty") => Self::Alacritty,
             Some("claude") | Some("claude-desktop") => Self::ClaudeDesktop,
             _ => Self::Terminal,
         }
@@ -721,6 +725,54 @@ fn launch_macos_in(
         }
         None => command.to_string(),
     };
+
+    // WezTerm + Alacritty don't expose a stable AppleScript do-script
+    // bridge, so we spawn their CLIs directly and let macOS' app launcher
+    // pick up the bundle. `bash -lc` keeps PATH + login profile so
+    // `claude` resolves the way the principal expects in their shell.
+    match target {
+        AssistantTarget::WezTerm => {
+            let status = std::process::Command::new("open")
+                .args([
+                    "-na",
+                    "WezTerm",
+                    "--args",
+                    "start",
+                    "--",
+                    "bash",
+                    "-lc",
+                    &full_command,
+                ])
+                .status()
+                .map_err(|e| format!("spawning `open` for WezTerm: {e}"))?;
+            if !status.success() {
+                return Err("could not open WezTerm — is it installed?".to_string());
+            }
+            return Ok(());
+        }
+        AssistantTarget::Alacritty => {
+            let status = std::process::Command::new("open")
+                .args([
+                    "-na",
+                    "Alacritty",
+                    "--args",
+                    "-e",
+                    "bash",
+                    "-lc",
+                    &full_command,
+                ])
+                .status()
+                .map_err(|e| format!("spawning `open` for Alacritty: {e}"))?;
+            if !status.success() {
+                return Err(
+                    "could not open Alacritty — is it installed?".to_string(),
+                );
+            }
+            return Ok(());
+        }
+        _ => {}
+    }
+
     let escaped = full_command.replace('"', "\\\"");
     let script = match target {
         AssistantTarget::Terminal => format!(
@@ -733,7 +785,9 @@ fn launch_macos_in(
             "do shell script \"open -na Ghostty --args -e '{}'\"",
             escaped.replace('\'', "'\\''")
         ),
-        AssistantTarget::ClaudeDesktop => unreachable!(),
+        AssistantTarget::WezTerm
+        | AssistantTarget::Alacritty
+        | AssistantTarget::ClaudeDesktop => unreachable!(),
     };
     let output = std::process::Command::new("osascript")
         .arg("-e")
