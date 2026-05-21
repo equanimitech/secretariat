@@ -104,9 +104,19 @@ export function ExplorerTree({
         setError(res.error)
         return
       }
-      setData(prev =>
-        spliceChildren(prev, node.path, res.data.map(e => entryToNode(e, node.org)))
-      )
+      const newChildren = res.data.map(e => entryToNode(e, node.org))
+      setData(prev => spliceChildren(prev, node.path, newChildren))
+      // Eagerly load `channels/` under private/org roots so the
+      // channel-only projection can lift its contents to the root
+      // without forcing the principal to expand a `channels/` stub.
+      if (node.kind === 'private' || node.kind === 'org') {
+        const channelsChild = newChildren.find(
+          c => c.name === 'channels' && c.kind === 'dir'
+        )
+        if (channelsChild) {
+          void loadChildren(channelsChild)
+        }
+      }
     } finally {
       loadingRef.current.delete(node.path)
     }
@@ -578,7 +588,14 @@ function projectInner(n: ExplorerNode): ExplorerNode | null {
     n.children === undefined
       ? undefined
       : (n.children.map(projectInner).filter(Boolean) as ExplorerNode[])
-  return { ...n, children }
+  // In channel-only mode files and substrate dirs are hidden, so a
+  // caret on a leaf channel would be misleading. Reflect descendant
+  // presence instead.
+  const hasChildren =
+    n.kind === 'channel_leaf' || n.kind === 'dir'
+      ? n.hasChannelDescendants
+      : n.hasChildren
+  return { ...n, children, hasChildren }
 }
 
 function walkNodes(tree: ExplorerNode[], visit: (n: ExplorerNode) => void) {
