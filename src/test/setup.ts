@@ -16,6 +16,23 @@ Object.defineProperty(window, 'matchMedia', {
   })),
 })
 
+// jsdom doesn't ship ResizeObserver. Several layout components instantiate
+// it on mount (LeftSideBar tree-host sizing, QuickPaneApp); without this
+// shim the App-level ErrorBoundary swallows the render and the title bar
+// never makes it to the DOM, which masks unrelated assertions.
+class ResizeObserverMock {
+  observe = vi.fn()
+  unobserve = vi.fn()
+  disconnect = vi.fn()
+}
+Object.defineProperty(window, 'ResizeObserver', {
+  writable: true,
+  configurable: true,
+  value: ResizeObserverMock,
+})
+;(globalThis as unknown as { ResizeObserver: typeof ResizeObserverMock }).ResizeObserver =
+  ResizeObserverMock
+
 // Mock Tauri APIs for tests
 vi.mock('@tauri-apps/api/event', () => ({
   listen: vi.fn().mockResolvedValue(() => {
@@ -41,11 +58,29 @@ vi.mock('@tauri-apps/plugin-updater', () => ({
   check: vi.fn().mockResolvedValue(null),
 }))
 
-// Mock secretariat-specific bindings (tauri-specta generated)
+// Mock secretariat-specific bindings (tauri-specta generated).
+//
+// The App tree mounts ExplorerTree / MainWindowContent / preferences panes
+// on first render; each calls into the generated bindings. We stub the
+// minimum surface needed to keep those subtrees from throwing during
+// jsdom-mode tests — any missing method surfaces as
+// "commands.X is not a function" and the App-level ErrorBoundary swallows
+// the render, masking unrelated assertions (e.g. titlebar buttons).
+const okResult = <T>(data: T) => ({ status: 'ok' as const, data })
 vi.mock('@/lib/bindings', () => ({
   commands: {
-    getProfile: vi.fn().mockResolvedValue({ status: 'ok', data: null }),
-    currentIdentity: vi.fn().mockResolvedValue({ status: 'ok', data: null }),
+    getProfile: vi.fn().mockResolvedValue(okResult(null)),
+    currentIdentity: vi.fn().mockResolvedValue(okResult(null)),
+    // Explorer
+    listExplorerRoots: vi.fn().mockResolvedValue(okResult([])),
+    listDir: vi.fn().mockResolvedValue(okResult([])),
+    listEnvelopesUnder: vi.fn().mockResolvedValue(okResult([])),
+    deleteChannel: vi.fn().mockResolvedValue(okResult(null)),
+    movePath: vi.fn().mockResolvedValue(okResult(null)),
+    renamePath: vi.fn().mockResolvedValue(okResult(null)),
+    launchClaudeAt: vi.fn().mockResolvedValue(okResult(null)),
+    // Misc bindings the main window subtree pulls in lazily
+    claimInviteUrl: vi.fn().mockResolvedValue(okResult({ inviter_did: '' })),
   },
 }))
 
