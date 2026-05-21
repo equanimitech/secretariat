@@ -4,7 +4,19 @@ All notable changes to Secretariat are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased](https://github.com/equanimitech/secretariat/compare/v0.10.0...HEAD)
+## [Unreleased](https://github.com/equanimitech/secretariat/compare/v0.10.1...HEAD)
+
+## [0.10.1](https://github.com/equanimitech/secretariat/compare/v0.10.0...v0.10.1) — 2026-05-21
+
+### Fixed
+
+* Release-pipeline recovery. v0.9.0 and v0.10.0 both shipped under the wrong version: `src-tauri/tauri.conf.json` had been left at `0.8.1` while every other manifest bumped, so the signed DMG and the updater manifest (`latest.json`) stamped at `0.8.1` instead of the tagged version. Clients on `0.8.1` saw "up to date" and the auto-updater never fired. v0.10.1 ships all eight versioned manifests in lockstep at `0.10.1` so the artifacts and updater report the correct version. No functional changes from v0.10.0.
+
+### Changed
+
+* `scripts/prepare-release.js` now bumps every versioned manifest from a single `VERSION_FILES` list (8 entries: `package.json` + `tauri.conf.json` + all 6 workspace `Cargo.toml`s), asserts post-bump consistency, and aborts the release on any mismatch. Switched `npm install` → `pnpm install`; final lockfile refresh covers the full workspace `Cargo.lock`.
+
+* `.github/workflows/{tauri-,}release.yml` gain a pre-build `Verify version consistency vs tag` step that refuses to build if any manifest disagrees with the pushed tag. Combined with the script's post-bump assertion, this class of drift now stops the line at CI before producing signed binaries.
 
 ## [0.10.0](https://github.com/equanimitech/secretariat/compare/v0.9.0...v0.10.0) — 2026-05-21
 
