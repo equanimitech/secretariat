@@ -1,7 +1,14 @@
-//! Use cases for listing and reading envelopes (inbox + outbox).
+//! Use cases for listing and reading envelopes (inbox + drafts).
 //!
 //! Used by the MCP server (and `sec read` CLI) to surface envelope state
 //! without each caller re-implementing directory walks + frontmatter parsing.
+//!
+//! v0.9 layout collapse (`docs/pitches/2026-05-18-drop-outbox.md`): the
+//! `outbox/` substrate-staging dir is gone. Unstamped drafts live under
+//! per-queue `_drafts/` subdirs; stamped envelopes (received and self-
+//! authored) live under `envelopes/YYYY/MM/DD/`; delivered self-authored
+//! archives live under the queue's `sent/YYYY/MM/DD/`. `list_inbox_files`
+//! still walks `envelopes/`; `list_draft_files` walks `_drafts/`.
 
 use std::path::{Path, PathBuf};
 
@@ -83,12 +90,13 @@ pub fn list_inbox_files(root: &Path) -> Result<Vec<ListedEnvelope>, InboxOpError
 }
 
 /// Walk the substrate root and collect every `.md` file under any
-/// `outbox/` directory — the per-queue drafts the daemon ferries.
-/// Skips `sent/` subdirs (the daemon's own post-delivery move
-/// target) so a `list_outbox` view shows only what's still in flight.
-pub fn list_outbox_files(root: &Path) -> Result<Vec<ListedEnvelope>, InboxOpError> {
+/// `_drafts/` directory — the per-queue unstamped drafts the AI scribe
+/// has composed. Post-v0.9 these are what await the principal's review
+/// in a stamp session; once stamped, the file atomically renames out of
+/// `_drafts/` into `envelopes/YYYY/MM/DD/`.
+pub fn list_draft_files(root: &Path) -> Result<Vec<ListedEnvelope>, InboxOpError> {
     let mut out = Vec::new();
-    walk_outbox_tree(root, &mut out)?;
+    walk_drafts_tree(root, &mut out)?;
     Ok(out)
 }
 
@@ -117,7 +125,7 @@ fn walk_envelopes_tree(
     Ok(())
 }
 
-fn walk_outbox_tree(
+fn walk_drafts_tree(
     dir: &Path,
     out: &mut Vec<ListedEnvelope>,
 ) -> Result<(), InboxOpError> {
@@ -131,8 +139,9 @@ fn walk_outbox_tree(
             continue;
         }
         let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-        if name == "outbox" {
-            // Walk one level deep for `.md`; skip the `sent/` subdir.
+        if name == "_drafts" {
+            // Flat dir — drafts live as `<ts>-<hash>.md` directly in
+            // the queue's `_drafts/`, no further nesting.
             for inner in read_dir(&path)? {
                 let inner = io_entry(inner, &path)?;
                 let inner_path = inner.path();
@@ -141,7 +150,7 @@ fn walk_outbox_tree(
                 }
             }
         } else if !should_skip(name) {
-            walk_outbox_tree(&path, out)?;
+            walk_drafts_tree(&path, out)?;
         }
     }
     Ok(())

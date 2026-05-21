@@ -1,8 +1,8 @@
-//! `sec list` — list inbox / outbox / peers cache contents.
+//! `sec list` — list inbox / drafts / peers cache contents.
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use secretariat_core::application::{list_inbox_files, list_outbox_files};
+use secretariat_core::application::{list_draft_files, list_inbox_files};
 use std::fs;
 
 use super::paths::key_paths;
@@ -10,14 +10,14 @@ use super::paths::key_paths;
 #[derive(Parser, Debug)]
 pub struct Args {
     /// Which slice of the substrate to list.
-    #[arg(value_enum, default_value_t = Target::Outbox)]
+    #[arg(value_enum, default_value_t = Target::Drafts)]
     target: Target,
 }
 
 #[derive(clap::ValueEnum, Debug, Clone, Copy)]
 enum Target {
     Inbox,
-    Outbox,
+    Drafts,
     Peers,
 }
 
@@ -31,9 +31,9 @@ pub fn run(args: Args) -> Result<()> {
                 println!("{}", e.file_path);
             }
         }
-        Target::Outbox => {
-            let listed = list_outbox_files(&paths.root)
-                .with_context(|| format!("listing outbox under {}", paths.root.display()))?;
+        Target::Drafts => {
+            let listed = list_draft_files(&paths.root)
+                .with_context(|| format!("listing drafts under {}", paths.root.display()))?;
             for e in listed {
                 println!("{}", e.file_path);
             }

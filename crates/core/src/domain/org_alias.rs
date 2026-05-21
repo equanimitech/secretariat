@@ -46,7 +46,7 @@ pub enum OrgAliasError {
 /// Top-level directory names already used by the substrate root. An org
 /// alias must not shadow one or the on-disk layout collides.
 const RESERVED_NAMES: &[&str] = &[
-    "inbox", "outbox", "queues", "peers", "bin",
+    "inbox", "queues", "peers", "bin",
 ];
 
 /// Maximum alias length. Matches DNS-label conventions; the alias often
@@ -170,7 +170,7 @@ mod tests {
 
     #[test]
     fn rejects_reserved_substrate_names() {
-        for name in ["inbox", "outbox", "queues", "peers", "bin"] {
+        for name in ["inbox", "queues", "peers", "bin"] {
             assert!(
                 matches!(OrgAlias::parse(name), Err(OrgAliasError::Reserved(_))),
                 "expected `{name}` to be rejected as reserved"

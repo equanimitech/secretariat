@@ -216,13 +216,13 @@ async listInbox() : Promise<Result<EnvelopeListing[], string>> {
 }
 },
 /**
- * List the principal's review queue — unstamped outbox drafts plus
- * every envelope on disk. Substrate v0.3 (namespace-symmetric
- * queues) unions per-queue `outbox/*.md` (drafts awaiting a stamp)
- * with per-queue `envelopes/*.md` (received letters + local
- * captures) under one substrate root. Both `to` and `queue` are
- * populated on every entry — discriminate local vs peer by
- * comparing `to` to the principal's own DID.
+ * List the principal's review queue — unstamped drafts plus every
+ * envelope on disk. v0.9 substrate (drop-outbox) unions per-queue
+ * `_drafts/*.md` (drafts awaiting a stamp) with per-queue
+ * `envelopes/YYYY/MM/DD/*.md` (received letters + local captures +
+ * stamped-but-pending-send) under one substrate root. Both `to` and
+ * `queue` are populated on every entry — discriminate local vs peer
+ * by comparing `to` to the principal's own DID.
  */
 async listReviewQueue() : Promise<Result<EnvelopeListing[], string>> {
     try {
@@ -248,8 +248,8 @@ async readEnvelope(filePath: string) : Promise<Result<EnvelopeRead, string>> {
 /**
  * Run one sync cycle against every registered relay. Pulls inbound
  * envelopes, auto-adds contacts from claim events, drains stamped
- * drafts from the outbox. Principal-initiated per the review-session
- * model — no background push.
+ * self-authored envelopes pending send. Principal-initiated per the
+ * review-session model — no background push.
  * 
  * Idempotent and safe to call repeatedly. Returns a report the UI can
  * surface (counts + non-fatal warnings).
@@ -774,7 +774,7 @@ export type EntryKind =
 "channel_leaf" | 
 /**
  * Directory inside the channel tree without a `channel.md` (a non-leaf
- * handle segment, or a child dir like `envelopes/`, `outbox/`).
+ * handle segment, or a child dir like `envelopes/`, `_drafts/`).
  */
 "dir" | 
 /**
@@ -958,7 +958,7 @@ display_name: string;
  */
 root_path: string }
 /**
- * Stamp an outbox draft and (best-effort) deliver it immediately. Touch
+ * Stamp a draft and (best-effort) deliver it immediately. Touch
  * ID fires from the app's window context. Returns the relay-assigned
  * id on successful delivery, or stamp metadata only if delivery fails
  * (the daemon's next sync tick retries — same fallback as the CLI's

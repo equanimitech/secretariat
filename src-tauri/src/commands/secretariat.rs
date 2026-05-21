@@ -234,12 +234,12 @@ mod tests {
 }
 
 // ---------------------------------------------------------------------------
-// Review surface — inbox + outbox queue + envelope read
+// Review surface — inbox + drafts queue + envelope read
 // ---------------------------------------------------------------------------
 //
 // Per the review-session model (memory/feedback_review_session_model.md),
 // the Tauri app surfaces two collections to the principal: received
-// envelopes (inbox) and unstamped drafts awaiting review (outbox queue).
+// envelopes (inbox) and unstamped drafts awaiting review (drafts queue).
 // The principal opens the app at a chosen time, reads bodies, stamps
 // approved drafts. No notifications, no push.
 
@@ -283,13 +283,13 @@ pub async fn list_inbox() -> Result<Vec<EnvelopeListing>, String> {
     Ok(listed.into_iter().map(EnvelopeListing::from).collect())
 }
 
-/// List the principal's review queue — unstamped outbox drafts plus
-/// every envelope on disk. Substrate v0.3 (namespace-symmetric
-/// queues) unions per-queue `outbox/*.md` (drafts awaiting a stamp)
-/// with per-queue `envelopes/*.md` (received letters + local
-/// captures) under one substrate root. Both `to` and `queue` are
-/// populated on every entry — discriminate local vs peer by
-/// comparing `to` to the principal's own DID.
+/// List the principal's review queue — unstamped drafts plus every
+/// envelope on disk. v0.9 substrate (drop-outbox) unions per-queue
+/// `_drafts/*.md` (drafts awaiting a stamp) with per-queue
+/// `envelopes/YYYY/MM/DD/*.md` (received letters + local captures +
+/// stamped-but-pending-send) under one substrate root. Both `to` and
+/// `queue` are populated on every entry — discriminate local vs peer
+/// by comparing `to` to the principal's own DID.
 #[tauri::command]
 #[specta::specta]
 pub async fn list_review_queue() -> Result<Vec<EnvelopeListing>, String> {
@@ -346,8 +346,8 @@ pub struct SyncReport {
 
 /// Run one sync cycle against every registered relay. Pulls inbound
 /// envelopes, auto-adds contacts from claim events, drains stamped
-/// drafts from the outbox. Principal-initiated per the review-session
-/// model — no background push.
+/// self-authored envelopes pending send. Principal-initiated per the
+/// review-session model — no background push.
 ///
 /// Idempotent and safe to call repeatedly. Returns a report the UI can
 /// surface (counts + non-fatal warnings).
@@ -414,7 +414,7 @@ pub async fn archive_inbox_envelope(file_path: String) -> Result<String, String>
     Ok(dest.display().to_string())
 }
 
-/// Stamp an outbox draft and (best-effort) deliver it immediately. Touch
+/// Stamp a draft and (best-effort) deliver it immediately. Touch
 /// ID fires from the app's window context. Returns the relay-assigned
 /// id on successful delivery, or stamp metadata only if delivery fails
 /// (the daemon's next sync tick retries — same fallback as the CLI's
@@ -1207,6 +1207,9 @@ pub async fn quick_capture(text: String) -> Result<String, String> {
         queue,
         body: text,
         source: "quick-pane".to_string(),
+        title: None,
+        lede: None,
+        summary: None,
     };
     let path = capture_to_queue(req, &paths.root, &Root::Self_, Utc::now())
         .map_err(|e| format!("capture failed: {e}"))?;

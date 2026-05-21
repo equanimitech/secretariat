@@ -40,7 +40,7 @@ Render the full draft body to the principal verbatim, in a code block. Do NOT ca
 - *"change X"* → revise inline, re-render, re-ask.
 - *"never mind"* → abort. Do not write to disk.
 
-This is the pre-disk consent gate. Drafts written to outbox are visible to the substrate's queue; only write what the principal endorsed.
+This is the pre-disk consent gate. Drafts written to the queue's `_drafts/` are visible to the substrate; only write what the principal endorsed.
 
 ### 5. Compose
 
@@ -52,7 +52,7 @@ Call the `compose` tool with:
 - `source`: `"mcp-compose-prompt"` (lets the substrate trace provenance)
 - `handle`: omit (defaults to `inbox`) unless the principal specified a non-default queue on the peer's machine.
 
-The tool returns the file_path of the draft in `~/.secretariat/outbox/<peer-did>/`.
+The tool returns the file_path of the draft in `<root>/<alias-of-peer>/channels/<handle-path>/_drafts/`.
 
 ### 6. Stamp ceremony
 

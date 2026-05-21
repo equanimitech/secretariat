@@ -4,7 +4,7 @@
 //!
 //! | Tool | Purpose |
 //! |---|---|
-//! | `compose` | Write a peer-addressed envelope to the outbox (principal stamps separately) |
+//! | `compose` | Write a peer-addressed draft to the queue's `_drafts/` (principal stamps separately) |
 //! | `capture` | Drop a body into a local queue (never sent, never stamped without consent) |
 //! | `stamp` | Trigger biometric stamp on a draft (Touch ID gates regardless of caller) |
 //! | `secretariat://orgs` | Org + channel-tree directory — resource |
@@ -52,13 +52,13 @@ use rmcp::{
 };
 use schemars::JsonSchema;
 use secretariat_core::application::{
-    add_contact, archive_envelope, capture_to_queue, channels_root_for, claim_invite,
-    compose_envelope,
+    add_contact, archive_envelope, capture_to_queue_with_ag, channels_root_for, claim_invite,
+    compose_envelope_with_ag,
     create_channel as app_create_channel, create_invite, create_org as app_create_org,
     delete_channel as app_delete_channel, delete_org as app_delete_org, find_by_slug,
     get_channel_contract as app_get_channel_contract,
     get_org_contract as app_get_org_contract, list_channels, list_contacts,
-    list_orgs as app_list_orgs, list_outbox_files, read_channel, read_envelope,
+    list_draft_files, list_orgs as app_list_orgs, read_channel, read_envelope,
     resolve_channel_contract as app_resolve_channel_contract,
     set_channel_contract as app_set_channel_contract, set_org_contract as app_set_org_contract,
     show_org as app_show_org, stamp_document, try_contextify_after_capture, verify_document,
@@ -266,6 +266,18 @@ pub struct ComposeParams {
     /// peer owns — e.g. a channel they publish.
     #[serde(default)]
     pub handle: Option<String>,
+    /// Optional headline (AG gross signal, 2-6 words). Setting any of
+    /// `title` / `lede` / `summary` suppresses the AI auto-fill pass.
+    /// When all three are omitted and a cognition adapter is configured,
+    /// the scribe drafts them from the body and tags `ag_source = "ai"`.
+    #[serde(default)]
+    pub title: Option<String>,
+    /// Optional one-line lede (AG subtle layer). See `title`.
+    #[serde(default)]
+    pub lede: Option<String>,
+    /// Optional multi-sentence summary (AG deepening pathway). See `title`.
+    #[serde(default)]
+    pub summary: Option<String>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -291,6 +303,19 @@ pub struct CaptureParams {
     /// for personal captures (under `_self`).
     #[serde(default)]
     pub org: Option<String>,
+    /// Optional AG title (gross signal). Setting any of `title` / `lede`
+    /// / `summary` suppresses the AI auto-fill pass. When all three are
+    /// omitted and the body is substantive (>=280 chars or contains a
+    /// paragraph break), the scribe drafts them and tags
+    /// `ag_source = "ai"`.
+    #[serde(default)]
+    pub title: Option<String>,
+    /// Optional AG lede (subtle layer). See `title`.
+    #[serde(default)]
+    pub lede: Option<String>,
+    /// Optional AG summary (deepening pathway). See `title`.
+    #[serde(default)]
+    pub summary: Option<String>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -330,7 +355,8 @@ pub struct ReadOutput {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct StampParams {
     /// Absolute path to the draft to stamp. Typically lives under
-    /// `~/.secretariat/outbox/<recipient-did>/`.
+    /// `<root>/<alias-of-to>/channels/<handle-path>/_drafts/` (or — after
+    /// the stamp ceremony promotes the file — `envelopes/YYYY/MM/DD/`).
     pub file_path: String,
     /// Re-stamp even if a stamp is already present.
     #[serde(default)]
@@ -713,9 +739,17 @@ impl SecretariatServer {
             idempotent_hint = false,
             open_world_hint = false
         ),
-        description = "Compose a draft envelope to a recipient and write it to the outbox. \
-        The principal stamps it separately (biometric-gated, never via this tool). \
-        `to` accepts either a DID or a contact's display-name slug."
+        description = "Compose a draft envelope to a recipient and write it to the \
+        recipient queue's `_drafts/` dir. The principal stamps it separately \
+        (biometric-gated, never via this tool); the stamp ceremony atomically \
+        promotes the draft into the queue's `envelopes/YYYY/MM/DD/` tree, which is \
+        the daemon's wire-send signal. \
+        `to` accepts either a DID or a contact's display-name slug. \
+        \
+        AG fields (`title` / `lede` / `summary`) are author-attributed when you \
+        pass them. If you omit all three and a cognition adapter is configured, \
+        the scribe drafts them from the body and tags `ag_source = \"ai\"` so \
+        receivers can tell the framing is AI-generated."
     )]
     async fn compose(
         &self,
@@ -745,6 +779,9 @@ impl SecretariatServer {
             source: params.source.unwrap_or_else(|| "mcp".to_string()),
             cadence_hint: params.cadence_hint,
             body,
+            title: params.title,
+            lede: params.lede,
+            summary: params.summary,
         };
 
         let self_did = load_principal_did(&self.paths)?;
@@ -752,22 +789,32 @@ impl SecretariatServer {
             self_did, &self.paths,
         )
         .map_err(|e| invalid_request(format!("loading alias map: {e}")))?;
-        let path = compose_envelope(
+        let prefs = load_or_migrate_preferences(
+            &self.paths.preferences,
+            &self.paths.legacy_cognition_config,
+            &self.paths.legacy_cadence,
+        )
+        .unwrap_or_default();
+        let path = compose_envelope_with_ag(
             req,
             &self.paths.template,
             &self.paths.root,
             &aliases,
+            &prefs.cognition,
             Utc::now(),
         )
+        .await
         .map_err(|e| invalid_request(format!("compose failed: {e}")))?;
 
         info!(file = %path.display(), "composed envelope via MCP");
 
         Ok(Json(ComposeOutput {
             file_path: path.display().to_string(),
-            note: "Draft written to outbox. Show the body to the principal, get explicit \
-                   confirmation, then stamp via the `stamp` tool (biometric-gated). The daemon \
-                   will deliver after stamping; on macOS the LaunchAgent polls every 15 minutes."
+            note: "Draft written to the queue's `_drafts/` dir. Show the body to \
+                   the principal, get explicit confirmation, then stamp via the \
+                   `stamp` tool (biometric-gated). The stamp ceremony atomically \
+                   promotes the file into `envelopes/YYYY/MM/DD/`, which the \
+                   daemon picks up and delivers."
                 .to_string(),
         }))
     }
@@ -788,7 +835,12 @@ impl SecretariatServer {
         \
         The `queue` parameter is a colon-pathed handle (e.g. `triage`, \
         `pain`, `articles`, `dommage-corporel:paris-cohort`). If you \
-        don't know which to pick, default to `triage`."
+        don't know which to pick, default to `triage`. \
+        \
+        AG fields (`title` / `lede` / `summary`) are author-attributed when \
+        supplied. Omit all three for substantive captures (>=280 chars or \
+        multi-paragraph) and the scribe drafts them, tagged `ag_source = \"ai\"`. \
+        Short one-liners skip extraction entirely."
     )]
     async fn capture(
         &self,
@@ -804,11 +856,27 @@ impl SecretariatServer {
             queue: queue.clone(),
             body: params.body,
             source: params.source.unwrap_or_else(|| "mcp-capture".to_string()),
+            title: params.title,
+            lede: params.lede,
+            summary: params.summary,
         };
 
         let root = self.resolve_root(params.org.as_deref())?;
-        let path = capture_to_queue(req, &self.paths.root, &root, Utc::now())
-            .map_err(|e| invalid_request(format!("capture failed: {e}")))?;
+        let prefs = load_or_migrate_preferences(
+            &self.paths.preferences,
+            &self.paths.legacy_cognition_config,
+            &self.paths.legacy_cadence,
+        )
+        .unwrap_or_default();
+        let path = capture_to_queue_with_ag(
+            req,
+            &self.paths.root,
+            &root,
+            &prefs.cognition,
+            Utc::now(),
+        )
+        .await
+        .map_err(|e| invalid_request(format!("capture failed: {e}")))?;
 
         info!(file = %path.display(), queue = %queue.as_str(), "captured to local queue via MCP");
 
@@ -996,7 +1064,8 @@ impl SecretariatServer {
         let signer = build_signer(did, key, false)
             .map_err(|e| invalid_request(format!("biometric gate setup failed: {e}")))?;
 
-        let outcome = stamp_document(&path, &signer, StampAct::Attest, params.force, Utc::now())
+        let now = Utc::now();
+        let outcome = stamp_document(&path, &signer, StampAct::Attest, params.force, now)
             .map_err(|e| match e {
                 StampError::AlreadyStamped => invalid_request(
                     "file already has a stamp; pass `force: true` to re-stamp".into(),
@@ -1007,20 +1076,27 @@ impl SecretariatServer {
                 other => invalid_request(format!("stamp failed: {other}")),
             })?;
 
-        info!(file = %outcome.stamped_path.display(), "stamped envelope via MCP");
+        // If the stamped file was a draft (lives in `<queue>/_drafts/`),
+        // promote it into the canonical `<queue>/envelopes/YYYY/MM/DD/`
+        // tree — the rename is the wire-send signal for the daemon.
+        let stamped_path = promote_draft_to_envelope(&outcome.stamped_path, now)
+            .map_err(|e| invalid_request(format!("promoting draft to envelope: {e}")))?;
+
+        info!(file = %stamped_path.display(), "stamped envelope via MCP");
 
         Ok(Json(StampOutput {
-            stamped_path: outcome.stamped_path.display().to_string(),
+            stamped_path: stamped_path.display().to_string(),
             signer: outcome.stamp.signer.as_str().to_string(),
             stamped_at: outcome.stamp.stamped_at.to_rfc3339(),
             doc_hash: outcome.stamp.doc_hash.to_string(),
         }))
     }
 
-    // Note: `list_inbox` and `list_outbox` were tools in 0.2.7-0.2.10.
-    // Moved to resources (`secretariat://inbox`, `secretariat://outbox`)
-    // in 0.2.11 — listing IS reading, so resource semantics fit; the
-    // model fetches them via `resources/read` rather than `tools/call`.
+    // Note: `list_inbox` and `list_drafts` were tools in 0.2.7-0.2.10
+    // (then named `list_outbox`). Moved to resources
+    // (`secretariat://compositions`) in 0.2.11 — listing IS reading,
+    // so resource semantics fit; the model fetches via
+    // `resources/read` rather than `tools/call`.
 
     // Note: `defer` was a tool in 0.2.7-0.2.10. Dropped in 0.2.11 because
     // the bubble-up logic that would make "deferred" semantically distinct
@@ -1644,7 +1720,7 @@ impl SecretariatServer {
         ),
         description = "Run one sync cycle against every registered relay: poll inbound, \
         drain claim notifications (auto-add bilateral contacts from accepted invites), \
-        drain stamped outbox drafts. Idempotent and safe to call repeatedly. \
+        drain stamped self-authored envelopes pending send. Idempotent and safe to call repeatedly. \
         \
         Prefers the running daemon's IPC socket so it doesn't race the daemon's own poll \
         loop on `RelayState` saves; falls back to running the cycle in-proc when no \
@@ -1767,7 +1843,7 @@ impl ServerHandler for SecretariatServer {
         resources.push(build_resource(
             RESOURCE_COMPOSITIONS_URI,
             "Compositions",
-            "Pending drafts in the outbox awaiting the principal's stamp — \
+            "Pending drafts under each queue's `_drafts/` awaiting the principal's stamp — \
              rendered with subject, recipient, and age. Fetch ONLY when the \
              principal asks 'what drafts do I have?' or initiates a stamp \
              session.",
@@ -1831,9 +1907,11 @@ Secretariat is ambient context for AI, stamped by humans. You live in the \
 context stream — read and draft continuously; the principal only enters to \
 stamp the moments that count. You are the scribe; the principal stamps, you \
 never do. Drafts live under the recipient's queue tree (peer queues at \
-`<peer-alias>/<handle-path>/outbox/`; org channels at \
-`<orgs-root>/<org>/channels/<handle-path>/outbox/`) and become sent \
-envelopes only after the principal authorizes the stamp via Touch ID.
+`<peer-alias>/channels/<handle-path>/_drafts/`; org channels at \
+`<orgs-root>/<org>/channels/<handle-path>/_drafts/`) and are promoted \
+into the queue's `envelopes/YYYY/MM/DD/` tree by the stamp ceremony's \
+atomic rename — that rename IS the wire-send signal. Stamping is gated \
+by Touch ID.
 
 Stamp ceremony (mandatory before calling `stamp`):
   1. Call `read` on the same `file_path`.
@@ -1906,8 +1984,8 @@ fn render_orgs(orgs_root: &std::path::Path) -> Result<String, ErrorData> {
 }
 
 fn render_compositions(root: &std::path::Path) -> Result<String, ErrorData> {
-    let drafts = list_outbox_files(root)
-        .map_err(|e| internal_error(format!("list_outbox: {e}")))?;
+    let drafts = list_draft_files(root)
+        .map_err(|e| internal_error(format!("list_drafts: {e}")))?;
     if drafts.is_empty() {
         return Ok("# Compositions\n\n_No pending drafts._\n".to_string());
     }
@@ -1953,6 +2031,44 @@ fn render_contacts(path: &std::path::Path) -> Result<String, ErrorData> {
         out.push('\n');
     }
     Ok(out)
+}
+
+/// Atomically promote a stamped draft from `<queue>/_drafts/<file>` to
+/// `<queue>/envelopes/YYYY/MM/DD/<file>`. No-op when the file isn't a
+/// draft (e.g. a standalone stamped attestation outside any queue). The
+/// rename is the wire-send signal the daemon's envelope watcher picks up.
+fn promote_draft_to_envelope(
+    stamped: &std::path::Path,
+    now: chrono::DateTime<Utc>,
+) -> Result<std::path::PathBuf, String> {
+    let parent = match stamped.parent() {
+        Some(p) => p,
+        None => return Ok(stamped.to_path_buf()),
+    };
+    if parent.file_name().and_then(|n| n.to_str()) != Some("_drafts") {
+        return Ok(stamped.to_path_buf());
+    }
+    let queue_dir = match parent.parent() {
+        Some(p) => p,
+        None => return Ok(stamped.to_path_buf()),
+    };
+    let day_shard = queue_dir
+        .join("envelopes")
+        .join(now.format("%Y/%m/%d").to_string());
+    std::fs::create_dir_all(&day_shard)
+        .map_err(|e| format!("creating {}: {e}", day_shard.display()))?;
+    let file_name = stamped
+        .file_name()
+        .ok_or_else(|| format!("stamped path has no filename: {}", stamped.display()))?;
+    let dest = day_shard.join(file_name);
+    std::fs::rename(stamped, &dest).map_err(|e| {
+        format!(
+            "rename {} -> {}: {e}",
+            stamped.display(),
+            dest.display()
+        )
+    })?;
+    Ok(dest)
 }
 
 fn invalid_request(msg: String) -> ErrorData {

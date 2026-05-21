@@ -8,10 +8,18 @@
 //! ```text
 //! ~/.secretariat/
 //!   <alias-of-to>/<namespace>/<segments>/
-//!     envelopes/YYYY/MM/DD/*.md      (decrypted, AI/grep-able)
-//!     outbox/*.md                     (drafts; daemon ferries)
+//!     envelopes/YYYY/MM/DD/*.md      (decrypted: drafts, stamped, received)
+//!     sent/YYYY/MM/DD/*.md            (delivered self-authored archive)
 //!     _ciphertext/                    (encrypted-at-rest blobs)
 //! ```
+//!
+//! v0.9 collapse (per `docs/pitches/2026-05-18-drop-outbox.md`): the
+//! `outbox/` substrate-staging subdir is gone. Drafts now carry a
+//! `.draft.md` filename suffix and live in `envelopes/YYYY/MM/DD/`
+//! alongside their post-stamp `.md` siblings. The stamp ceremony's
+//! atomic rename (`.draft.md` → `.md`) IS the wire-send signal. Delivered
+//! self-authored envelopes are archived under the queue's `sent/`
+//! day-sharded tree by the daemon's drain.
 //!
 //! Examples:
 //!
@@ -138,7 +146,7 @@ pub enum AliasMapError {
 
 /// Compute the on-disk queue directory for a `Recipient` under the
 /// principal's substrate root. The result is the directory that
-/// *contains* `envelopes/`, `outbox/`, `_ciphertext/` for this queue.
+/// *contains* `envelopes/`, `sent/`, `_ciphertext/` for this queue.
 ///
 /// Path shape (v0.7+ — queue_dir alignment slice): `<root>/<alias>/channels/<segs>/`.
 /// Three kinds of `<alias>` — `_self`, `<org-alias>`, `<peer-alias>` —
@@ -148,7 +156,7 @@ pub enum AliasMapError {
 ///
 /// Pure compute — no IO. Path is not guaranteed to exist on disk;
 /// callers that need it materialized should `create_dir_all` against
-/// the result (or against [`envelopes_dir`] / [`outbox_dir`] /
+/// the result (or against [`envelopes_dir`] / [`sent_dir`] /
 /// [`ciphertext_dir`] which compose on top).
 pub fn queue_dir(aliases: &AliasMap, recipient: &Recipient, root: &Path) -> PathBuf {
     let alias = aliases.alias_for(&recipient.owner);
@@ -166,9 +174,23 @@ pub fn envelopes_dir(aliases: &AliasMap, recipient: &Recipient, root: &Path) -> 
     queue_dir(aliases, recipient, root).join("envelopes")
 }
 
-/// `<queue-dir>/outbox/` — drafts the daemon picks up to sign+send.
-pub fn outbox_dir(aliases: &AliasMap, recipient: &Recipient, root: &Path) -> PathBuf {
-    queue_dir(aliases, recipient, root).join("outbox")
+/// `<queue-dir>/_drafts/` — unstamped drafts the AI scribe has
+/// composed and the principal has not yet reviewed. The compose verb
+/// writes here; the stamp ceremony renames the file out of `_drafts/`
+/// into `envelopes/YYYY/MM/DD/` atomically. The `_` prefix keeps this
+/// dir clustered with other substrate-private trees (`_ciphertext`)
+/// and out of grep noise when the principal is reading their queue.
+pub fn drafts_dir(aliases: &AliasMap, recipient: &Recipient, root: &Path) -> PathBuf {
+    queue_dir(aliases, recipient, root).join("_drafts")
+}
+
+/// `<queue-dir>/sent/` — day-sharded archive of envelopes the daemon
+/// has successfully delivered to a relay. Drain moves stamped self-
+/// authored envelopes here post-delivery; the sibling `envelopes/`
+/// tree never gets emptied (received envelopes and pre-delivery
+/// stamped envelopes share its day-shard).
+pub fn sent_dir(aliases: &AliasMap, recipient: &Recipient, root: &Path) -> PathBuf {
+    queue_dir(aliases, recipient, root).join("sent")
 }
 
 /// `<queue-dir>/_ciphertext/` — encrypted-at-rest blobs (what crosses
@@ -267,8 +289,12 @@ mod tests {
             PathBuf::from("/var/secretariat/_self/channels/writing/envelopes"),
         );
         assert_eq!(
-            outbox_dir(&aliases, &recipient, base),
-            PathBuf::from("/var/secretariat/_self/channels/writing/outbox"),
+            drafts_dir(&aliases, &recipient, base),
+            PathBuf::from("/var/secretariat/_self/channels/writing/_drafts"),
+        );
+        assert_eq!(
+            sent_dir(&aliases, &recipient, base),
+            PathBuf::from("/var/secretariat/_self/channels/writing/sent"),
         );
         assert_eq!(
             ciphertext_dir(&aliases, &recipient, base),

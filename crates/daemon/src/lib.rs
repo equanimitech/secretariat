@@ -3,8 +3,8 @@
 //! # Today (v0.2.x)
 //!
 //! Plumbing: poll registered relays, file inbound envelopes into
-//! `~/.secretariat/inbox/`, drain claim notifications (auto-add bilateral
-//! contacts), drain stamped outbox drafts. Cadence is governed by
+//! the per-queue `envelopes/` tree, drain claim notifications (auto-add bilateral
+//! contacts), drain stamped self-authored envelopes pending send. Cadence is governed by
 //! [`secretariat_core::application::decide_poll`] (15-min floor by default,
 //! see `cadence.toml`).
 //!
@@ -24,7 +24,7 @@
 //! # Direction (v0.3+)
 //!
 //! This crate is the eventual home of nine subsystems —
-//! `RelayServer` / `RelayClient` / `OutboxWatcher` / `InboxWriter` /
+//! `RelayServer` / `RelayClient` / `EnvelopeWatcher` / `InboxWriter` /
 //! `MetaResolver` / `AgentSupervisor` / `RoutingEngine` /
 //! `ScheduleTicker` / `IPC`. See the daemon-evolution doc for the
 //! ship order. Slice 0 (this commit) extracts today's logic out of

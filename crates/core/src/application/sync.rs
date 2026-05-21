@@ -9,9 +9,10 @@
 //!    principal created and auto-add the claimer as a contact (the
 //!    defining behavior of a correspondence invite — see
 //!    `process_correspondence_claims`).
-//! 3. **Drain outbox** — find every stamped draft in
-//!    `~/.secretariat/outbox/<recipient>/*.md`, deliver it via
-//!    `send_stamped_envelope`, move to `sent/`.
+//! 3. **Drain pending sends** — find every stamped self-authored envelope
+//!    under `<root>/<alias>/channels/<segs>/envelopes/YYYY/MM/DD/*.md`,
+//!    deliver it via `send_stamped_envelope`, move the file to the
+//!    queue's `sent/YYYY/MM/DD/` archive.
 //!
 //! Three callers today:
 //! - The CLI daemon's `serve` loop (background process, calls each tick)
@@ -159,8 +160,9 @@ pub async fn sync_now(
 
     state.save(&paths.relay_state)?;
 
-    // 3. Drain outbox (relay-agnostic — each draft has its own `to` and
-    // the contact book carries the right relay endpoint per peer).
+    // 3. Drain pending sends (relay-agnostic — each stamped self-authored
+    // envelope has its own `to` and the contact book carries the right
+    // relay endpoint per peer).
     let (sent, warns) = drain_outbox(paths, key).await?;
     outcome.sent_envelopes = sent;
     outcome.outbox_warnings = warns;
@@ -450,41 +452,77 @@ enum ClaimDrainError {
 }
 
 // ---------------------------------------------------------------------------
-// 3. Drain outbox
+// 3. Drain pending sends
 // ---------------------------------------------------------------------------
 
-/// Walk the substrate tree for every `<root>/<alias>/<namespace>/
-/// <segments>/outbox/*.md`, deliver every stamped draft via its peer's
-/// relay, move successes into the queue's `outbox/sent/` subdir.
-/// Unstamped drafts are skipped silently.
+/// Walk the substrate tree for every queue's `envelopes/YYYY/MM/DD/*.md`
+/// and deliver every stamped self-authored envelope via its peer's
+/// relay. Successful deliveries are moved into the queue's sibling
+/// `sent/YYYY/MM/DD/` archive — which is the drain's dedup signal:
+/// the next pass won't re-walk into `sent/` and won't re-send.
 ///
-/// Exposed for the daemon's FS-notify-driven outbox watcher (Slice 2) so
-/// stamp→send latency drops from the poll cadence (15 min) to the
-/// debounce window (~200ms) without forcing a full `sync_now` (which
-/// would also hit registered relays for inbound poll).
+/// Skipped silently:
+/// - Unstamped envelopes (stamp ceremony hasn't completed).
+/// - Self-addressed envelopes (`to == self_did` — local captures,
+///   never relayed).
+/// - Envelopes whose `from` is not the principal (received letters —
+///   we never re-relay someone else's traffic).
+///
+/// Exposed for the daemon's FS-notify-driven watcher so stamp→send
+/// latency drops from the poll cadence (15 min) to the debounce
+/// window (~200ms) without forcing a full `sync_now`.
 ///
 /// Returns `(count_sent, soft_warnings)`. Per-file failures don't fail
 /// the whole drain.
-pub async fn drain_outbox(
+pub async fn drain_pending_sends(
     paths: &KeyPaths,
+    self_did: &Did,
     key: &SigningKey,
 ) -> Result<(usize, Vec<String>), SyncError> {
     let mut sent = 0;
     let mut warnings = Vec::new();
     let contacts = ContactBook::load(&paths.contacts)?;
-    walk_outboxes_recursive(&paths.root, &contacts, key, &mut sent, &mut warnings).await?;
+    walk_envelopes_for_drain(
+        &paths.root,
+        self_did,
+        &contacts,
+        key,
+        &mut sent,
+        &mut warnings,
+    )
+    .await?;
     Ok((sent, warnings))
 }
 
-/// Walk the substrate recursively, draining any `outbox/` directory we
-/// encounter. Skips:
+/// Legacy wire — the v0.8 daemon serve loop still calls `drain_outbox`
+/// directly without a `self_did`. Loads it from disk on demand to keep
+/// callers stable while the daemon migration lands. Once daemon serve
+/// is updated, this alias goes away.
+pub async fn drain_outbox(
+    paths: &KeyPaths,
+    key: &SigningKey,
+) -> Result<(usize, Vec<String>), SyncError> {
+    // Best-effort self-DID resolution. If the identity file is missing
+    // (fresh install, key not seeded), there's nothing self-authored to
+    // drain — return an empty result.
+    let did = match crate::infrastructure::identity_store::load_identity(&paths.identity_md) {
+        Ok(Some(identity)) => identity.did,
+        _ => return Ok((0, Vec::new())),
+    };
+    drain_pending_sends(paths, &did, key).await
+}
+
+/// Walk the substrate recursively, draining any `envelopes/` directory
+/// we encounter. Skips:
 /// - The legacy `_unsorted/` fallback (not a queue).
-/// - The principal-level dotfiles + the `bin/`, `logs/`, `peers/`
-///   trees — none of those carry envelopes.
-/// - The `sent/` subdir under each `outbox/` — that's the daemon's
-///   own post-delivery target and re-draining it would loop.
-async fn walk_outboxes_recursive(
+/// - The principal-level `bin/`, `logs/`, `peers/` trees — none carry envelopes.
+/// - Sibling `sent/`, `deferred/`, `archived/`, `_drafts/`, `_ciphertext/`
+///   trees of `envelopes/` — those are intentionally out-of-active-drain
+///   surface (`sent/` is the drain's own destination; `_drafts/` holds
+///   unstamped files which `send_stamped_envelope` would skip anyway).
+async fn walk_envelopes_for_drain(
     dir: &std::path::Path,
+    self_did: &Did,
     contacts: &ContactBook,
     key: &SigningKey,
     sent: &mut usize,
@@ -510,46 +548,73 @@ async fn walk_outboxes_recursive(
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("");
-        if name == "outbox" {
-            drain_one_outbox(&path, contacts, key, sent, warnings).await;
+        if name == "envelopes" {
+            drain_one_envelopes_tree(&path, self_did, contacts, key, sent, warnings).await;
         } else if !should_skip_for_drain(name) {
-            Box::pin(walk_outboxes_recursive(&path, contacts, key, sent, warnings)).await?;
+            Box::pin(walk_envelopes_for_drain(
+                &path, self_did, contacts, key, sent, warnings,
+            ))
+            .await?;
         }
     }
     Ok(())
 }
 
-async fn drain_one_outbox(
-    outbox: &std::path::Path,
+/// Walk one queue's `envelopes/` tree depth-first; for each `.md` leaf,
+/// attempt delivery. The post-delivery archive lives at
+/// `<queue>/sent/<same-day-shard>/`.
+async fn drain_one_envelopes_tree(
+    envelopes_root: &std::path::Path,
+    _self_did: &Did,
     contacts: &ContactBook,
     key: &SigningKey,
     sent: &mut usize,
     warnings: &mut Vec<String>,
 ) {
-    let sent_dir = outbox.join("sent");
-    let read = match std::fs::read_dir(outbox) {
-        Ok(r) => r,
-        Err(e) => {
-            warnings.push(format!("{}: {e}", outbox.display()));
-            return;
-        }
+    let queue_dir = match envelopes_root.parent() {
+        Some(p) => p.to_path_buf(),
+        None => return,
     };
-    for inner in read {
-        let inner = match inner {
-            Ok(i) => i,
+    let sent_root = queue_dir.join("sent");
+
+    let mut stack = vec![envelopes_root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let read = match std::fs::read_dir(&dir) {
+            Ok(r) => r,
             Err(e) => {
-                warnings.push(format!("{}: {e}", outbox.display()));
+                warnings.push(format!("{}: {e}", dir.display()));
                 continue;
             }
         };
-        let p = inner.path();
-        if !p.is_file() || p.extension().and_then(|x| x.to_str()) != Some("md") {
-            continue;
-        }
-        match send_stamped_envelope(&p, contacts, key, &sent_dir).await {
-            Ok(_) => *sent += 1,
-            Err(SendError::NotStamped) => continue,
-            Err(e) => warnings.push(format!("{}: {e}", p.display())),
+        for inner in read {
+            let inner = match inner {
+                Ok(i) => i,
+                Err(e) => {
+                    warnings.push(format!("{}: {e}", dir.display()));
+                    continue;
+                }
+            };
+            let p = inner.path();
+            if p.is_dir() {
+                stack.push(p);
+                continue;
+            }
+            if p.extension().and_then(|x| x.to_str()) != Some("md") {
+                continue;
+            }
+            // Mirror the day-shard structure under `sent/`.
+            let day_shard = p
+                .parent()
+                .and_then(|parent| parent.strip_prefix(envelopes_root).ok())
+                .map(|rel| sent_root.join(rel))
+                .unwrap_or_else(|| sent_root.clone());
+
+            match send_stamped_envelope(&p, contacts, key, &day_shard).await {
+                Ok(_) => *sent += 1,
+                Err(SendError::NotStamped) => continue,
+                Err(SendError::SelfAddressed { .. }) => continue,
+                Err(e) => warnings.push(format!("{}: {e}", p.display())),
+            }
         }
     }
 }
@@ -558,8 +623,15 @@ fn should_skip_for_drain(name: &str) -> bool {
     name.starts_with('.')
         || matches!(
             name,
-            "_unsorted" | "_ciphertext" | "envelopes" | "deferred" | "archived" | "sent"
-                | "bin" | "logs" | "peers"
+            "_unsorted"
+                | "_ciphertext"
+                | "_drafts"
+                | "deferred"
+                | "archived"
+                | "sent"
+                | "bin"
+                | "logs"
+                | "peers"
         )
 }
 

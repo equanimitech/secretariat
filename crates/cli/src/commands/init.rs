@@ -1,7 +1,7 @@
 //! `sec init` — one-time setup.
 //!
 //! Generates an ed25519 signing key, derives the principal's DID, seeds the
-//! user-customizable AG template, and creates the inbox/outbox/peers directories.
+//! user-customizable AG template, and creates the substrate directories.
 //!
 //! Default DID method: `did:key` (zero hosting). Pass `--did did:web:<host>`
 //! to use a domain-anchored identity that survives key rotation.

@@ -1,34 +1,31 @@
-//! Use case: list the principal's *review queue* — outbox drafts awaiting
-//! a stamp.
+//! Use case: list the principal's *review queue* — unstamped drafts
+//! awaiting a stamp.
 //!
-//! The review queue is a domain concept distinct from "the outbox files."
-//! The outbox holds three things at any moment:
-//! 1. drafts the AI assistant has composed but the principal has not yet
-//!    reviewed (→ review queue),
-//! 2. drafts the principal has stamped but the daemon has not yet sent
-//!    (→ in-flight),
-//! 3. and a `sent/` subdirectory of historical successes
-//!    (→ already handled by the existing list_outbox_files filter).
+//! Post-v0.9 (see `docs/pitches/2026-05-18-drop-outbox.md`) the substrate
+//! holds:
+//! 1. unstamped drafts under per-queue `_drafts/` (→ review queue),
+//! 2. stamped envelopes — received OR self-authored awaiting send — under
+//!    per-queue `envelopes/YYYY/MM/DD/`,
+//! 3. delivered self-authored archive under per-queue `sent/YYYY/MM/DD/`
+//!    (skipped by both inbox + drafts walkers).
 //!
-//! The Tauri review surface (see
-//! `docs/milestones/2026-05-04-tauri-front-door.md` slice 3) needs only
-//! the first category — the principal's chosen-time review session is
-//! about acting on UNSTAMPED drafts.
+//! The Tauri review surface needs only category 1 — the principal's
+//! chosen-time review session is about acting on UNSTAMPED drafts.
 
 use std::path::Path;
 
-use crate::application::inbox_ops::{list_inbox_files, list_outbox_files, InboxOpError, ListedEnvelope};
+use crate::application::inbox_ops::{list_draft_files, list_inbox_files, InboxOpError, ListedEnvelope};
 
-/// Return the subset of outbox files that are not yet stamped — the
-/// drafts awaiting principal review.
+/// Return the unstamped drafts on disk — the review queue.
 ///
-/// Built on top of [`list_outbox_files`] rather than duplicating its
-/// directory walk. This function exists as its own use case because
-/// "review queue" is a first-class domain concept the UI surfaces
-/// directly; the filter belongs in the application layer, not at the
-/// presentation boundary.
-pub fn list_outbox_queue(root: &Path) -> Result<Vec<ListedEnvelope>, InboxOpError> {
-    let all = list_outbox_files(root)?;
+/// Built on top of [`list_draft_files`]; kept as a distinct verb so the
+/// UI's "what's awaiting stamp?" question reads at the presentation
+/// boundary as a domain concept.
+pub fn list_drafts_queue(root: &Path) -> Result<Vec<ListedEnvelope>, InboxOpError> {
+    let all = list_draft_files(root)?;
+    // Drafts are stamped exactly when the stamp ceremony has moved them
+    // out of `_drafts/`. Defensive filter — a stamped file lingering in
+    // `_drafts/` is a partial-rename artifact; surface only unstamped.
     Ok(all.into_iter().filter(|e| !e.stamped).collect())
 }
 
@@ -73,17 +70,16 @@ fn push_listed(out: &mut Vec<ListedEnvelope>, path: &Path) -> Result<(), InboxOp
     Ok(())
 }
 
-/// The principal's full review queue — unstamped outbox drafts AND
-/// envelopes addressed to any of their queues, in a single list. The
-/// UI presents this as one stream (substrate v0.3); each entry is
-/// disambiguated by inspecting its `file_path` and `to` / `queue`
-/// fields.
+/// The principal's full review queue — unstamped drafts AND every
+/// envelope addressed to any of their queues, in a single list. The
+/// UI presents this as one stream; each entry is disambiguated by
+/// inspecting its `file_path` and `to` / `queue` fields.
 ///
-/// Takes the substrate root rather than separate outbox / queues
-/// roots, since both shapes converge on `<root>/<alias>/<namespace>/
-/// <segments>/{envelopes,outbox}/` in v0.3.
+/// Takes the substrate root rather than separate roots, since both
+/// shapes converge on `<root>/<alias>/channels/<segs>/{envelopes,_drafts}/`
+/// in v0.9.
 pub fn list_review_queue(root: &Path) -> Result<Vec<ListedEnvelope>, InboxOpError> {
-    let mut out = list_outbox_queue(root)?;
+    let mut out = list_drafts_queue(root)?;
     out.extend(list_local_queues(root)?);
     Ok(out)
 }
@@ -127,53 +123,54 @@ mod tests {
 
     #[test]
     fn queue_excludes_stamped_drafts() {
-        // v0.3 layout: drafts to a peer live at
-        // `<peer-alias>/inbox/default/outbox/*.md` — recipient is
-        // encoded in the path, no per-recipient subdir under `outbox/`.
+        // v0.9 layout: drafts to a peer live at
+        // `<peer-alias>/channels/inbox/default/_drafts/*.md` — recipient is
+        // encoded in the path, no per-recipient subdir under `_drafts/`.
         let dir = TempDir::new().unwrap();
-        let outbox = dir.path().join("did_key_z6Mkb/inbox/default/outbox");
-        write_envelope(&outbox, "draft.md", false);
-        write_envelope(&outbox, "stamped.md", true);
+        let drafts = dir.path().join("did_key_z6Mkb/channels/inbox/default/_drafts");
+        write_envelope(&drafts, "draft.md", false);
+        // A stamped file lingering in `_drafts/` (partial-rename artifact)
+        // must NOT surface in the review queue.
+        write_envelope(&drafts, "stamped.md", true);
 
-        let queue = list_outbox_queue(dir.path()).unwrap();
+        let queue = list_drafts_queue(dir.path()).unwrap();
         assert_eq!(queue.len(), 1);
         assert!(queue[0].file_path.ends_with("draft.md"));
         assert!(!queue[0].stamped);
     }
 
     #[test]
-    fn empty_outbox_returns_empty_queue() {
+    fn empty_drafts_returns_empty_queue() {
         let dir = TempDir::new().unwrap();
-        let queue = list_outbox_queue(dir.path()).unwrap();
+        let queue = list_drafts_queue(dir.path()).unwrap();
         assert!(queue.is_empty());
     }
 
     #[test]
-    fn review_queue_unions_outbox_and_local_queues() {
+    fn review_queue_unions_drafts_and_local_queues() {
         let dir = TempDir::new().unwrap();
         let root = dir.path();
 
-        // One unstamped peer draft at <peer>/inbox/default/outbox/.
-        write_envelope(&root.join("did_key_z6Mkb/inbox/default/outbox"), "draft.md", false);
-
-        // One local capture under _self/inbox/triage/envelopes/.
+        // One unstamped peer draft at <peer>/channels/inbox/default/_drafts/.
         write_envelope(
-            &root.join("_self/inbox/triage/envelopes/2026/05/12"),
+            &root.join("did_key_z6Mkb/channels/inbox/default/_drafts"),
+            "draft.md",
+            false,
+        );
+
+        // One local capture under _self/channels/inbox/triage/envelopes/.
+        write_envelope(
+            &root.join("_self/channels/inbox/triage/envelopes/2026/05/12"),
             "capture.md",
             false,
         );
 
         let unioned = list_review_queue(root).unwrap();
-        // In v0.3 both the outbox draft and the captured envelope show
-        // up; distinguishing peer-letter vs local-capture is done at
-        // the call site by inspecting the `to` field against the
-        // principal's own DID rather than two separate roots.
+        // Both the draft and the captured envelope show up; the caller
+        // discriminates peer-letter vs local-capture by inspecting the
+        // `to` field against the principal's own DID.
         assert_eq!(unioned.len(), 2);
 
-        // Both entries are findable; discrimination by `to` is left
-        // to the caller now (see substrate report on namespace
-        // symmetry — the kind is encoded in the path, not in a
-        // separate field).
         assert!(unioned
             .iter()
             .any(|e| e.file_path.ends_with("draft.md")));
@@ -184,17 +181,19 @@ mod tests {
 
     #[test]
     fn queue_skips_sent_subdirectory() {
-        // v0.3 layout: `<peer>/inbox/default/outbox/sent/` is the
-        // daemon's post-delivery move target; it must never appear in
-        // the review queue. The underlying list_outbox_files already
-        // filters; this test guards the contract.
+        // v0.9 layout: `<peer>/channels/inbox/default/sent/` is the
+        // daemon's post-delivery archive; it must never appear in the
+        // review queue. The underlying walkers filter `sent` via
+        // `should_skip`; this test guards the contract.
         let dir = TempDir::new().unwrap();
-        let outbox = dir.path().join("did_key_z6Mkb/inbox/default/outbox");
-        let sent = outbox.join("sent");
-        write_envelope(&outbox, "active.md", false);
+        let drafts = dir.path().join("did_key_z6Mkb/channels/inbox/default/_drafts");
+        let sent = dir
+            .path()
+            .join("did_key_z6Mkb/channels/inbox/default/sent/2026/05/12");
+        write_envelope(&drafts, "active.md", false);
         write_envelope(&sent, "historical.md", true);
 
-        let queue = list_outbox_queue(dir.path()).unwrap();
+        let queue = list_drafts_queue(dir.path()).unwrap();
         assert_eq!(queue.len(), 1);
         assert!(queue[0].file_path.ends_with("active.md"));
     }

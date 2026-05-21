@@ -34,7 +34,8 @@ export function entryToNode(e: TreeEntry, parentOrg: string | null = null): Expl
 /** Names of substrate dirs that never carry channels — hidden in channel-only mode. */
 const NON_CHANNEL_DIR_NAMES = new Set([
   'envelopes',
-  'outbox',
+  '_drafts',
+  'sent',
   '_ciphertext',
   '.claude',
   'identity',

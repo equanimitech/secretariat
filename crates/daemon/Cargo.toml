@@ -4,7 +4,7 @@ version = "0.9.0"
 edition = "2021"
 authors = ["Rafa Ballestiero"]
 license = "MIT"
-description = "Long-running local orchestrator for Secretariat: relay poll, outbox drain, LaunchAgent supervision. Evolves into the v0.3+ local nervous system (RelayServer, RelayClient, OutboxWatcher, InboxWriter, MetaResolver, AgentSupervisor, RoutingEngine, ScheduleTicker, IPC)."
+description = "Long-running local orchestrator for Secretariat: relay poll, envelope drain (stamped self-authored envelopes pending send), LaunchAgent supervision. Evolves into the v0.3+ local nervous system (RelayServer, RelayClient, EnvelopeWatcher, InboxWriter, MetaResolver, AgentSupervisor, RoutingEngine, ScheduleTicker, IPC)."
 
 [lib]
 name = "secretariat_daemon"

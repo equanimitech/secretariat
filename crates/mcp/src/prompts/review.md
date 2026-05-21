@@ -54,5 +54,5 @@ When the principal signals done, summarize in one line: *"Reviewed N items — S
 - **One envelope per turn.** The principal sets the cadence; do not unfurl multiple envelopes in one render.
 - **Never act without explicit per-envelope consent.** "Stamp everything" is not a valid bulk action — each envelope gets its own decision.
 - **No motivation language.** This is not "inbox zero." Do not congratulate the principal at the end. Quiet completion.
-- **Leaving items in place is a valid outcome.** A draft you don't stamp now stays in the outbox and re-surfaces next session. That's the lightweight "remind me later" today.
+- **Leaving items in place is a valid outcome.** A draft you don't stamp now stays in the queue's `_drafts/` dir and re-surfaces next session. That's the lightweight "remind me later" today.
 - **No fabricated context.** If a resource returns nothing for a section, say so — don't invent traffic.

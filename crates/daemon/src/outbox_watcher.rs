@@ -1,22 +1,23 @@
-//! Filesystem watcher on `~/.secretariat/outbox/`. When a draft appears
-//! or changes, debounce briefly, then fire a callback — wiring this up
-//! to `drain_outbox` drops stamp→send latency from the poll cadence
-//! (15 min default) to the debounce window (~200 ms).
+//! Filesystem watcher on the substrate root. When a `.md` file appears
+//! or changes under any queue's `envelopes/` tree — which is what the
+//! stamp ceremony's atomic `_drafts/` → `envelopes/YYYY/MM/DD/` rename
+//! triggers — debounce briefly, then fire a callback. Wiring this up
+//! to `drain_pending_sends` drops stamp→send latency from the poll
+//! cadence (15 min default) to the debounce window (~200 ms).
 //!
-//! Slice 2 per `docs/ideas/2026-05-12-daemon-evolution.md`. The poll
-//! loop remains the safety net: its periodic `sync_now` still drains
-//! the outbox so a missed event (rare; e.g. watcher restart races a
-//! write) doesn't strand a stamped envelope.
+//! v0.9 drop-outbox pitch (`docs/pitches/2026-05-18-drop-outbox.md`):
+//! the old `outbox_watcher` watched `outbox/`; this module name is kept
+//! for module-path stability while the behavior moves to envelope-tree
+//! watching. The poll loop remains the safety net.
 //!
 //! # Why the API takes a callback
 //!
-//! `outbox_watcher` doesn't know about `KeyPaths` or `SigningKey` and
-//! doesn't link `secretariat-core`'s `drain_outbox` directly. The
-//! watcher's job is pure event plumbing — debounce + dispatch. The
-//! caller (the daemon's `serve` loop) wires the real drain. This shape
-//! keeps the watcher unit-testable without standing up the crypto
-//! stack and matches the v0.3 invariant that callers compose
-//! subsystems explicitly.
+//! The watcher doesn't know about `KeyPaths` or `SigningKey` and
+//! doesn't link `secretariat-core`'s drain directly. Its job is pure
+//! event plumbing — debounce + dispatch. The caller (the daemon's
+//! `serve` loop) wires the real drain. This shape keeps the watcher
+//! unit-testable without standing up the crypto stack and matches the
+//! v0.3 invariant that callers compose subsystems explicitly.
 //!
 //! # Debounce semantics
 //!
@@ -48,13 +49,15 @@ pub const DEFAULT_DEBOUNCE: Duration = Duration::from_millis(200);
 /// on shutdown.
 ///
 /// `on_drain` is invoked once per debounce window when relevant
-/// `.md` events arrive under `outbox_dir`. Events inside any
-/// `sent/` subdirectory are ignored — those are the daemon's own
-/// post-delivery moves and re-triggering the drain on them would
-/// loop. The callback is sync over a `Future` so callers can run
-/// any async drain logic.
+/// `.md` events arrive under the watched root. Events under
+/// substrate-staging trees (`_drafts/`, `_ciphertext/`, `sent/`,
+/// `archived/`, `deferred/`) are ignored — `_drafts/` carries
+/// unstamped files which the drain skips anyway; `sent/` is the
+/// post-delivery archive (re-triggering would loop); the rest are
+/// out-of-active-surface. The callback is sync over a `Future` so
+/// callers can run any async drain logic.
 pub fn spawn_watcher<F, Fut>(
-    outbox_dir: PathBuf,
+    root_dir: PathBuf,
     debounce: Duration,
     on_drain: F,
 ) -> JoinHandle<()>
@@ -63,22 +66,21 @@ where
     Fut: Future<Output = ()> + Send + 'static,
 {
     tokio::spawn(async move {
-        if let Err(e) = run(outbox_dir.clone(), debounce, on_drain).await {
-            warn!(dir = %outbox_dir.display(), error = %e, "outbox watcher stopped");
+        if let Err(e) = run(root_dir.clone(), debounce, on_drain).await {
+            warn!(dir = %root_dir.display(), error = %e, "envelope watcher stopped");
         }
     })
 }
 
-async fn run<F, Fut>(outbox_dir: PathBuf, debounce: Duration, on_drain: F) -> Result<()>
+async fn run<F, Fut>(root_dir: PathBuf, debounce: Duration, on_drain: F) -> Result<()>
 where
     F: Fn() -> Fut + Send + Sync + 'static,
     Fut: Future<Output = ()> + Send + 'static,
 {
     // Make sure the directory exists before we ask `notify` to watch
-    // it; some platforms surface a hard error on a missing path and
-    // the outbox dir may not exist on a fresh install.
-    std::fs::create_dir_all(&outbox_dir)
-        .with_context(|| format!("creating {}", outbox_dir.display()))?;
+    // it; some platforms surface a hard error on a missing path.
+    std::fs::create_dir_all(&root_dir)
+        .with_context(|| format!("creating {}", root_dir.display()))?;
 
     let (tx, mut rx) = mpsc::unbounded_channel::<notify::Result<Event>>();
 
@@ -92,10 +94,10 @@ where
     .context("constructing filesystem watcher")?;
 
     watcher
-        .watch(&outbox_dir, RecursiveMode::Recursive)
-        .with_context(|| format!("watching {}", outbox_dir.display()))?;
+        .watch(&root_dir, RecursiveMode::Recursive)
+        .with_context(|| format!("watching {}", root_dir.display()))?;
 
-    info!(dir = %outbox_dir.display(), "outbox watcher armed");
+    info!(dir = %root_dir.display(), "envelope watcher armed");
 
     // Initial drain: pick up anything that was stamped while the
     // daemon was down. The poll loop would catch it on its first tick
@@ -115,7 +117,7 @@ where
             Some(r) => r,
             None => return Ok(()), // channel closed → shutdown
         };
-        if !should_trigger(&first, &outbox_dir) {
+        if !should_trigger(&first, &root_dir) {
             continue;
         }
 
@@ -132,10 +134,11 @@ where
 }
 
 /// Decide whether an event under the watched root should fire a drain.
-/// We trigger on Create / Modify of `.md` files outside any `sent/`
-/// subdirectory. Everything else (the daemon's own post-delivery
-/// moves, dot-files, directory metadata changes) is ignored.
-fn should_trigger(event: &notify::Result<Event>, _outbox_root: &Path) -> bool {
+/// Triggers on Create / Modify of `.md` files outside any out-of-active-
+/// surface ancestor (`_drafts`, `sent`, `_ciphertext`, `archived`,
+/// `deferred`). Everything else (the daemon's own post-delivery moves,
+/// unstamped drafts, dotfiles, directory metadata) is ignored.
+fn should_trigger(event: &notify::Result<Event>, _root: &Path) -> bool {
     let Ok(event) = event else {
         return false;
     };
@@ -143,21 +146,26 @@ fn should_trigger(event: &notify::Result<Event>, _outbox_root: &Path) -> bool {
         EventKind::Create(_) | EventKind::Modify(_) => {}
         _ => return false,
     }
-    event.paths.iter().any(|p| is_outbox_draft(p))
+    event.paths.iter().any(|p| is_envelope_send_candidate(p))
 }
 
-fn is_outbox_draft(path: &Path) -> bool {
+fn is_envelope_send_candidate(path: &Path) -> bool {
     if path.extension().and_then(|e| e.to_str()) != Some("md") {
         return false;
     }
-    // Skip the daemon's own post-delivery moves, which land under
-    // `<outbox>/<recipient>/sent/`. Without this, every successful
-    // send would re-trigger the drain. We check the full path
-    // components rather than stripping the watched-root prefix
-    // because macOS FSEvents canonicalizes paths (`/var/folders/…`
-    // → `/private/var/folders/…`) and a strip_prefix against the
-    // symlink form would silently filter every event out.
-    !path
-        .components()
-        .any(|c| c.as_os_str() == std::ffi::OsStr::new("sent"))
+    // Skip out-of-active-surface ancestors. We check the full path
+    // components rather than stripping the watched-root prefix because
+    // macOS FSEvents canonicalizes paths (`/var/folders/…` →
+    // `/private/var/folders/…`) and a strip_prefix against the symlink
+    // form would silently filter every event out.
+    !path.components().any(|c| {
+        matches!(
+            c.as_os_str().to_str(),
+            Some("_drafts")
+                | Some("sent")
+                | Some("_ciphertext")
+                | Some("archived")
+                | Some("deferred")
+        )
+    })
 }

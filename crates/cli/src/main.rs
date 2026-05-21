@@ -17,7 +17,7 @@ enum Cmd {
     /// One-time setup: generate signing key, write ~/.secretariat/* defaults.
     Init(commands::init::Args),
 
-    /// Scaffold an AG-shaped envelope into ~/.secretariat/outbox/.
+    /// Scaffold an AG-shaped envelope into the recipient queue's `_drafts/` dir.
     Compose(commands::compose::Args),
 
     /// Capture a body of text into a local queue (idea, journal, future-self note).
@@ -35,7 +35,7 @@ enum Cmd {
     /// Verify a stamped markdown file against the signer's did:web document.
     Verify(commands::verify::Args),
 
-    /// List inbox / outbox / recent stamps.
+    /// List inbox / drafts / peers cache.
     List(commands::list::Args),
 
     /// Run the daemon: register with relays + serve the poll/send loop.
@@ -52,6 +52,9 @@ enum Cmd {
 
     /// Wire `sec-mcp` into Claude Desktop / Claude Code (no JSON editing).
     Mcp(commands::mcp::Args),
+
+    /// One-shot substrate migrations (e.g. v0.8 → v0.9 outbox-to-drafts).
+    Migrate(commands::migrate::Args),
 
     /// Manage the principal's display name (presence, distinct from identity).
     Profile(commands::profile::Args),
@@ -76,6 +79,7 @@ fn main() -> Result<()> {
         Cmd::Invite(a) => commands::invite::run(a),
         Cmd::Launch(a) => commands::launch::run(a),
         Cmd::Mcp(a) => commands::mcp::run(a),
+        Cmd::Migrate(a) => commands::migrate::run(a),
         Cmd::Profile(a) => commands::profile::run(a),
         Cmd::View(a) => commands::view::run(a),
     }

@@ -74,21 +74,23 @@ pub async fn serve(paths: &KeyPaths, did: &Did, key: &SigningKey) -> Result<()> 
 
     // Bring up the IPC socket alongside the poll loop. Failures here are
     // logged and swallowed — the loop still serves its primary duty
-    // (polling + outbox drain) without IPC. v0.2.16 behavior preserved.
+    // (polling + envelope drain) without IPC. v0.2.16 behavior preserved.
     // We retain the JoinHandle so the shutdown path can abort the
     // listener and unlink the socket file before the process exits.
     let ipc_handle = crate::ipc::spawn_server(paths.clone(), did.clone(), key.clone());
 
-    // FS-notify on the outbox: stamp → send latency drops from cadence
-    // (15 min default) to ~200ms debounce. The drain shares
-    // `tick_lock` with `run_tick` so it can't race the poll loop's
-    // outbox drain. The poll loop stays as the safety net for missed
-    // events (e.g. watcher restart during a write).
-    // v0.3 substrate: there's no single `paths.outbox` anymore — each
-    // queue carries its own `outbox/` subdir scattered across
-    // `<root>/<alias>/<namespace>/<segments>/`. Watching the
-    // substrate root covers them all; the watcher's filter (`.md`
-    // outside any `sent/` ancestor) keeps spurious events at bay.
+    // FS-notify watcher on the substrate root: stamp → send latency
+    // drops from cadence (15 min default) to ~200ms debounce. The drain
+    // shares `tick_lock` with `run_tick` so it can't race the poll
+    // loop. The poll loop stays as the safety net for missed events
+    // (e.g. watcher restart during a write).
+    //
+    // v0.9 drop-outbox pitch: drafts live under `<queue>/_drafts/` and
+    // get atomically renamed into `<queue>/envelopes/YYYY/MM/DD/`
+    // post-stamp. The watcher filter targets `.md` files NOT under any
+    // `_drafts/`, `sent/`, `_ciphertext/`, `archived/`, or `deferred/`
+    // ancestor — so the post-stamp rename fires exactly once.
+    let watcher_did = did.clone();
     let watcher_key = key.clone();
     let watcher_paths = paths.clone();
     let outbox_handle = crate::outbox_watcher::spawn_watcher(
@@ -96,19 +98,20 @@ pub async fn serve(paths: &KeyPaths, did: &Did, key: &SigningKey) -> Result<()> 
         crate::outbox_watcher::DEFAULT_DEBOUNCE,
         move || {
             let paths = watcher_paths.clone();
+            let did = watcher_did.clone();
             let key = watcher_key.clone();
             async move {
                 let _guard = tick_lock().lock().await;
-                match secretariat_core::application::drain_outbox(&paths, &key).await {
+                match secretariat_core::application::drain_pending_sends(&paths, &did, &key).await {
                     Ok((sent, warnings)) => {
                         if sent > 0 {
-                            info!(count = sent, "fs-notify drained outbox");
+                            info!(count = sent, "fs-notify drained pending sends");
                         }
                         for w in &warnings {
-                            warn!(warning = %w, "outbox drain warning");
+                            warn!(warning = %w, "envelope drain warning");
                         }
                     }
-                    Err(e) => warn!(error = %e, "fs-notify outbox drain failed"),
+                    Err(e) => warn!(error = %e, "fs-notify envelope drain failed"),
                 }
             }
         },
@@ -164,7 +167,7 @@ pub async fn serve(paths: &KeyPaths, did: &Did, key: &SigningKey) -> Result<()> 
 }
 
 /// One sync cycle: poll inbound across registered relays, drain claim
-/// notifications, drain stamped outbox. Returns the [`SyncOutcome`] so
+/// notifications, drain stamped self-authored envelopes pending send. Returns the [`SyncOutcome`] so
 /// callers (loop, IPC server, CLI fallback) can decide how to surface
 /// results.
 pub async fn run_tick(
@@ -228,7 +231,7 @@ pub fn log_outcome(outcome: &SyncOutcome) {
         info!(count = outcome.sent_envelopes, "sent stamped envelopes");
     }
     for w in &outcome.outbox_warnings {
-        warn!(warning = %w, "outbox drain warning");
+        warn!(warning = %w, "envelope drain warning");
     }
 }
 

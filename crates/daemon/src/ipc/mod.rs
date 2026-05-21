@@ -17,7 +17,7 @@
 //! - `tick`    — run one sync cycle; returns the [`SyncOutcome`] inline.
 //!
 //! Future methods land here as new subsystems come online: `status`
-//! returning structured health (relays, queued outbox count, last-poll
+//! returning structured health (relays, queued drafts count, last-poll
 //! timestamp), `meta_resolve` / `digest` / `agent_run` once the
 //! corresponding subsystems exist.
 //!
