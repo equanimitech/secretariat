@@ -261,7 +261,8 @@ mod tests {
         .urgency(EnvelopeUrgency::Whenever)
         .source("capture-test")
         .build();
-        assert!(envelope.recipient.is_local(&me));
+        // Local capture: owner DID matches the principal's DID.
+        assert_eq!(envelope.recipient.owner, me);
 
         let pre = do_embed("# Thought\n\nworth keeping\n", Some(&envelope), None).unwrap();
         fs::write(&path, pre).unwrap();

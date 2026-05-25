@@ -34,9 +34,9 @@ use crate::domain::{Did, QueueHandle};
 const REGISTER_DOMAIN: &[u8] = b"secretariat-relay-register:v0:";
 const AUTH_DOMAIN: &[u8] = b"secretariat-relay-auth:v0:";
 /// v2 (2026-05-19): per-`(owner, handle)` cursors replace the single
-/// per-endpoint cursor. DM cursor now lives as a queue_cursor for
-/// `(self_did, "inbox:default")` like any other subscription. No migration
-/// code — nothing was in production.
+/// per-endpoint cursor. Channels (org-scoped or self-owned) all subscribe
+/// uniformly via `(owner, handle)`. No migration code — nothing was in
+/// production.
 const STATE_VERSION: u32 = 2;
 
 // ---------------------------------------------------------------------------
@@ -75,8 +75,8 @@ pub enum RelayStateError {
 
 /// Per-relay session state. One entry per relay we talk to. Cursors live
 /// on `queue_cursors` (per `(owner, handle)`) — see [`QueueCursor`]. The
-/// legacy single-`cursor` field is gone; DMs ride as a queue cursor for
-/// `(self_did, "inbox:default")` like any other subscription.
+/// legacy single-`cursor` field is gone; every channel subscription
+/// (org-scoped or self-owned) uses the per-`(owner, handle)` axis.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct RelayEntry {
     pub endpoint: String,
@@ -383,10 +383,11 @@ impl<'a> RelayClient<'a> {
     // Channel queue (v0.8) — `(owner, handle)` index axis.
     // ---------------------------------------------------------------------
 
-    /// POST an envelope to an `(owner, handle)` queue. Generalizes
-    /// `send` (which is the two-party case with handle `inbox:default`,
-    /// addressed through the legacy `/v0/inbox/:did` route). Body is opaque
-    /// bytes; relay queues by `(owner, handle)` and assigns the per-channel seq.
+    /// POST an envelope to an `(owner, handle)` queue. One primitive,
+    /// one route — every send is to `(owner, handle)` regardless of
+    /// whether the queue is org-scoped or self-owned. Body is opaque
+    /// bytes; relay queues by `(owner, handle)` and assigns the
+    /// per-channel seq.
     ///
     /// Handle is percent-encoded into the path segment (colons → `%3A`); the
     /// `reqwest::Url` builder handles this for path segments automatically.

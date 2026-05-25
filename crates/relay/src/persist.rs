@@ -31,8 +31,8 @@ use crate::state::Invite;
 
 /// v3 (2026-05-19): single queue index axis keyed by `(owner_did, handle)`.
 /// Supersedes the legacy per-DID `queues:` field (v1) and the transient v2
-/// `channels:` naming. DMs ride as `(peer, "inbox:default")` — same primitive.
-/// No migration code — nothing was in production.
+/// `channels:` naming. One primitive — every queue is `(owner, handle)`,
+/// no special-cased DM shape. No migration code — nothing was in production.
 pub const STATE_VERSION: u32 = 3;
 pub const STATE_FILENAME: &str = "state.json";
 

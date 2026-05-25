@@ -3,10 +3,10 @@
 //! `GET  /v0/queue/{owner_did}/{handle}?after=<cursor>` — a registered
 //! caller pulls the channel's stream (bearer-auth on the caller).
 //!
-//! Generalizes `/v0/inbox/:did`, which is the two-party case (handle
-//! `inbox:default`). The handle path-param is single-segment + URL-encoded
-//! (axum decodes percent-encoding into the extracted `String`); colons in
-//! handles travel as `%3A` on the wire.
+//! One primitive — every queue is `(owner, handle)`. The handle path-param
+//! is a bare slug (post-substrate-collapse, 2026-05-21) and URL-encoded;
+//! axum decodes percent-encoding into the extracted `String`. Colons in
+//! nested handles travel as `%3A` on the wire.
 //!
 //! Auth shape (v0.8 dev — no roster gate yet):
 //! - POST is open. Senders' signatures live inside the envelope body; the

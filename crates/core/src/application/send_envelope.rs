@@ -32,8 +32,6 @@ pub enum SendError {
     ParseEnvelope(#[from] MarkdownError),
     #[error("envelope frontmatter missing — composer should have written it")]
     EnvelopeMissing,
-    #[error("envelope is addressed to its own sender ({did}) — local queue, not a peer; cannot route to relay")]
-    SelfAddressed { did: String },
     #[error("envelope is not stamped yet — principal must approve before sending")]
     NotStamped,
     #[error("no contact for recipient {recipient}")]
@@ -79,11 +77,13 @@ pub async fn send_stamped_envelope(
     if parsed.stamp.is_none() {
         return Err(SendError::NotStamped);
     }
-    if envelope.recipient.is_local(&envelope.from) {
-        return Err(SendError::SelfAddressed {
-            did: envelope.recipient.owner.as_str().to_string(),
-        });
-    }
+    // Self-addressed-shortcut removed in Move 3a (substrate-for-themia
+    // address collapse, 2026-05-21). Under the new substrate, self-owned
+    // channels live under `channels/<slug>/` and never federate — but
+    // that routing decision belongs to the daemon's endpoint-resolution
+    // chain (Move 5), not to this use case. Until Move 5 lands, an
+    // envelope addressed to self will fall through to `NoContact` here,
+    // which existing consumers already classify as a warning.
     let recipient_did = &envelope.recipient.owner;
 
     let contact = contacts

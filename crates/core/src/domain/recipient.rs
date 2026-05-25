@@ -2,34 +2,29 @@
 //!
 //! **Queues are the primitive.** Every envelope is addressed to a queue
 //! identified by `(owner, handle)` — owner is the DID who *owns* that
-//! queue (controls reads/writes), handle is the queue's local name on
-//! the owner's machine.
+//! queue (controls reads/writes), handle is the queue's bare-slug name
+//! on the owner's machine.
 //!
-//! Three real-world cases all collapse to this primitive:
+//! Under the substrate-for-themia collapse (2026-05-21), there is one
+//! primitive — a channel — and two roots distinguishing where the
+//! channel lives on disk:
 //!
-//! - **Local capture** — `owner == self_did`, e.g.
-//!   `(self, inbox:triage)`. Stays on the principal's disk.
-//! - **Direct peer letter** — `owner == peer_did`, e.g.
-//!   `(marcelo, inbox:default)`. Today's "letter to a peer" is a
-//!   queue-of-1 on the peer's relay.
-//! - **Channel / newsletter** — `owner == publisher_did`, e.g.
-//!   `(marcelo, channel:book-progress)`. Multiple subscribers poll the
-//!   same `(owner, handle)` tuple from the publisher's relay. Same
-//!   primitive, different access pattern.
+//! - **Org-scoped channel.** `owner ∈ org membership` →
+//!   `orgs/<alias>/channels/<handle>/`. Federates to the org owner's
+//!   relay.
+//! - **Self-owned channel.** `owner == self_did` →
+//!   `channels/<handle>/`. Local-only (journal, capture).
 //!
 //! Stamps are allowed on any envelope, regardless of recipient. A
 //! principal stamping their own journal entry is valid (tamper-evident
-//! self-attestation); a principal stamping a peer letter is the usual
-//! case. The send-routing rule decides what *happens* to a stamped
-//! envelope: `owner == self_did` stays put; `owner != self_did` goes
-//! out to the owner's relay.
+//! self-attestation); a principal stamping an org-channel envelope is
+//! the curation case (sign ≠ stamp). The send-routing rule decides what
+//! *happens* to a signed envelope: daemon resolves the endpoint via the
+//! org-membership index, NOT via a domain-layer `is_local` check.
 //!
-//! Wire format: `to: <owner-did>` + `handle: <namespace:slug>`. Both
-//! always present. Legacy peer letters that pre-date this collapse use
-//! `inbox:default` as the synthetic handle on read.
-//!
-//! See `docs/pitches/2026-05-05-event-sourced-envelope-substrate.md`
-//! and the queues-as-primitive collapse (2026-05-05).
+//! Wire format: `to: <owner-did>` + `handle: <bare-slug>`. Both always
+//! present. The legacy DM-as-`(peer, inbox:default)` model is gone;
+//! pre-collapse envelopes don't read under this build.
 
 use super::{Did, QueueHandle};
 
@@ -44,18 +39,6 @@ impl Recipient {
     /// Construct a recipient from owner DID + queue handle.
     pub fn new(owner: Did, handle: QueueHandle) -> Self {
         Self { owner, handle }
-    }
-
-    /// True when the queue is owned by `me` — i.e. lives on this
-    /// principal's local disk and never crosses a transport.
-    pub fn is_local(&self, me: &Did) -> bool {
-        &self.owner == me
-    }
-
-    /// True when the queue is owned by someone else — i.e. delivery
-    /// requires hitting the owner's relay.
-    pub fn is_remote(&self, me: &Did) -> bool {
-        !self.is_local(me)
     }
 }
 
@@ -72,28 +55,27 @@ mod tests {
     }
 
     #[test]
-    fn local_when_owner_is_self() {
-        let r = Recipient::new(alice_did(), QueueHandle::parse("inbox:triage").unwrap());
-        assert!(r.is_local(&alice_did()));
-        assert!(!r.is_remote(&alice_did()));
+    fn owner_is_self_when_constructed_with_self_did() {
+        let r = Recipient::new(alice_did(), QueueHandle::parse("triage").unwrap());
+        assert_eq!(r.owner, alice_did());
     }
 
     #[test]
-    fn remote_when_owner_is_peer() {
-        let r = Recipient::new(bob_did(), QueueHandle::parse("inbox:default").unwrap());
-        assert!(!r.is_local(&alice_did()));
-        assert!(r.is_remote(&alice_did()));
+    fn owner_is_peer_when_constructed_with_peer_did() {
+        // Peer-owned queue — under the collapse, this is an org-scoped
+        // channel published by a peer principal (the org owner).
+        let r = Recipient::new(bob_did(), QueueHandle::parse("book-progress").unwrap());
+        assert_eq!(r.owner, bob_did());
+        assert_ne!(r.owner, alice_did());
     }
 
     #[test]
-    fn channel_handle_works() {
-        // A newsletter is just a queue with a `channel:` namespace.
+    fn nested_handle_round_trips() {
         let r = Recipient::new(
             bob_did(),
-            QueueHandle::parse("channel:book-progress").unwrap(),
+            QueueHandle::parse("dommage-corporel:paris-cohort").unwrap(),
         );
-        assert!(r.is_remote(&alice_did()));
-        assert_eq!(r.handle.namespace(), "channel");
-        assert_eq!(r.handle.slug(), "book-progress");
+        assert_eq!(r.handle.as_str(), "dommage-corporel:paris-cohort");
+        assert_eq!(r.handle.as_path_segment(), "dommage-corporel/paris-cohort");
     }
 }

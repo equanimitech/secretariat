@@ -103,14 +103,11 @@ impl<'de> Deserialize<'de> for AgSource {
 /// Lexicon: `tech.equanimi.secretariat.envelope`.
 ///
 /// Queues are the primitive: every envelope addresses a `(owner, handle)`
-/// queue. Wire format: `to: <owner-did>` + `handle: <namespace:slug>`,
-/// both always present. Local captures, peer letters, and channel
-/// broadcasts collapse to the same shape — discrimination is by
-/// `owner == self_did?` at routing time, not by enum variant at parse
-/// time.
-///
-/// Legacy v0.2.x envelopes had `to: <did>` with no handle; on read we
-/// synthesize `inbox:default` so old peer letters keep working.
+/// queue. Wire format: `to: <owner-did>` + `handle: <bare-slug>`, both
+/// always present. Under the substrate-for-themia collapse (2026-05-21)
+/// there is one primitive — a channel — and one address shape; the
+/// daemon's endpoint-resolution chain (org-membership lookup) decides
+/// where a signed envelope flows, not a domain-layer routing predicate.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Envelope {
     pub from: Did,
@@ -168,17 +165,11 @@ struct EnvelopeWire {
     from: Did,
     /// Recipient queue owner DID. Always present.
     to: Did,
-    /// Recipient queue handle (`<namespace>:<slug>`). Always present in
-    /// envelopes written by v0.3+. Legacy v0.2.x envelopes omitted this
-    /// field; the deserializer synthesizes `inbox:default` for them.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    handle: Option<QueueHandle>,
-    /// Legacy field name from the brief v0.3 pre-collapse window, when
-    /// local-queue envelopes used `queue: <handle>` and `to` carried
-    /// only peer DIDs. Promoted on read to the unified `(to, handle)`
-    /// pair. Never written.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    queue: Option<QueueHandle>,
+    /// Recipient queue handle (bare slug, no namespace prefix). Required
+    /// on every envelope written by post-substrate-collapse builds
+    /// (2026-05-21+). Legacy envelopes without this field fail to
+    /// deserialize — no migration synthesis.
+    handle: QueueHandle,
     depth: EnvelopeDepth,
     urgency: EnvelopeUrgency,
     source: String,
@@ -204,8 +195,7 @@ impl Serialize for Envelope {
             type_id: Self::TYPE_ID.to_string(),
             from: self.from.clone(),
             to: self.recipient.owner.clone(),
-            handle: Some(self.recipient.handle.clone()),
-            queue: None,
+            handle: self.recipient.handle.clone(),
             depth: self.depth,
             urgency: self.urgency,
             source: self.source.clone(),
@@ -231,20 +221,9 @@ impl<'de> Deserialize<'de> for Envelope {
                 w.type_id
             )));
         }
-        // Handle resolution priority:
-        //   1. explicit `handle:` (v0.3+ canonical form)
-        //   2. legacy `queue:` (brief pre-collapse window — promote)
-        //   3. neither → synthesize `inbox:default` (v0.2.x peer letter)
-        let handle = match (w.handle, w.queue) {
-            (Some(h), None) => h,
-            (None, Some(h)) => h,
-            (Some(h), Some(_)) => h,
-            (None, None) => QueueHandle::parse("inbox:default")
-                .expect("inbox:default is a valid handle"),
-        };
         Ok(Envelope {
             from: w.from,
-            recipient: Recipient::new(w.to, handle),
+            recipient: Recipient::new(w.to, w.handle),
             depth: w.depth,
             urgency: w.urgency,
             source: w.source,
@@ -262,10 +241,10 @@ impl<'de> Deserialize<'de> for Envelope {
 /// Fluent builder. Mandatory: `from`, `recipient`. Defaults:
 /// `depth = Subtle`, `urgency = Whenever`, `source = ""`, `encryption = None`.
 ///
-/// `recipient` is `(owner, handle)`. Letter to a peer:
-/// `Recipient::new(peer_did, QueueHandle::parse("inbox:default")?)`.
-/// Local capture: `Recipient::new(self_did, QueueHandle::parse("inbox:triage")?)`.
-/// Channel post: `Recipient::new(self_did, QueueHandle::parse("channel:foo")?)`.
+/// `recipient` is `(owner, handle)` with `handle` a bare slug — no
+/// namespace prefix. Org-scoped publication:
+/// `Recipient::new(org_owner_did, QueueHandle::parse("assemblee_generale")?)`.
+/// Self-owned channel: `Recipient::new(self_did, QueueHandle::parse("journal")?)`.
 #[derive(Debug, Clone)]
 pub struct EnvelopeBuilder {
     from: Did,
@@ -385,7 +364,8 @@ mod tests {
     }
 
     fn peer_to_marcelo() -> Recipient {
-        Recipient::new(marcelo(), QueueHandle::parse("inbox:default").unwrap())
+        // Org-scoped channel addressed to a peer-principal (org owner).
+        Recipient::new(marcelo(), QueueHandle::parse("book-progress").unwrap())
     }
 
     fn fixture() -> Envelope {
@@ -416,29 +396,29 @@ mod tests {
     fn envelope_serializes_with_to_and_handle_fields() {
         let yaml = serde_yaml::to_string(&fixture()).unwrap();
         assert!(yaml.contains("to: did:web:marcelo.ballestiero.com"));
-        assert!(yaml.contains("handle: inbox:default"));
+        assert!(yaml.contains("handle: book-progress"));
         assert!(!yaml.contains("queue:"));
     }
 
     #[test]
-    fn local_queue_envelope_uses_self_did_as_owner() {
+    fn self_owned_channel_envelope_uses_self_did_as_owner() {
         let e = Envelope::builder(
             rafa(),
-            Recipient::new(rafa(), QueueHandle::parse("inbox:triage").unwrap()),
+            Recipient::new(rafa(), QueueHandle::parse("triage").unwrap()),
         )
         .source("quick-pane")
         .build();
         let yaml = serde_yaml::to_string(&e).unwrap();
         assert!(yaml.contains("to: did:web:rafa.equanimi.tech"));
-        assert!(yaml.contains("handle: inbox:triage"));
-        assert!(e.recipient.is_local(&rafa()));
+        assert!(yaml.contains("handle: triage"));
+        assert_eq!(e.recipient.owner, rafa());
     }
 
     #[test]
-    fn local_queue_envelope_roundtrip_yaml() {
+    fn self_owned_channel_envelope_roundtrip_yaml() {
         let e = Envelope::builder(
             synth_peer(),
-            Recipient::new(synth_peer(), QueueHandle::parse("inbox:to-self").unwrap()),
+            Recipient::new(synth_peer(), QueueHandle::parse("to-self").unwrap()),
         )
         .source("quick-pane")
         .build();
@@ -448,35 +428,18 @@ mod tests {
     }
 
     #[test]
-    fn legacy_envelope_without_handle_synthesizes_inbox_default() {
-        // v0.2.x peer letter — `to` only, no `handle`. Read must succeed,
-        // synthesizing `inbox:default` so old files keep working.
+    fn envelope_without_handle_field_fails_to_parse() {
+        // Pre-substrate-collapse envelopes (no `handle:` field) do not
+        // read under this build — there is no synthesizer to fall back
+        // on. The bare-slug shape is mandatory on the wire.
         let yaml = "$type: tech.equanimi.secretariat.envelope\n\
                     from: did:web:rafa.equanimi.tech\n\
                     to: did:web:marcelo.ballestiero.com\n\
                     depth: subtle\n\
                     urgency: whenever\n\
                     source: legacy-test\n";
-        let env: Envelope = serde_yaml::from_str(yaml).unwrap();
-        assert_eq!(env.recipient.handle.as_str(), "inbox:default");
-        assert_eq!(env.recipient.owner, marcelo());
-    }
-
-    #[test]
-    fn pre_collapse_queue_field_is_promoted_to_handle() {
-        // Brief v0.3 pre-collapse window used `queue: <handle>` for
-        // local captures with `to` absent. After collapse those still
-        // need to read; we accept `to` + `queue` and promote `queue`
-        // into the unified `handle`.
-        let yaml = "$type: tech.equanimi.secretariat.envelope\n\
-                    from: did:web:rafa.equanimi.tech\n\
-                    to: did:web:rafa.equanimi.tech\n\
-                    queue: inbox:triage\n\
-                    depth: subtle\n\
-                    urgency: whenever\n\
-                    source: legacy-test\n";
-        let env: Envelope = serde_yaml::from_str(yaml).unwrap();
-        assert_eq!(env.recipient.handle.as_str(), "inbox:triage");
+        let r: Result<Envelope, _> = serde_yaml::from_str(yaml);
+        assert!(r.is_err());
     }
 
     #[test]
@@ -501,7 +464,7 @@ mod tests {
     fn envelope_encrypted_yaml_roundtrip() {
         let e = Envelope::builder(
             rafa(),
-            Recipient::new(synth_peer(), QueueHandle::parse("inbox:default").unwrap()),
+            Recipient::new(synth_peer(), QueueHandle::parse("book-progress").unwrap()),
         )
         .depth(EnvelopeDepth::Subtle)
         .urgency(EnvelopeUrgency::Whenever)
@@ -556,7 +519,7 @@ mod tests {
         let yaml = "$type: tech.equanimi.secretariat.envelope\n\
                     from: did:web:rafa.equanimi.tech\n\
                     to: did:web:marcelo.ballestiero.com\n\
-                    handle: inbox:default\n\
+                    handle: book-progress\n\
                     depth: subtle\n\
                     urgency: whenever\n\
                     source: legacy-test\n";
@@ -608,7 +571,7 @@ mod tests {
         let yaml = "$type: tech.equanimi.secretariat.envelope\n\
                     from: did:web:rafa.equanimi.tech\n\
                     to: did:web:marcelo.ballestiero.com\n\
-                    handle: inbox:default\n\
+                    handle: book-progress\n\
                     depth: subtle\n\
                     urgency: whenever\n\
                     source: legacy-test\n\
