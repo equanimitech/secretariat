@@ -2,7 +2,7 @@
 //!
 //! Substrate-for-themia slice. Grants a non-principal DID-keyed identity
 //! signing authority on the principal's behalf, recorded in
-//! `<self_root>/identity.md` under `authorized_agents`.
+//! `<root>/identity.md` under `authorized_agents`.
 //!
 //! Subcommands:
 //! - `sec agent add <name> --role scribe --substrate claude-code`
@@ -28,7 +28,7 @@ pub struct Args {
 #[derive(Subcommand, Debug)]
 enum Cmd {
     /// Grant a new agent signing authority. Mints a fresh did:key keypair,
-    /// stores the key at <self_root>/identity/agents/<name>/key (mode 0600),
+    /// stores the key at <root>/identity/agents/<name>/key (mode 0600),
     /// appends an entry to `authorized_agents`, re-signs identity record.
     Add {
         /// Principal-chosen nickname for this agent. Conventionally matches

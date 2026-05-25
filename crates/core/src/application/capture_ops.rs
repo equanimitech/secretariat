@@ -9,16 +9,16 @@
 //! Stamps are still allowed — a tamper-evident self-attestation on a
 //! journal entry is a valid use case — but never required.
 //!
-//! On-disk layout (v0.5 namespace-collapse —
-//! `docs/pitches/2026-05-17-collapse-namespaces.md`):
+//! On-disk layout (Move 3c — substrate-for-themia, element §2):
 //!
-//! - `Root::Self_` → `<vault>/_self/channels/<segs>/envelopes/YYYY/MM/DD/<ts>.md`
+//! - `Root::Self_` → `<vault>/channels/<segs>/envelopes/YYYY/MM/DD/<ts>.md`
 //! - `Root::Org(alias)` → `<vault>/orgs/<alias>/channels/<segs>/envelopes/YYYY/MM/DD/<ts>.md`
 //!
 //! Handle segments map 1:1 to directory depth — no namespace prefix
 //! token. The `envelopes/YYYY/MM/DD/` time-shard is required so a
 //! channel can carry years of correspondence without flat-directory
-//! pathologies.
+//! pathologies. The pre-Move-3c `_self/` wrapper on the self root is
+//! gone — self channels sit directly under the vault root.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -79,11 +79,11 @@ pub struct CaptureRequest {
 }
 
 /// Compute the channels root for a queue-root under a vault.
-/// `_self` → `<vault>/_self/channels`; `Org(alias)` →
+/// `Self_` → `<vault>/channels`; `Org(alias)` →
 /// `<vault>/orgs/<alias>/channels`.
 pub fn channels_root_for(vault_root: &Path, root: &Root) -> PathBuf {
     match root {
-        Root::Self_ => vault_root.join("_self").join("channels"),
+        Root::Self_ => vault_root.join("channels"),
         Root::Org(alias) => vault_root
             .join("orgs")
             .join(alias.as_str())
@@ -279,7 +279,7 @@ mod tests {
 
         let parent = path.parent().unwrap();
         assert!(
-            parent.ends_with("_self/channels/triage/envelopes/2026/05/05"),
+            parent.ends_with("channels/triage/envelopes/2026/05/05"),
             "expected time-sharded envelopes/ path, got {}",
             parent.display()
         );
@@ -321,7 +321,7 @@ mod tests {
         assert!(
             path.parent()
                 .unwrap()
-                .ends_with("_self/channels/articles/equanimitech/envelopes/2026/05/12"),
+                .ends_with("channels/articles/equanimitech/envelopes/2026/05/12"),
             "expected nested self-channel path with envelopes shard, got {}",
             path.parent().unwrap().display()
         );
@@ -379,6 +379,6 @@ mod tests {
             other => panic!("expected ChannelNotFound, got {other:?}"),
         }
         // No phantom directory left behind.
-        assert!(!dir.path().join("_self/channels/does-not").exists());
+        assert!(!dir.path().join("channels/does-not").exists());
     }
 }

@@ -1,22 +1,32 @@
 //! Key + did:web document file management at `~/.secretariat/`.
 //!
-//! Filesystem layout (v0.5 namespace-collapse —
-//! `docs/pitches/2026-05-17-collapse-namespaces.md`):
+//! Filesystem layout (substrate-for-themia Move 3c —
+//! `docs/pitches/2026-05-21-substrate-for-themia.md`, element §2):
 //!
 //! ```text
 //! ~/.secretariat/
-//! ├── key                          ed25519 PKCS#8 PEM, mode 0600
-//! ├── did.json                     DID document scaffold (user hosts)
-//! ├── contacts.json                known peers (Contact aggregate, mode 0600)
+//! ├── identity.md                  principal identity record (signed)
+//! ├── identity/
+//! │   ├── key                      ed25519 PKCS#8 PEM, mode 0600
+//! │   ├── did.json                 DID document scaffold (user hosts)
+//! │   └── agents/<name>/key        per-agent signing keys, mode 0600
+//! ├── contract-stub.md             user-editable contract.local.md scaffold
+//! ├── .contextification.log        append-only contextification ledger
+//! ├── relay-state.json
 //! ├── template.md                  user-customizable AG template
 //! ├── preferences.toml             composition, cognition, and delivery settings
-//! ├── _self/                       principal-as-queue-root
-//! │   └── channels/<segs>/envelopes/...
-//! ├── orgs/<alias>/                org-as-queue-root (same shape)
+//! ├── channels/<segs>/             principal-owned (self) channels — local-only
+//! │   └── envelopes/...
+//! ├── orgs/<alias>/                org-as-queue-root (federated)
+//! │   ├── contract.md / contract.local.md
 //! │   └── channels/<segs>/envelopes/...
 //! ├── peers/                       cached did:web docs
-//! └── bin/                         user-local helper binaries (reserved; unused in v0.5)
+//! └── bin/                         user-local helper binaries
 //! ```
+//!
+//! Pre-Move-3c layout wrapped the principal's own state inside
+//! `_self/` (so `_self/identity.md`, `_self/channels/...`,
+//! `_self/identity/agents/...`); this collapse drops the wrapper.
 
 use std::fs;
 use std::io::Write;
@@ -50,29 +60,19 @@ pub enum KeyError {
 pub struct KeyPaths {
     pub root: PathBuf,
     /// Active signing key, raw PKCS#8 bytes, mode `0600`. Lives at
-    /// `<self_root>/identity/key` (v0.7+); legacy `<root>/key` for
-    /// pre-v0.7 vaults.
+    /// `<root>/identity/key` (Move 3c+); pre-Move-3c vaults stored it at
+    /// `<root>/_self/identity/key` — the migrate command moves them.
     pub signing_key: PathBuf,
     /// DID document scaffold; `did:web` principals upload this to their
-    /// `.well-known/did.json`. `<self_root>/identity/did.json` (v0.7+);
-    /// legacy `<root>/did.json` for pre-v0.7 vaults.
+    /// `.well-known/did.json`. `<root>/identity/did.json`.
     pub did_document: PathBuf,
-    /// Principal's contact book at `<self_root>/contacts.md`. Markdown
-    /// with one `##` section per contact (YAML frontmatter for typed
-    /// fields, body for free-form prose).
-    pub contacts: PathBuf,
     pub relay_state: PathBuf,
     pub peers_cache: PathBuf,
-    /// Principal-as-queue-root. Mirror of an org dir's shape, with
-    /// `<self_root>/channels/<segs>/envelopes/...` for the principal's own
-    /// channels. Reach the channels root via
-    /// [`KeyPaths::personal_channels_root`].
-    pub self_root: PathBuf,
-    /// Consolidated identity record at `<self_root>/identity.md`. Carries
+    /// Consolidated identity record at `<root>/identity.md`. Carries
     /// the DID, display_name, full_name, key metadata, and rotation log
     /// in YAML frontmatter; principal-editable prose body.
     pub identity_md: PathBuf,
-    /// Directory holding the raw key + DID document — `<self_root>/identity/`.
+    /// Directory holding the raw key + DID document — `<root>/identity/`.
     pub identity_dir: PathBuf,
     /// Root for org-scoped state. Layout:
     /// `<orgs_root>/<alias>/.org` (metadata) + `<orgs_root>/<alias>/channels/<segs>/...`.
@@ -88,14 +88,13 @@ pub struct KeyPaths {
     pub legacy_cognition_config: PathBuf,
     /// Legacy delivery cadence config — kept only for the one-time migration.
     pub legacy_cadence: PathBuf,
-    /// Append-only ledger of contextification decisions. Lives under
-    /// `_self/` so a `tail` over the principal's own tree picks it up
-    /// alongside captures.
+    /// Append-only ledger of contextification decisions at
+    /// `<root>/.contextification.log`.
     pub contextification_log: PathBuf,
     /// Principal's user-editable `contract.local.md` stub. When this
     /// file exists, `save_stub_if_absent` uses its body as the scaffold
     /// for every newly-created channel; otherwise the built-in fallback
-    /// applies. Lives at `<self_root>/contract-stub.md`.
+    /// applies. Lives at `<root>/contract-stub.md`.
     pub contract_stub: PathBuf,
 }
 
@@ -111,13 +110,11 @@ impl KeyPaths {
     }
 
     pub fn under(root: PathBuf) -> Self {
-        let self_root = root.join("_self");
-        let identity_dir = self_root.join("identity");
+        let identity_dir = root.join("identity");
         Self {
             signing_key: identity_dir.join("key"),
             did_document: identity_dir.join("did.json"),
-            identity_md: self_root.join("identity.md"),
-            contacts: self_root.join("contacts.md"),
+            identity_md: root.join("identity.md"),
             relay_state: root.join("relay-state.json"),
             peers_cache: root.join("peers"),
             orgs_root: root.join("orgs"),
@@ -126,21 +123,21 @@ impl KeyPaths {
             preferences: root.join("preferences.toml"),
             legacy_cognition_config: root.join("cognition.json"),
             legacy_cadence: root.join("cadence.toml"),
-            contextification_log: self_root.join(".contextification.log"),
-            contract_stub: self_root.join("contract-stub.md"),
+            contextification_log: root.join(".contextification.log"),
+            contract_stub: root.join("contract-stub.md"),
             identity_dir,
-            self_root,
             root,
         }
     }
 
-    /// `<self_root>/channels/` — the principal's own channels root.
-    /// Per the v0.5 namespace-collapse pitch.
+    /// `<root>/channels/` — the principal's own (self) channels root.
+    /// Per the Move 3c two-channel-tree-roots layout: self channels sit
+    /// at the vault root, peer-with-orgs at `<root>/orgs/<alias>/channels/`.
     pub fn personal_channels_root(&self) -> PathBuf {
-        self.self_root.join("channels")
+        self.root.join("channels")
     }
 
-    /// `<self_root>/identity/agents/` — directory holding per-agent signing
+    /// `<root>/identity/agents/` — directory holding per-agent signing
     /// keys (substrate-for-themia slice; see
     /// `docs/pitches/2026-05-21-substrate-for-themia.md`). Each agent's key
     /// lives at `<agents_root>/<name>/key` (raw PKCS#8 bytes, mode `0600`),
@@ -159,7 +156,6 @@ impl KeyPaths {
         for dir in [
             &self.root,
             &self.peers_cache,
-            &self.self_root,
             &self.identity_dir,
             &self.agents_root(),
             &self.personal_channels_root(),
@@ -262,15 +258,22 @@ mod tests {
         paths.ensure_dirs().unwrap();
         assert!(paths.root.is_dir());
         assert!(paths.peers_cache.is_dir());
-        assert!(paths.self_root.is_dir());
         assert!(paths.personal_channels_root().is_dir());
         assert!(paths.orgs_root.is_dir());
         assert!(paths.bin.is_dir());
         assert!(paths.agents_root().is_dir());
-        assert!(paths.self_root.ends_with("_self"));
-        assert!(paths.personal_channels_root().ends_with("_self/channels"));
+        assert!(paths.identity_dir.ends_with("identity"));
+        assert!(paths.identity_md.ends_with("identity.md"));
+        assert!(paths.personal_channels_root().ends_with("channels"));
         assert!(paths.orgs_root.ends_with("orgs"));
-        assert!(paths.agents_root().ends_with("_self/identity/agents"));
+        assert!(paths.agents_root().ends_with("identity/agents"));
+        // The legacy `_self/` wrapper is gone.
+        assert!(!paths.identity_dir.to_string_lossy().contains("_self"));
+        assert!(!paths.identity_md.to_string_lossy().contains("_self"));
+        assert!(!paths
+            .personal_channels_root()
+            .to_string_lossy()
+            .contains("_self"));
     }
 
     #[test]
@@ -278,7 +281,8 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let paths = KeyPaths::under(dir.path().to_path_buf());
         let p = paths.agent_signing_key_path("claude");
-        assert!(p.ends_with("_self/identity/agents/claude/key"));
+        assert!(p.ends_with("identity/agents/claude/key"));
+        assert!(!p.to_string_lossy().contains("_self"));
     }
 
     #[test]

@@ -1,11 +1,14 @@
 //! `Root` — the queue-root that owns a queue on disk.
 //!
-//! Per the v0.5 namespace-collapse pitch
-//! (`docs/pitches/2026-05-17-collapse-namespaces.md`), every channel-bearing
-//! directory lives under one of two roots:
+//! Per the substrate-for-themia Move 3c layout
+//! (`docs/pitches/2026-05-21-substrate-for-themia.md`, element §2), every
+//! channel-bearing directory lives under one of two roots:
 //!
-//! - `Root::Self_` → `<vault>/_self/channels/<segments>/`
+//! - `Root::Self_` → `<vault>/channels/<segments>/`
 //! - `Root::Org(alias)` → `<vault>/orgs/<alias>/channels/<segments>/`
+//!
+//! The pre-Move-3c `_self/` wrapper is gone — self channels sit straight
+//! at the vault root next to `orgs/`.
 //!
 //! `Root` is *which* root, not *where* — the vault path comes in separately
 //! at resolve time. Keeping the two factored means tests can swap vaults

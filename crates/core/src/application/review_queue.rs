@@ -117,7 +117,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let shard = dir
             .path()
-            .join("_self/channels/journal/envelopes/2026/05/21");
+            .join("channels/journal/envelopes/2026/05/21");
         write_envelope(&shard, "stamped-pending.md", true, None);
 
         let queue = list_drafts_queue(dir.path()).unwrap();
@@ -134,7 +134,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let shard = dir
             .path()
-            .join("_self/channels/journal/envelopes/2026/05/21");
+            .join("channels/journal/envelopes/2026/05/21");
         write_envelope(&shard, "local.md", false, Some("local"));
 
         let queue = list_drafts_queue(dir.path()).unwrap();
@@ -153,25 +153,25 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let root = dir.path();
 
-        // Peer draft (undelivered).
+        // Org draft (undelivered) — non-self lives under `orgs/<alias>/`.
         write_envelope(
-            &root.join("did_key_z6Mkb/channels/inbox/default/envelopes/2026/05/21"),
+            &root.join("orgs/did_key_z6Mkb/channels/inbox/default/envelopes/2026/05/21"),
             "draft.md",
             false,
             None,
         );
 
-        // Local capture (undelivered).
+        // Local capture (undelivered) — self channels sit at root.
         write_envelope(
-            &root.join("_self/channels/inbox/triage/envelopes/2026/05/12"),
+            &root.join("channels/inbox/triage/envelopes/2026/05/12"),
             "capture.md",
             false,
             None,
         );
 
-        // Already-delivered envelope.
+        // Already-delivered envelope under the same org tree.
         write_envelope(
-            &root.join("did_key_z6Mkb/channels/inbox/default/envelopes/2026/05/21"),
+            &root.join("orgs/did_key_z6Mkb/channels/inbox/default/envelopes/2026/05/21"),
             "delivered.md",
             true,
             Some("relay-seq-9"),

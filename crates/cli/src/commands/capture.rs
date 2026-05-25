@@ -40,7 +40,7 @@ pub struct Args {
 
     /// Optional org alias (`themia.pro`, `equanimi.tech`). When set the
     /// capture lands in that org's channel tree. Omit for personal
-    /// captures (under `_self`).
+    /// captures (under `<root>/channels/`).
     #[arg(long)]
     org: Option<String>,
 

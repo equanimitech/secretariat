@@ -51,9 +51,7 @@ pub use identity_store::{
     load_identity, load_identity_verified, save_identity, sign_identity, IdentityStoreError,
     KeyRotation, PrincipalIdentity,
 };
-pub use queue_dir::{
-    ciphertext_dir, envelopes_dir, queue_dir, AliasMap, SELF_ALIAS,
-};
+pub use queue_dir::{ciphertext_dir, envelopes_dir, queue_dir, AliasMap};
 pub use membership_store::{
     load_membership, save_membership, MembershipStoreError, OrgMembership, MEMBERSHIP_FILENAME,
 };

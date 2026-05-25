@@ -249,18 +249,14 @@ source: smoke-test\n\
     assert!(raw.contains("hello channel"));
     assert!(raw.contains(&format!("handle: {}", handle.as_str())));
 
-    // Document the divergence: file lands under <root>/<alias>/channels/...
-    // not <root>/orgs/<alias>/channels/... (where the metadata lives).
+    // Post-Move-3c: org-owned queues file under
+    // `<root>/orgs/<alias>/channels/<segs>/...` — same root the metadata
+    // lives under. The pre-Move-3c divergence (<root>/<alias>/channels/...
+    // vs <root>/orgs/<alias>/channels/...) is resolved.
     let filed_path = found[0].to_string_lossy().to_string();
     assert!(
-        filed_path.contains("equanimi.tech/channels/dev/secretariat/envelopes"),
+        filed_path.contains("orgs/equanimi.tech/channels/dev/secretariat/envelopes"),
         "envelope path: {filed_path}"
-    );
-    // Cross-check the bug: the same channel-dir doesn't double-write.
-    assert!(
-        !filed_path.contains("orgs/equanimi.tech/channels/dev/secretariat/envelopes"),
-        "TODO: align queue_dir to use orgs_root for org-owned queues; \
-         currently writes to <root>/<alias>/... not <root>/orgs/<alias>/..."
     );
 }
 

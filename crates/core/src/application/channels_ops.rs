@@ -368,9 +368,10 @@ mod tests {
     }
 
     /// Capture helper for tests. `vault_root` is the temp vault root;
-    /// the resolver computes `<vault>/_self/channels/<segs>/...` for the
-    /// supplied handle. The caller passes `channels` only to vivify the
-    /// `channel.md` first (the existence gate refuses unknown channels).
+    /// the resolver computes `<vault>/channels/<segs>/...` for the
+    /// supplied handle (Move 3c — no `_self/` wrapper). The caller passes
+    /// `channels` only to vivify the `channel.md` first (the existence
+    /// gate refuses unknown channels).
     fn capture(vault_root: &Path, channels: &Path, handle: &str, body: &str, now: DateTime<Utc>) {
         let q = QueueHandle::parse(handle).unwrap();
         let _ = create_channel(channels, q.clone(), "", "", now, None);
@@ -389,7 +390,7 @@ mod tests {
     /// Self-channels root under a temp vault, matching what `capture()`
     /// would resolve via `channels_root_for(vault, Root::Self_)`.
     fn self_channels(dir: &TempDir) -> PathBuf {
-        dir.path().join("_self").join("channels")
+        dir.path().join("channels")
     }
 
     #[test]

@@ -786,7 +786,8 @@ pub async fn launch_assistant(
 /// A reviewable organization the principal can dispatch a review session into.
 #[derive(Debug, Serialize, Deserialize, specta::Type)]
 pub struct ReviewableOrg {
-    /// `_self` for the private vault, alias DNS-label for orgs.
+    /// `_self` for the private vault (UI-layer sentinel — the on-disk
+    /// `_self/` wrapper is gone post-Move-3c), alias DNS-label for orgs.
     pub alias: String,
     /// Human-readable label rendered on the button.
     pub display_name: String,
@@ -977,9 +978,10 @@ pub async fn launch_claude_at(path: String, terminal: Option<String>) -> Result<
     let channel_dir = find_enclosing_channel_dir(&start)
         .ok_or_else(|| format!("no enclosing channel.md found for `{path}`"))?;
 
-    // Walk up from channel_dir to find the `channels` segment; the
-    // parent of `channels` is either the org root (alias dir under
-    // `<root>/orgs/`) or the `_self` dir.
+    // Walk up from channel_dir to find the `channels` segment.
+    // Under the Move 3c layout the parent of `channels` is either
+    // `<root>/orgs/<alias>` (org channel) or `<root>` itself
+    // (self channel).
     let (org, handle) = derive_org_and_handle(&channel_dir)
         .ok_or_else(|| format!("could not derive handle from `{}`", channel_dir.display()))?;
 
@@ -1007,12 +1009,20 @@ fn derive_org_and_handle(channel_dir: &std::path::Path) -> Option<(Option<String
     loop {
         let name = cur.file_name()?.to_string_lossy().into_owned();
         if name == "channels" {
-            // Parent of `channels` is the alias dir (e.g. `_self` or `<org-alias>`).
-            let alias_dir = cur.parent()?;
-            let alias = alias_dir.file_name()?.to_string_lossy().into_owned();
             segments.reverse();
             let handle = segments.join(":");
-            let org = if alias == "_self" { None } else { Some(alias) };
+            // Move 3c layout: org channels live under `<root>/orgs/<alias>/channels/`;
+            // self channels live under `<root>/channels/` directly. So the
+            // parent of `channels/` is either `<alias>` (whose parent is `orgs`)
+            // or the vault root.
+            let alias_dir = cur.parent()?;
+            let grandparent = alias_dir.parent();
+            let org = match grandparent.and_then(|g| g.file_name()) {
+                Some(g) if g == std::ffi::OsStr::new("orgs") => {
+                    Some(alias_dir.file_name()?.to_string_lossy().into_owned())
+                }
+                _ => None,
+            };
             return Some((org, handle));
         }
         segments.push(name);
@@ -1020,7 +1030,7 @@ fn derive_org_and_handle(channel_dir: &std::path::Path) -> Option<(Option<String
     }
 }
 
-/// Create a new channel. Private (`_self`) when `org` is None;
+/// Create a new channel. Private (self channels root) when `org` is None;
 /// org-scoped when supplied. Returns the resolved channel root path so
 /// the caller can pop it open as a session tab immediately.
 #[tauri::command]

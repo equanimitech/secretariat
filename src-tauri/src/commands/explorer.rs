@@ -15,7 +15,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum EntryKind {
-    /// Top-level "Private" entry pointing at `_self`.
+    /// Top-level "Private" entry pointing at the principal's self
+    /// channels root (`<root>/channels/`).
     Private,
     /// Top-level org root.
     Org,
@@ -48,8 +49,8 @@ pub struct TreeEntry {
     /// For channel leaves: the handle string (joined by `:`). None
     /// otherwise.
     pub handle: Option<String>,
-    /// For channel leaves under an org: the org alias. None for `_self`
-    /// or non-channel entries.
+    /// For channel leaves under an org: the org alias. None for
+    /// self channels or non-channel entries.
     pub org: Option<String>,
 }
 
@@ -61,16 +62,17 @@ pub async fn list_explorer_roots() -> Result<Vec<TreeEntry>, String> {
     let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
     let mut out = Vec::new();
 
-    // Private (_self) — show as "Private" pointing at the _self root so
-    // children include channels/, capture queues, etc.
-    let self_root = paths.root.join("_self");
-    if self_root.is_dir() {
+    // Private — point at `<root>/channels/` so children show the
+    // principal's own channel tree (Move 3c — substrate-for-themia
+    // element §2 drops the `_self/` wrapper).
+    let self_channels = paths.personal_channels_root();
+    if self_channels.is_dir() {
         out.push(TreeEntry {
             name: "Private".into(),
-            path: self_root.to_string_lossy().into_owned(),
+            path: self_channels.to_string_lossy().into_owned(),
             kind: EntryKind::Private,
-            has_children: dir_has_children(&self_root),
-            has_channel_descendants: dir_has_channel_descendants(&self_root),
+            has_children: dir_has_children(&self_channels),
+            has_channel_descendants: dir_has_channel_descendants(&self_channels),
             ext: String::new(),
             handle: None,
             org: None,
@@ -372,7 +374,7 @@ pub async fn move_path(src: String, dest_parent: String) -> Result<String, Strin
 }
 
 /// Reverse-engineer the handle from a channel-dir path by walking up
-/// until we find a `channels` segment. e.g. `<vault>/_self/channels/dev/relay`
+/// until we find a `channels` segment. e.g. `<vault>/channels/dev/relay`
 /// → `dev:relay`. Returns None if no `channels` ancestor is found.
 fn derive_handle(channel_dir: &std::path::Path) -> Option<String> {
     let mut segments: Vec<String> = Vec::new();

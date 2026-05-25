@@ -316,7 +316,7 @@ pub struct CaptureParams {
     pub source: Option<String>,
     /// Optional org alias (`themia.pro`, `equanimi.tech`). When set the
     /// capture lands inside that org's channel tree. Omit (or set null)
-    /// for personal captures (under `_self`).
+    /// for personal captures (under the self channels root).
     #[serde(default)]
     pub org: Option<String>,
     /// Optional AG title (gross signal). Setting any of `title` / `lede`
@@ -350,7 +350,7 @@ pub struct ReadParams {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct InboxActionParams {
     /// Absolute path to the inbox envelope `.md` file. Must live
-    /// under `~/.secretariat/_self/channels/inbox/envelopes/...`.
+    /// under `~/.secretariat/channels/inbox/envelopes/...`.
     pub file_path: String,
 }
 
@@ -1589,7 +1589,7 @@ impl SecretariatServer {
         ),
         description = "Grant a new agent (scribe today; future roles reuse the shape) \
         signing authority on the principal's behalf. Generates a fresh did:key keypair, \
-        stores the key at `~/.secretariat/_self/identity/agents/<name>/key` (mode 0600), \
+        stores the key at `~/.secretariat/identity/agents/<name>/key` (mode 0600), \
         appends an entry to the principal's `authorized_agents`, re-signs the identity \
         record with the principal's active key. \
         \

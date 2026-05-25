@@ -365,11 +365,12 @@ mod tests {
         let sgn = signer(&key);
         let path = compose_envelope(req, &sgn, &template, root, &aliases, now).unwrap();
 
-        // Lives under <root>/marcelo/channels/inbox/default/envelopes/YYYY/MM/DD/.
+        // Lives under <root>/orgs/marcelo/channels/inbox/default/envelopes/YYYY/MM/DD/.
+        // Move 3c — peer (non-self) recipients live under `orgs/<alias>/`.
         // No `_drafts/` intermediate — substrate-for-themia Move 4.
         assert_eq!(
             path.parent().unwrap(),
-            root.join("marcelo/channels/inbox/default/envelopes/2026/04/30"),
+            root.join("orgs/marcelo/channels/inbox/default/envelopes/2026/04/30"),
         );
         assert!(path
             .file_name()
@@ -436,10 +437,11 @@ mod tests {
     }
 
     #[test]
-    fn composes_self_letter_under_self_alias() {
+    fn composes_self_letter_under_self_channels_root() {
         // Self-addressed envelope — owner == from. The resolver maps
-        // to `_self`, the handle's segments give the rest, and the
-        // file lands directly in that queue's `envelopes/YYYY/MM/DD/`.
+        // self to `<root>/channels/<segs>/` (Move 3c — no `_self/`
+        // wrapper); the file lands directly in that queue's
+        // `envelopes/YYYY/MM/DD/`.
         let dir = TempDir::new().unwrap();
         let template = dir.path().join("template.md");
         fs::write(&template, "# Self\n").unwrap();
@@ -468,11 +470,11 @@ mod tests {
         let path = compose_envelope(req, &sgn, &template, root, &aliases, now).unwrap();
         assert_eq!(
             path.parent().unwrap(),
-            root.join("_self/channels/inbox/default/envelopes/2026/04/30"),
+            root.join("channels/inbox/default/envelopes/2026/04/30"),
         );
         // No `_drafts/` dir should be created anywhere under the queue.
         assert!(!root
-            .join("_self/channels/inbox/default/_drafts")
+            .join("channels/inbox/default/_drafts")
             .exists());
     }
 
@@ -485,7 +487,7 @@ mod tests {
         let aliases = AliasMap::new(rafa_did());
 
         // Plant a per-channel template at the recipient's queue dir.
-        let channel_dir = root.join("_self/channels/secretariat/dev");
+        let channel_dir = root.join("channels/secretariat/dev");
         fs::create_dir_all(&channel_dir).unwrap();
         fs::write(
             channel_dir.join("template.md"),

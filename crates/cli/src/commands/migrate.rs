@@ -1,31 +1,37 @@
-//! `sec migrate outbox-to-drafts` — one-shot migration of the v0.8
-//! `<queue>/outbox/*.md` substrate-staging dir to the v0.9 layout
-//! (drafts under `<queue>/_drafts/`, stamped envelopes under
-//! `<queue>/envelopes/YYYY/MM/DD/`, delivered archive under
-//! `<queue>/sent/YYYY/MM/DD/`).
+//! `sec migrate` — one-shot vault migrations between substrate layouts.
 //!
-//! See `docs/pitches/2026-05-18-drop-outbox.md`. Idempotent: if no
-//! `outbox/` directories exist under the substrate root the command
-//! is a clean no-op.
+//! Subcommands:
+//!
+//! - `outbox-to-drafts` — v0.8 → v0.9 (`<queue>/outbox/*.md` →
+//!   `<queue>/_drafts/` + `<queue>/envelopes/YYYY/MM/DD/`). See
+//!   `docs/pitches/2026-05-18-drop-outbox.md`.
+//! - `vault-v0-10-to-v0-11` — drops the `_self/` wrapper and the
+//!   peer-alias channel-tree root. Per Move 3c of
+//!   `docs/pitches/2026-05-21-substrate-for-themia.md` (element §2):
+//!     * `<root>/_self/identity.md`         → `<root>/identity.md`
+//!     * `<root>/_self/identity/`           → `<root>/identity/`
+//!     * `<root>/_self/channels/`           → `<root>/channels/`
+//!     * `<root>/_self/contract-stub.md`    → `<root>/contract-stub.md`
+//!     * `<root>/_self/.contextification.log` → `<root>/.contextification.log`
+//!     * `<root>/<alias>/` (with `channels/`) → `<root>/orgs/<alias>/`
+//!     * Empty `<root>/_self/` removed.
+//!
+//! Each command is idempotent: re-running against an already-migrated
+//! vault is a clean no-op.
 //!
 //! # Data preservation
 //!
 //! Envelopes are never destroyed. Per hard rule
 //! (`memory/feedback_envelopes_never_destroyed.md`):
 //!
-//! 1. Pre-flight `tar` snapshot of every queue dir that holds an
-//!    `outbox/` subtree, written to
-//!    `<root>/.archive/migrations/<timestamp>/<queue-slug>.tar`.
-//! 2. Pre-count `.md` files under all `outbox/` subtrees.
-//! 3. Move (`fs::rename`, atomic on a single filesystem) each file to
-//!    its new home — unstamped to `_drafts/`, stamped to
-//!    `envelopes/YYYY/MM/DD/` (sharded by `stamp.stamped_at` when
-//!    available, falling back to the file's mtime), historical
-//!    `outbox/sent/*.md` to `sent/YYYY/MM/DD/`.
+//! 1. Pre-flight `tar` snapshot of every directory the migration will
+//!    touch, written to `<root>/.archive/migrations/<timestamp>/`.
+//! 2. Pre-count `.md` files in the affected subtrees.
+//! 3. Move (`fs::rename`, atomic on a single filesystem) each file /
+//!    directory to its new home.
 //! 4. Post-count `.md` files reachable from the new locations. Abort
 //!    if pre != post.
-//! 5. Remove the now-empty `outbox/` directory (and its `sent/`
-//!    subdir if present).
+//! 5. Remove now-empty source directory shells.
 
 use anyhow::{anyhow, bail, Context, Result};
 use chrono::{DateTime, Utc};
@@ -49,6 +55,12 @@ enum SubCmd {
     /// Migrate every `<queue>/outbox/` subtree to the v0.9 layout.
     /// Per the drop-outbox pitch (`docs/pitches/2026-05-18-drop-outbox.md`).
     OutboxToDrafts(OutboxToDraftsArgs),
+    /// Migrate a vault from the v0.10 layout (`_self/` wrapper + bare
+    /// `<alias>/` for orgs) to the v0.11 layout (no wrapper; orgs under
+    /// `orgs/<alias>/`). Per Move 3c of substrate-for-themia
+    /// (`docs/pitches/2026-05-21-substrate-for-themia.md`, element §2).
+    #[command(name = "vault-v0-10-to-v0-11")]
+    VaultV010ToV011(VaultV010ToV011Args),
 }
 
 #[derive(Parser, Debug)]
@@ -63,6 +75,7 @@ pub struct OutboxToDraftsArgs {
 pub fn run(args: Args) -> Result<()> {
     match args.cmd {
         SubCmd::OutboxToDrafts(a) => run_outbox_to_drafts(a),
+        SubCmd::VaultV010ToV011(a) => run_vault_v0_10_to_v0_11(a),
     }
 }
 
@@ -396,4 +409,325 @@ fn remove_dir_if_empty_recursive(dir: &Path) -> Result<()> {
         std::fs::remove_dir(dir).ok();
     }
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// vault-v0-10-to-v0-11 — Move 3c layout migration
+// ---------------------------------------------------------------------------
+
+/// Names at the substrate root that ARE NOT org-alias dirs to be wrapped
+/// into `orgs/`. Everything else at root level holding `channels/` gets
+/// folded under `orgs/<alias>/`.
+const ROOT_RESERVED_NAMES: &[&str] = &[
+    "orgs",
+    "channels",
+    "identity",
+    "peers",
+    "bin",
+    ".archive",
+    "_self",
+];
+
+#[derive(Parser, Debug)]
+pub struct VaultV010ToV011Args {
+    /// Walk the vault but don't move anything. Reports the planned
+    /// `mv` operations + the snapshot it would take.
+    #[arg(long, default_value_t = false)]
+    dry_run: bool,
+}
+
+fn run_vault_v0_10_to_v0_11(args: VaultV010ToV011Args) -> Result<()> {
+    let paths = key_paths()?;
+    let root = paths.root.clone();
+    if !root.exists() {
+        eprintln!(
+            "[sec migrate] substrate root does not exist: {}",
+            root.display()
+        );
+        return Ok(());
+    }
+
+    // Plan the moves up front so dry-run prints the full picture and the
+    // real run can pre-flight tar before touching anything.
+    let plan = plan_vault_v0_10_to_v0_11(&root)?;
+    if plan.is_empty() {
+        eprintln!(
+            "[sec migrate] vault at {} already on the v0.11 layout — nothing to do",
+            root.display()
+        );
+        return Ok(());
+    }
+
+    eprintln!("[sec migrate] planned move(s):");
+    for (src, dst) in &plan {
+        eprintln!("  · {} -> {}", src.display(), dst.display());
+    }
+
+    // 1. Pre-count `.md` files in every source.
+    let pre_count: usize = plan
+        .iter()
+        .map(|(src, _)| count_md_recursive(src).unwrap_or(0))
+        .sum();
+    eprintln!("[sec migrate] pre-count: {pre_count} `.md` file(s) in sources");
+
+    if args.dry_run {
+        eprintln!(
+            "[sec migrate] (dry-run) would snapshot then perform {} move(s)",
+            plan.len()
+        );
+        return Ok(());
+    }
+
+    // 2. tar snapshot per source.
+    let timestamp = Utc::now().format("%Y%m%dT%H%M%SZ").to_string();
+    let snapshot_root = root
+        .join(".archive")
+        .join("migrations")
+        .join(&timestamp);
+    std::fs::create_dir_all(&snapshot_root)
+        .with_context(|| format!("creating {}", snapshot_root.display()))?;
+    for (src, _) in &plan {
+        snapshot_path(&root, src, &snapshot_root)?;
+    }
+    eprintln!(
+        "[sec migrate] snapshots written under {}",
+        snapshot_root.display()
+    );
+
+    // 3. Perform the moves. `fs::rename` is atomic within one filesystem.
+    //    Ensure parent dir exists for each destination.
+    for (src, dst) in &plan {
+        if let Some(parent) = dst.parent() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("creating {}", parent.display()))?;
+        }
+        // Refuse to clobber an existing destination — preserves
+        // idempotency-by-failure if someone half-ran a previous attempt.
+        if dst.exists() {
+            bail!(
+                "[sec migrate] destination already exists: {} — refuse to overwrite. \
+                 Snapshots at {}",
+                dst.display(),
+                snapshot_root.display()
+            );
+        }
+        std::fs::rename(src, dst)
+            .with_context(|| format!("rename {} -> {}", src.display(), dst.display()))?;
+    }
+
+    // 4. Post-count.
+    let post_count: usize = plan
+        .iter()
+        .map(|(_, dst)| count_md_recursive(dst).unwrap_or(0))
+        .sum();
+    if post_count != pre_count {
+        bail!(
+            "[sec migrate] count mismatch: pre={pre_count} post={post_count} — \
+             ABORTED. Snapshots at {}; verify before re-running.",
+            snapshot_root.display()
+        );
+    }
+    eprintln!("[sec migrate] post-count: {post_count} (matches pre-count)");
+
+    // 5. Clean up the now-empty `_self/` shell (and any other empty dirs
+    //    left behind by the migration).
+    let legacy_self = root.join("_self");
+    let _ = remove_dir_if_empty_recursive(&legacy_self);
+
+    eprintln!("[sec migrate] OK — vault is on the v0.11 layout");
+    Ok(())
+}
+
+/// Compute the (src, dst) moves required to bring `root` from the
+/// v0.10 layout to v0.11. Returns an empty Vec if the vault is already
+/// migrated. Pure compute — no IO beyond `read_dir`.
+fn plan_vault_v0_10_to_v0_11(root: &Path) -> Result<Vec<(PathBuf, PathBuf)>> {
+    let mut moves: Vec<(PathBuf, PathBuf)> = Vec::new();
+
+    // 1. `_self/` contents.
+    let legacy_self = root.join("_self");
+    if legacy_self.is_dir() {
+        let candidates = [
+            ("identity.md", "identity.md"),
+            ("identity", "identity"),
+            ("channels", "channels"),
+            ("contract-stub.md", "contract-stub.md"),
+            (".contextification.log", ".contextification.log"),
+            ("contacts.md", "contacts.md"),
+        ];
+        for (rel_src, rel_dst) in candidates {
+            let src = legacy_self.join(rel_src);
+            if src.exists() {
+                moves.push((src, root.join(rel_dst)));
+            }
+        }
+    }
+
+    // 2. Bare `<alias>/` dirs at root with a `channels/` sub-dir get
+    //    wrapped under `orgs/<alias>/`. Skip the names that already
+    //    belong at root (`orgs`, `channels`, `identity`, `peers`,
+    //    `bin`, `.archive`, `_self`) and dotfiles.
+    for entry in std::fs::read_dir(root)
+        .with_context(|| format!("read_dir {}", root.display()))?
+    {
+        let entry = entry?;
+        let p = entry.path();
+        if !p.is_dir() {
+            continue;
+        }
+        let name = match p.file_name().and_then(|n| n.to_str()) {
+            Some(n) => n,
+            None => continue,
+        };
+        if name.starts_with('.') {
+            continue;
+        }
+        if ROOT_RESERVED_NAMES.contains(&name) {
+            continue;
+        }
+        // Only treat as a legacy org if it actually carries a
+        // `channels/` sub-dir (i.e. it's a queue-root by shape).
+        // Otherwise leave alone — likely user-managed scratch.
+        if p.join("channels").is_dir() {
+            moves.push((p.clone(), root.join("orgs").join(name)));
+        }
+    }
+
+    Ok(moves)
+}
+
+/// `tar` an arbitrary file or directory under `root` into the snapshot
+/// dir. Filename: `<sanitized-relative-path>.tar`. Uses the system
+/// `tar` so we don't pull in a tar crate just for the migration.
+fn snapshot_path(root: &Path, src: &Path, snapshot_root: &Path) -> Result<()> {
+    let rel = src.strip_prefix(root).unwrap_or(src);
+    let slug = rel
+        .to_string_lossy()
+        .replace(['/', '\\'], "_")
+        .replace(':', "_");
+    let archive_path = snapshot_root.join(format!("{slug}.tar"));
+    let parent = src
+        .parent()
+        .ok_or_else(|| anyhow!("path has no parent: {}", src.display()))?;
+    let name = src
+        .file_name()
+        .ok_or_else(|| anyhow!("path has no filename: {}", src.display()))?;
+    let status = Command::new("tar")
+        .arg("-cf")
+        .arg(&archive_path)
+        .arg("-C")
+        .arg(parent)
+        .arg(name)
+        .status()
+        .with_context(|| format!("invoking tar for {}", src.display()))?;
+    if !status.success() {
+        bail!("tar failed for {} (status {})", src.display(), status);
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn touch(p: &Path) {
+        if let Some(parent) = p.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        std::fs::write(p, "x\n").unwrap();
+    }
+
+    #[test]
+    fn plan_handles_full_legacy_vault() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        touch(&root.join("_self/identity.md"));
+        touch(&root.join("_self/identity/key"));
+        touch(&root.join("_self/identity/did.json"));
+        touch(&root.join("_self/identity/agents/claude/key"));
+        touch(&root.join("_self/channels/journal/channel.md"));
+        touch(&root.join("_self/contract-stub.md"));
+        touch(&root.join("_self/.contextification.log"));
+        // An org dir at root with channels/.
+        touch(&root.join("themia.pro/contract.md"));
+        touch(&root.join("themia.pro/channels/finance/channel.md"));
+        // Reserved name — must not be wrapped.
+        touch(&root.join("peers/cached.json"));
+
+        let plan = plan_vault_v0_10_to_v0_11(root).unwrap();
+        let dests: Vec<_> = plan
+            .iter()
+            .map(|(_, d)| d.strip_prefix(root).unwrap().to_path_buf())
+            .collect();
+        assert!(dests.contains(&PathBuf::from("identity.md")));
+        assert!(dests.contains(&PathBuf::from("identity")));
+        assert!(dests.contains(&PathBuf::from("channels")));
+        assert!(dests.contains(&PathBuf::from("contract-stub.md")));
+        assert!(dests.contains(&PathBuf::from(".contextification.log")));
+        assert!(dests.contains(&PathBuf::from("orgs/themia.pro")));
+        // `peers/` must NOT have been planned for wrapping.
+        for (_src, dst) in &plan {
+            assert!(
+                !dst.to_string_lossy().contains("orgs/peers"),
+                "peers/ wrongly wrapped: {}",
+                dst.display()
+            );
+        }
+    }
+
+    #[test]
+    fn plan_for_already_migrated_vault_is_empty() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        touch(&root.join("identity.md"));
+        touch(&root.join("identity/key"));
+        touch(&root.join("channels/journal/channel.md"));
+        touch(&root.join("orgs/themia.pro/channels/finance/channel.md"));
+        let plan = plan_vault_v0_10_to_v0_11(root).unwrap();
+        assert!(plan.is_empty(), "plan should be empty: {plan:?}");
+    }
+
+    #[test]
+    fn migration_moves_files_and_preserves_count() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        // Set up a legacy vault with envelopes to count.
+        touch(&root.join("_self/identity.md"));
+        touch(&root.join("_self/identity/key"));
+        touch(&root.join(
+            "_self/channels/journal/envelopes/2026/05/24/note.md",
+        ));
+        touch(&root.join("themia.pro/contract.md"));
+        touch(&root.join(
+            "themia.pro/channels/finance/envelopes/2026/05/24/e.md",
+        ));
+
+        let plan = plan_vault_v0_10_to_v0_11(root).unwrap();
+        assert!(!plan.is_empty());
+
+        // Execute the plan manually, mirroring the real command's
+        // mv-and-create-parent flow but skipping tar (no system call).
+        for (src, dst) in &plan {
+            if let Some(parent) = dst.parent() {
+                std::fs::create_dir_all(parent).unwrap();
+            }
+            std::fs::rename(src, dst).unwrap();
+        }
+
+        assert!(root.join("identity.md").exists());
+        assert!(root.join("identity/key").exists());
+        assert!(root
+            .join("channels/journal/envelopes/2026/05/24/note.md")
+            .exists());
+        assert!(root.join("orgs/themia.pro/contract.md").exists());
+        assert!(root
+            .join("orgs/themia.pro/channels/finance/envelopes/2026/05/24/e.md")
+            .exists());
+        // No legacy paths remain at top level.
+        assert!(!root.join("themia.pro").exists());
+        // Cleanup the now-empty `_self/` shell.
+        let _ = remove_dir_if_empty_recursive(&root.join("_self"));
+        assert!(!root.join("_self").exists());
+    }
 }

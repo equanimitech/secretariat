@@ -5,7 +5,7 @@
 //! signing authority on the principal's behalf. The agent's DID + role +
 //! substrate + nickname are recorded in the principal's `identity.md` under
 //! `authorized_agents`; the agent's signing key lives at
-//! `<self_root>/identity/agents/<name>/key` (filesystem-based, mode `0600` —
+//! `<root>/identity/agents/<name>/key` (filesystem-based, mode `0600` —
 //! mirror of the principal-key pattern; platform Keychain Services migration
 //! is a separate later slice).
 //!
