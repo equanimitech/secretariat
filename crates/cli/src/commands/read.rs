@@ -4,19 +4,25 @@
 //! parses → recovers SealedBox from body → derives our X25519 secret from
 //! our ed25519 signing key → decrypts → prints plaintext to stdout.
 //!
-//! Verification of the ed25519 signature is **not** performed here — that's
-//! `sec verify`. A future enhancement could combine both, gated by a flag.
-//! Decryption + verification compose: do `sec verify` first if you don't
-//! trust the inbox file's origin.
+//! Substrate-for-themia Move 13 — runs a layered verify pass before
+//! printing and prepends a `⚠️  STAMP INVALID — body modified since
+//! stamping` (or signature-equivalent) header on tamper detection. The
+//! reader sees the body but is warned that the cryptographic chain is
+//! broken; receivers acting on the content should refuse.
 
 use std::path::PathBuf;
 
 use anyhow::{anyhow, Context, Result};
 use clap::Parser;
 use ed25519_dalek::SigningKey;
+use secretariat_core::application::{
+    verify_document_layered, SignatureOutcome, VerifyOutcome,
+};
 use secretariat_core::infrastructure::crypto::sealed::{open, signing_to_x25519, SealedBox};
+use secretariat_core::infrastructure::identity_store::load_identity;
 use secretariat_core::infrastructure::keys::load_signing_key;
 use secretariat_core::infrastructure::markdown::parse_document;
+use secretariat_core::infrastructure::{CompositeDidResolver, DidWebResolver};
 use secretariat_core::EncryptionScheme;
 
 use super::paths::key_paths;
@@ -28,6 +34,12 @@ pub struct Args {
 }
 
 pub fn run(args: Args) -> Result<()> {
+    // Layered verify first. Body still prints regardless of outcome (the
+    // principal needs to see what they're being warned about), but tamper
+    // states emit a stderr warning header so the reader has cryptographic
+    // context before consuming the body.
+    print_tamper_warnings(&args.file);
+
     let raw = std::fs::read_to_string(&args.file)
         .with_context(|| format!("reading {}", args.file.display()))?;
     let parsed = parse_document(&raw).context("parsing envelope")?;
@@ -48,6 +60,32 @@ pub fn run(args: Args) -> Result<()> {
                 .context("writing plaintext to stdout")?;
             Ok(())
         }
+    }
+}
+
+fn print_tamper_warnings(file: &std::path::Path) {
+    let Ok(paths) = key_paths() else {
+        return;
+    };
+    let resolver = CompositeDidResolver::new(DidWebResolver::new(paths.peers_cache.clone()));
+    let local_did = load_identity(&paths.identity_md)
+        .ok()
+        .flatten()
+        .map(|id| id.did);
+    let Ok(outcome) = verify_document_layered(file, &resolver, local_did.as_ref()) else {
+        return;
+    };
+    if let SignatureOutcome::Tampered { .. } = outcome.signature {
+        eprintln!(
+            "⚠️  SIGNATURE INVALID — body modified since signing. The author signature \
+             no longer covers the bytes you are about to read."
+        );
+    }
+    if let VerifyOutcome::Tampered { .. } = outcome.stamp {
+        eprintln!(
+            "⚠️  STAMP INVALID — body modified since stamping. The principal stamp \
+             no longer covers the bytes you are about to read."
+        );
     }
 }
 
