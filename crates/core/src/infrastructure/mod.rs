@@ -13,6 +13,7 @@ pub mod did_key_resolver;
 pub mod did_web_resolver;
 pub mod ed25519_signer;
 pub mod keys;
+pub mod manifest_cache;
 pub mod markdown;
 pub mod membership_store;
 pub mod org_store;
@@ -48,8 +49,9 @@ pub use preferences::{
     CompositionPrefs, DeliveryPrefs, Preferences, PreferencesError,
 };
 pub use identity_store::{
-    load_identity, load_identity_verified, save_identity, sign_identity, IdentityStoreError,
-    KeyRotation, PrincipalIdentity,
+    load_identity, load_identity_verified, save_identity,
+    save_identity_unsigned_for_migration, sign_identity, IdentityStoreError, KeyRotation,
+    PrincipalIdentity,
 };
 pub use queue_dir::{ciphertext_dir, envelopes_dir, queue_dir, AliasMap};
 pub use membership_store::{

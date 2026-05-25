@@ -73,7 +73,7 @@ fn set(
     }
     let signing_key =
         load_signing_key(&paths.signing_key).context("loading signing key for identity re-sign")?;
-    save_identity(&paths.identity_md, &identity, Some(&signing_key))
+    save_identity(&paths.identity_md, &identity, &signing_key)
         .context("saving identity")?;
     eprintln!("[sec] profile saved: {}", parsed);
     Ok(())

@@ -72,7 +72,9 @@ fn print_tamper_warnings(file: &std::path::Path) {
         .ok()
         .flatten()
         .map(|id| id.did);
-    let Ok(outcome) = verify_document_layered(file, &resolver, local_did.as_ref()) else {
+    let Ok(outcome) =
+        verify_document_layered(file, &resolver, local_did.as_ref(), Some(&paths.root))
+    else {
         return;
     };
     if let SignatureOutcome::Tampered { .. } = outcome.signature {

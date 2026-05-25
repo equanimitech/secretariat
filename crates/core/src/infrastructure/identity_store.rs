@@ -229,12 +229,39 @@ pub fn load_identity_verified(
     Ok(Some(identity))
 }
 
-/// Atomic save (temp + rename). Creates parent dirs on demand.
+/// Atomic save (temp + rename). Creates parent dirs on demand. Signs the
+/// canonical preimage with the principal's active key and embeds the
+/// signature in the `$signature` frontmatter field — every persisted
+/// identity record carries an attestation by the principal that the
+/// `authorized_agents` list at this point in time is what the principal
+/// granted (substrate-for-themia Move 1A).
 ///
-/// If `signing_key` is `Some`, signs the canonical preimage and embeds the
-/// signature in the record's `$signature` frontmatter field. `None` writes
-/// the record unsigned (legacy path; only used by migration scripts).
+/// Migration code that legitimately needs to write an unsigned record
+/// (legacy upgrade, scripted bootstrap before the keypair is materialized)
+/// calls [`save_identity_unsigned_for_migration`] explicitly — the
+/// migration-shaped name keeps grep-discovery honest and prevents accidental
+/// unsigned writes on the main path.
 pub fn save_identity(
+    path: &Path,
+    identity: &PrincipalIdentity,
+    signing_key: &SigningKey,
+) -> Result<(), IdentityStoreError> {
+    save_identity_inner(path, identity, Some(signing_key))
+}
+
+/// Migration-only escape hatch — writes an identity record without a
+/// `$signature` field. Use ONLY from upgrade scripts that have not yet
+/// materialized the principal's signing key. Loaders accept unsigned
+/// records (back-compat for pre-Move-1A vaults); the next legitimate
+/// mutation re-signs via [`save_identity`].
+pub fn save_identity_unsigned_for_migration(
+    path: &Path,
+    identity: &PrincipalIdentity,
+) -> Result<(), IdentityStoreError> {
+    save_identity_inner(path, identity, None)
+}
+
+fn save_identity_inner(
     path: &Path,
     identity: &PrincipalIdentity,
     signing_key: Option<&SigningKey>,
@@ -493,7 +520,7 @@ mod tests {
         let path = dir.path().join("identity.md");
         let when = Utc.with_ymd_and_hms(2026, 5, 12, 0, 0, 0).unwrap();
         let id = sample(when);
-        save_identity(&path, &id, None).unwrap();
+        save_identity_unsigned_for_migration(&path, &id).unwrap();
         let loaded = load_identity(&path).unwrap().unwrap();
         assert_eq!(loaded, id);
     }
@@ -525,7 +552,7 @@ mod tests {
         let when = Utc.with_ymd_and_hms(2026, 5, 12, 0, 0, 0).unwrap();
         let mut id = sample(when);
         id.body = "\n# custom\n\nMy hand-written body.\n".to_string();
-        save_identity(&path, &id, None).unwrap();
+        save_identity_unsigned_for_migration(&path, &id).unwrap();
         let loaded = load_identity(&path).unwrap().unwrap();
         assert_eq!(loaded.body, id.body);
     }
@@ -536,7 +563,7 @@ mod tests {
         let path = dir.path().join("identity.md");
         let when = Utc.with_ymd_and_hms(2026, 5, 12, 0, 0, 0).unwrap();
         let (id, key) = didkey_sample(when);
-        save_identity(&path, &id, Some(&key)).unwrap();
+        save_identity(&path, &id, &key).unwrap();
 
         // Load directly: signature field is present.
         let loaded = load_identity(&path).unwrap().unwrap();
@@ -553,7 +580,7 @@ mod tests {
         let path = dir.path().join("identity.md");
         let when = Utc.with_ymd_and_hms(2026, 5, 12, 0, 0, 0).unwrap();
         let (id, key) = didkey_sample(when);
-        save_identity(&path, &id, Some(&key)).unwrap();
+        save_identity(&path, &id, &key).unwrap();
 
         // Append a line to the body — signature should now fail.
         let mut current = std::fs::read_to_string(&path).unwrap();
@@ -573,8 +600,8 @@ mod tests {
         let path = dir.path().join("identity.md");
         let when = Utc.with_ymd_and_hms(2026, 5, 12, 0, 0, 0).unwrap();
         let id = sample(when);
-        // Save with None — emits an unsigned legacy record.
-        save_identity(&path, &id, None).unwrap();
+        // Migration variant — emits an unsigned legacy record.
+        save_identity_unsigned_for_migration(&path, &id).unwrap();
 
         // load_identity_verified accepts it because signature is None.
         let loaded = load_identity_verified(&path, None).unwrap().unwrap();
@@ -587,7 +614,7 @@ mod tests {
         let path = dir.path().join("identity.md");
         let when = Utc.with_ymd_and_hms(2026, 5, 12, 0, 0, 0).unwrap();
         let (id, key) = didkey_sample(when);
-        save_identity(&path, &id, Some(&key)).unwrap();
+        save_identity(&path, &id, &key).unwrap();
 
         let loaded = load_identity(&path).unwrap().unwrap();
         assert_eq!(loaded.authorized_agents.len(), 1);

@@ -108,7 +108,7 @@ pub fn add_agent(
     identity.authorized_agents.push(agent.clone());
 
     let signing_key = load_signing_key(&paths.signing_key)?;
-    save_identity(&paths.identity_md, &identity, Some(&signing_key))?;
+    save_identity(&paths.identity_md, &identity, &signing_key)?;
 
     Ok(agent)
 }
@@ -148,7 +148,7 @@ pub fn remove_agent(
     }
 
     let signing_key = load_signing_key(&paths.signing_key)?;
-    save_identity(&paths.identity_md, &identity, Some(&signing_key))?;
+    save_identity(&paths.identity_md, &identity, &signing_key)?;
 
     Ok(removed)
 }
@@ -187,7 +187,7 @@ pub fn rotate_agent(
     identity.authorized_agents[idx].did = new_did;
 
     let signing_key = load_signing_key(&paths.signing_key)?;
-    save_identity(&paths.identity_md, &identity, Some(&signing_key))?;
+    save_identity(&paths.identity_md, &identity, &signing_key)?;
 
     Ok(identity.authorized_agents[idx].clone())
 }
@@ -231,7 +231,7 @@ pub fn add_agent_with_key(
 
     let agent = Agent::new(agent_did, role, name, substrate, added_at);
     identity.authorized_agents.push(agent.clone());
-    save_identity(&paths.identity_md, &identity, Some(principal_key))?;
+    save_identity(&paths.identity_md, &identity, principal_key)?;
     Ok(agent)
 }
 
@@ -268,7 +268,7 @@ mod tests {
             signature: None,
             body: String::new(),
         };
-        save_identity(&paths.identity_md, &id, Some(&key)).unwrap();
+        save_identity(&paths.identity_md, &id, &key).unwrap();
         (paths, key)
     }
 

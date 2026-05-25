@@ -435,13 +435,17 @@ pub struct VerifyOutput {
     pub stamp: VerifyLayer,
 }
 
-#[derive(Debug, Serialize, JsonSchema)]
+#[derive(Debug, Default, Serialize, JsonSchema)]
 pub struct VerifyLayer {
     pub outcome: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub signer: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub signer_role: Option<String>,
+    /// Present only for `outcome: "verifiedAgent"` — the principal DID
+    /// the agent is bound to via a cached `agentManifest` snapshot.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub principal: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub signed_at: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1328,8 +1332,13 @@ impl SecretariatServer {
             .ok()
             .flatten()
             .map(|id| id.did);
-        let outcome = verify_document_layered(&path, &resolver, local_did.as_ref())
-            .map_err(|e| invalid_request(format!("verify failed: {e}")))?;
+        let outcome = verify_document_layered(
+            &path,
+            &resolver,
+            local_did.as_ref(),
+            Some(&self.paths.root),
+        )
+        .map_err(|e| invalid_request(format!("verify failed: {e}")))?;
         Ok(Json(layered_outcome_to_view(outcome)))
     }
 
@@ -2455,13 +2464,7 @@ fn layered_outcome_to_view(outcome: LayeredVerifyOutcome) -> VerifyOutput {
     let signature = match outcome.signature {
         SignatureOutcome::None => VerifyLayer {
             outcome: "none".into(),
-            signer: None,
-            signer_role: None,
-            signed_at: None,
-            act: None,
-            claimed_hash: None,
-            computed_hash: None,
-            cause: None,
+            ..Default::default()
         },
         SignatureOutcome::Ok {
             signer,
@@ -2472,65 +2475,52 @@ fn layered_outcome_to_view(outcome: LayeredVerifyOutcome) -> VerifyOutput {
             signer: Some(signer.as_str().to_string()),
             signer_role: Some(signer_role.as_str().to_string()),
             signed_at: Some(signed_at.to_rfc3339()),
-            act: None,
-            claimed_hash: None,
-            computed_hash: None,
-            cause: None,
+            ..Default::default()
+        },
+        SignatureOutcome::VerifiedAgent {
+            agent,
+            principal,
+            signed_at,
+        } => VerifyLayer {
+            outcome: "verifiedAgent".into(),
+            signer: Some(agent.as_str().to_string()),
+            signer_role: Some("agent".into()),
+            principal: Some(principal.as_str().to_string()),
+            signed_at: Some(signed_at.to_rfc3339()),
+            ..Default::default()
         },
         SignatureOutcome::OkUnverifiedAgent { signer, signed_at } => VerifyLayer {
             outcome: "okUnverifiedAgent".into(),
             signer: Some(signer.as_str().to_string()),
             signer_role: Some("agent".into()),
             signed_at: Some(signed_at.to_rfc3339()),
-            act: None,
-            claimed_hash: None,
-            computed_hash: None,
-            cause: None,
+            ..Default::default()
         },
         SignatureOutcome::Tampered {
             claimed_hash,
             computed_hash,
         } => VerifyLayer {
             outcome: "tampered".into(),
-            signer: None,
-            signer_role: None,
-            signed_at: None,
-            act: None,
             claimed_hash: Some(claimed_hash.to_string()),
             computed_hash: Some(computed_hash.to_string()),
-            cause: None,
+            ..Default::default()
         },
         SignatureOutcome::SignerUnresolvable { signer, cause } => VerifyLayer {
             outcome: "signerUnresolvable".into(),
             signer: Some(signer.as_str().to_string()),
-            signer_role: None,
-            signed_at: None,
-            act: None,
-            claimed_hash: None,
-            computed_hash: None,
             cause: Some(cause.to_string()),
+            ..Default::default()
         },
         SignatureOutcome::Invalid { signer } => VerifyLayer {
             outcome: "invalid".into(),
             signer: Some(signer.as_str().to_string()),
-            signer_role: None,
-            signed_at: None,
-            act: None,
-            claimed_hash: None,
-            computed_hash: None,
-            cause: None,
+            ..Default::default()
         },
     };
     let stamp = match outcome.stamp {
         VerifyOutcome::Unsigned => VerifyLayer {
             outcome: "none".into(),
-            signer: None,
-            signer_role: None,
-            signed_at: None,
-            act: None,
-            claimed_hash: None,
-            computed_hash: None,
-            cause: None,
+            ..Default::default()
         },
         VerifyOutcome::Verified {
             signer,
@@ -2542,42 +2532,27 @@ fn layered_outcome_to_view(outcome: LayeredVerifyOutcome) -> VerifyOutput {
             signer_role: Some("principal".into()),
             signed_at: Some(stamped_at.to_rfc3339()),
             act: Some(format!("{act}")),
-            claimed_hash: None,
-            computed_hash: None,
-            cause: None,
+            ..Default::default()
         },
         VerifyOutcome::Tampered {
             claimed_hash,
             computed_hash,
         } => VerifyLayer {
             outcome: "tampered".into(),
-            signer: None,
-            signer_role: None,
-            signed_at: None,
-            act: None,
             claimed_hash: Some(claimed_hash.to_string()),
             computed_hash: Some(computed_hash.to_string()),
-            cause: None,
+            ..Default::default()
         },
         VerifyOutcome::SignerUnresolvable { signer, cause } => VerifyLayer {
             outcome: "signerUnresolvable".into(),
             signer: Some(signer.as_str().to_string()),
-            signer_role: None,
-            signed_at: None,
-            act: None,
-            claimed_hash: None,
-            computed_hash: None,
             cause: Some(cause.to_string()),
+            ..Default::default()
         },
         VerifyOutcome::SignatureInvalid { signer } => VerifyLayer {
             outcome: "invalid".into(),
             signer: Some(signer.as_str().to_string()),
-            signer_role: None,
-            signed_at: None,
-            act: None,
-            claimed_hash: None,
-            computed_hash: None,
-            cause: None,
+            ..Default::default()
         },
     };
     VerifyOutput { signature, stamp }

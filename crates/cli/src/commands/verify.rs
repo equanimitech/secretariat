@@ -39,9 +39,13 @@ pub fn run(args: Args) -> Result<()> {
         .ok()
         .flatten()
         .map(|id| id.did);
-    let outcome =
-        verify_document_layered(&args.file, &resolver, local_did.as_ref())
-            .with_context(|| format!("verifying {}", args.file.display()))?;
+    let outcome = verify_document_layered(
+        &args.file,
+        &resolver,
+        local_did.as_ref(),
+        Some(&paths.root),
+    )
+    .with_context(|| format!("verifying {}", args.file.display()))?;
 
     if args.json {
         print_json(&outcome);
@@ -55,6 +59,7 @@ pub fn run(args: Args) -> Result<()> {
     let signature_ok = matches!(
         outcome.signature,
         SignatureOutcome::Ok { .. }
+            | SignatureOutcome::VerifiedAgent { .. }
             | SignatureOutcome::OkUnverifiedAgent { .. }
             | SignatureOutcome::None
     );
@@ -78,9 +83,18 @@ fn print_human(out: &LayeredVerifyOutcome) {
         } => {
             println!("✓ signature  {signer_role} {signer} at {signed_at}");
         }
+        SignatureOutcome::VerifiedAgent {
+            agent,
+            principal,
+            signed_at,
+        } => {
+            println!(
+                "✓ signature  agent {agent} on behalf of {principal} at {signed_at}"
+            );
+        }
         SignatureOutcome::OkUnverifiedAgent { signer, signed_at } => {
             println!(
-                "△ signature  agent {signer} at {signed_at} (agent→principal binding not yet verified — Move 1C/Phase C)"
+                "△ signature  agent {signer} at {signed_at} (no cached agentManifest binds this agent to a principal yet)"
             );
         }
         SignatureOutcome::Tampered {
@@ -139,6 +153,16 @@ fn print_json(out: &LayeredVerifyOutcome) {
             "outcome": "ok",
             "signer": signer.as_str(),
             "signerRole": signer_role.as_str(),
+            "signedAt": signed_at,
+        }),
+        SignatureOutcome::VerifiedAgent {
+            agent,
+            principal,
+            signed_at,
+        } => json!({
+            "outcome": "verifiedAgent",
+            "agent": agent.as_str(),
+            "principal": principal.as_str(),
             "signedAt": signed_at,
         }),
         SignatureOutcome::OkUnverifiedAgent { signer, signed_at } => json!({

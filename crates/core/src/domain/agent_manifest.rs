@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use thiserror::Error;
 
-use crate::domain::{Agent, Did, Signature};
+use crate::domain::{Agent, Did, EnvelopeSignature, Signature};
 
 /// Canonical-preimage version tag. Bump if the canonicalization changes.
 const CANONICAL_PREIMAGE_TAG: &[u8] = b"agentManifest:v0:";
@@ -173,9 +173,21 @@ impl AgentManifest {
 // On-wire frontmatter shape (serde mirror)
 // ---------------------------------------------------------------------------
 
-/// Frontmatter shape used when the manifest rides as an envelope body
-/// with `$type: tech.equanimi.secretariat.agentManifest`. Mirror of the
-/// lexicon record fields; `serde` round-trips here.
+/// Frontmatter shape for a manifest envelope. The manifest fields ride
+/// at the top level (with `$type: tech.equanimi.secretariat.agentManifest`
+/// as discriminator). The `$signature` block — envelope-level author
+/// signature mandated by hard rule #4 — sits alongside as a sibling
+/// block, keeping the manifest envelope uniform with every other
+/// `$signature`-bearing envelope on the wire.
+///
+/// Two cryptographic layers, both signed by the principal's key:
+///   - **Inner** (`signature: ed25519:...`) — over the manifest's
+///     canonical preimage. Lets the manifest verify standalone when
+///     extracted to a cache, independent of any envelope wrapper.
+///   - **Outer** (`$signature: { ... }`) — over the body
+///     (always empty for manifests; the doc_hash is therefore
+///     canonical_body_hash("")). Enforces the "every envelope carries
+///     `$signature`" invariant uniformly.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentManifestFrontmatter {
     #[serde(rename = "$type")]
@@ -185,6 +197,14 @@ pub struct AgentManifestFrontmatter {
     pub authorized_agents: Vec<Agent>,
     pub declared_at: String,
     pub signature: String,
+    /// Envelope-level author signature. Optional in the parser for
+    /// pre-Move-1C-revision back-compat; emitters MUST populate it.
+    #[serde(
+        rename = "$signature",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub envelope_signature: Option<EnvelopeSignature>,
 }
 
 pub const AGENT_MANIFEST_TYPE: &str = "tech.equanimi.secretariat.agentManifest";
@@ -198,6 +218,10 @@ impl From<&AgentManifest> for AgentManifestFrontmatter {
             authorized_agents: m.authorized_agents.clone(),
             declared_at: m.declared_at.to_rfc3339(),
             signature: m.signature.to_string(),
+            // Outer signature is added by `emit_manifest_into_channel`,
+            // not by the domain `From` impl — the domain has no signing
+            // key handle.
+            envelope_signature: None,
         }
     }
 }

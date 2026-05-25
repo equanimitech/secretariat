@@ -95,10 +95,21 @@ pub enum SignatureOutcome {
         signer_role: SignerRole,
         signed_at: DateTime<Utc>,
     },
+    /// Full verifier chain succeeded for an agent-signed envelope:
+    /// envelope crypto verified AND the agent DID is listed in a
+    /// cached `agentManifest` snapshot signed by `principal`. The
+    /// receiver can attribute the envelope to `principal` via `agent`.
+    VerifiedAgent {
+        agent: Did,
+        principal: Did,
+        signed_at: DateTime<Utc>,
+    },
     /// Cryptographic check OK against the signer's embedded `did:key`,
-    /// BUT the signer claims `agent` role and the receiver has not yet
-    /// confirmed the principal authorized this agent (no `agentManifest`
-    /// cache lookup wired this slice). Phase C wires this off.
+    /// BUT the signer claims `agent` role and no cached `agentManifest`
+    /// snapshot binds the agent to a principal yet. Transitional
+    /// outcome — once the daemon has ingested at least one manifest
+    /// from the relevant principal, subsequent verifies upgrade to
+    /// [`SignatureOutcome::VerifiedAgent`].
     OkUnverifiedAgent {
         signer: Did,
         signed_at: DateTime<Utc>,
@@ -176,10 +187,18 @@ pub fn verify_document<R: DidResolver>(
 /// principal `$attestation` independently. Use this in receiver-side
 /// code (UI badges, daemon inbox-write) where the substrate-for-themia
 /// trust model needs per-layer reporting.
+///
+/// `manifest_cache_root` enables verifier chain hop 3: when present
+/// and the envelope is agent-signed, the layered verifier walks the
+/// cached `agentManifest` snapshots under that root to bind the agent
+/// to a principal — promoting `OkUnverifiedAgent` to `VerifiedAgent`
+/// when a binding exists. Pass `None` to skip the hop (legacy
+/// callers; tests that don't care about agent binding).
 pub fn verify_document_layered<R: DidResolver>(
     file_path: &Path,
     resolver: &R,
     local_principal_did: Option<&Did>,
+    manifest_cache_root: Option<&Path>,
 ) -> Result<LayeredVerifyOutcome, VerifyError> {
     let raw = fs::read_to_string(file_path).map_err(|e| VerifyError::Io {
         path: file_path.to_path_buf(),
@@ -193,6 +212,7 @@ pub fn verify_document_layered<R: DidResolver>(
         &body,
         resolver,
         local_principal_did,
+        manifest_cache_root,
     );
 
     // Stamp layer — reuse the legacy path by writing a minimal
@@ -255,6 +275,7 @@ fn verify_signature_layer<R: DidResolver>(
     body: &str,
     resolver: &R,
     local_principal_did: Option<&Did>,
+    manifest_cache_root: Option<&Path>,
 ) -> SignatureOutcome {
     let sig = match sig {
         None => return SignatureOutcome::None,
@@ -298,25 +319,42 @@ fn verify_signature_layer<R: DidResolver>(
         };
     }
 
-    // Agent-role + non-self signer: defer to the agent-manifest chain
-    // (Phase C — separate slice). Until then, surface the gap explicitly
-    // rather than silently trusting.
+    // Verifier chain hop 3 — agent-role signer: bind to a principal
+    // via the cached `agentManifest` snapshots.
     match sig.signer_role {
         SignerRole::Agent => {
             if local_principal_did
                 .map(|p| p == &sig.signer)
                 .unwrap_or(false)
             {
-                SignatureOutcome::Ok {
+                // Agent DID == local principal DID — a self-loop edge
+                // case (test fixtures, mis-configured vault). Trust as
+                // principal-signed and let the higher layer notice.
+                return SignatureOutcome::Ok {
                     signer: sig.signer.clone(),
                     signer_role: sig.signer_role,
                     signed_at: sig.signed_at,
+                };
+            }
+            // Consult the receiver's manifest cache. Cache errors are
+            // treated as cache miss — verifier MUST stay decisive.
+            if let Some(root) = manifest_cache_root {
+                if let Ok(Some(principal)) =
+                    crate::infrastructure::manifest_cache::lookup_principal_for_agent(
+                        root,
+                        &sig.signer,
+                    )
+                {
+                    return SignatureOutcome::VerifiedAgent {
+                        agent: sig.signer.clone(),
+                        principal,
+                        signed_at: sig.signed_at,
+                    };
                 }
-            } else {
-                SignatureOutcome::OkUnverifiedAgent {
-                    signer: sig.signer.clone(),
-                    signed_at: sig.signed_at,
-                }
+            }
+            SignatureOutcome::OkUnverifiedAgent {
+                signer: sig.signer.clone(),
+                signed_at: sig.signed_at,
             }
         }
         SignerRole::Principal => SignatureOutcome::Ok {

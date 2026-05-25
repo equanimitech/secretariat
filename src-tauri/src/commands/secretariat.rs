@@ -99,7 +99,7 @@ pub async fn init_identity() -> Result<IdentityState, String> {
         signature: None,
         body: String::new(),
     };
-    save_identity(&paths.identity_md, &identity, Some(&key))
+    save_identity(&paths.identity_md, &identity, &key)
         .map_err(|e| format!("writing identity.md: {e}"))?;
 
     log::info!("init_identity: generated new did:key for principal");
@@ -597,7 +597,7 @@ pub async fn set_profile(display_name: String) -> Result<Profile, String> {
     identity.display_name = parsed.clone();
     let signing_key = load_signing_key(&paths.signing_key)
         .map_err(|e| format!("load_signing_key for identity re-sign: {e}"))?;
-    save_identity(&paths.identity_md, &identity, Some(&signing_key))
+    save_identity(&paths.identity_md, &identity, &signing_key)
         .map_err(|e| format!("save_identity: {e}"))?;
     Ok(Profile {
         display_name: parsed.to_string(),

@@ -64,7 +64,7 @@ fn fresh_principal(tmp: &TempDir, name: &str) -> (Did, SigningKey, KeyPaths) {
         signature: None,
         body: String::new(),
     };
-    save_identity(&paths.identity_md, &identity, Some(&key)).unwrap();
+    save_identity(&paths.identity_md, &identity, &key).unwrap();
     (did, key, paths)
 }
 
@@ -244,23 +244,59 @@ fn themia_walkthrough_christophe_to_rafa() {
     assert_eq!(manifest.authorized_agents[0].name.as_str(), "claude");
 
     // -----------------------------------------------------------------
-    // Step 6 — Rafa runs layered verify on the envelope. (Move 13)
-    // Without a wired agentManifest cache, expect OkUnverifiedAgent
-    // (signature crypto verifies but principal binding not yet consulted).
+    // Step 6a — Rafa runs layered verify on the envelope BEFORE caching
+    // the manifest. Expect OkUnverifiedAgent: signature crypto verifies
+    // but no cached manifest binds the agent to a principal yet.
     // -----------------------------------------------------------------
     let resolver = StubKeyResolver { keys: agent_did.embedded_ed25519_key().unwrap() };
-    let outcome =
-        verify_document_layered(&rafa_envelope_dest, &resolver, None).unwrap();
+    let outcome = verify_document_layered(
+        &rafa_envelope_dest,
+        &resolver,
+        None,
+        Some(rafa_tmp.path()),
+    )
+    .unwrap();
     match outcome.signature {
         SignatureOutcome::OkUnverifiedAgent { signer, .. } => {
             assert_eq!(signer, agent_did);
         }
-        other => panic!("expected OkUnverifiedAgent, got {other:?}"),
+        other => panic!("expected OkUnverifiedAgent before cache, got {other:?}"),
     }
     assert!(
         matches!(outcome.stamp, VerifyOutcome::Unsigned),
         "stamp layer MUST be absent before stamping"
     );
+
+    // -----------------------------------------------------------------
+    // Step 6b — Rafa caches the manifest (simulating what file_inbound
+    // does on a normal sync) and re-verifies. Expect VerifiedAgent —
+    // the agent → principal binding now resolves through the cache.
+    // -----------------------------------------------------------------
+    let manifest_bytes = std::fs::read(&rafa_manifest_dest).unwrap();
+    secretariat_core::infrastructure::manifest_cache::store_envelope_bytes(
+        rafa_tmp.path(),
+        &manifest,
+        &manifest_bytes,
+    )
+    .unwrap();
+    let outcome_cached = verify_document_layered(
+        &rafa_envelope_dest,
+        &resolver,
+        None,
+        Some(rafa_tmp.path()),
+    )
+    .unwrap();
+    match outcome_cached.signature {
+        SignatureOutcome::VerifiedAgent {
+            agent,
+            principal,
+            ..
+        } => {
+            assert_eq!(agent, agent_did);
+            assert_eq!(principal, christophe_did);
+        }
+        other => panic!("expected VerifiedAgent after cache, got {other:?}"),
+    }
 
     // -----------------------------------------------------------------
     // Step 7 — Rafa stamps to elevate the envelope to authoritative.
@@ -284,19 +320,24 @@ fn themia_walkthrough_christophe_to_rafa() {
 
     // -----------------------------------------------------------------
     // Step 8 — Re-verify. Both layers should now be present; signature
-    // OkUnverifiedAgent (still no cache); stamp Verified (since
-    // resolver knows Rafa's key).
+    // VerifiedAgent (cache hit binds agent → Christophe); stamp
+    // Verified (resolver knows Rafa's key).
     // -----------------------------------------------------------------
     let dual_resolver = DualKeyResolver {
         rafa_did: _rafa_did.clone(),
         rafa_key: _rafa_key.verifying_key().to_bytes(),
         agent_key: agent_did.embedded_ed25519_key().unwrap(),
     };
-    let outcome_final =
-        verify_document_layered(&rafa_envelope_dest, &dual_resolver, None).unwrap();
+    let outcome_final = verify_document_layered(
+        &rafa_envelope_dest,
+        &dual_resolver,
+        None,
+        Some(rafa_tmp.path()),
+    )
+    .unwrap();
     assert!(matches!(
         outcome_final.signature,
-        SignatureOutcome::OkUnverifiedAgent { .. }
+        SignatureOutcome::VerifiedAgent { .. }
     ));
     assert!(matches!(outcome_final.stamp, VerifyOutcome::Verified { .. }));
 }

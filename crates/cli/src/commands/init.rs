@@ -103,7 +103,7 @@ pub fn run(args: Args) -> Result<()> {
         signature: None,
         body: String::new(),
     };
-    save_identity(&paths.identity_md, &identity, Some(&key))
+    save_identity(&paths.identity_md, &identity, &key)
         .with_context(|| format!("writing {}", paths.identity_md.display()))?;
 
     // 8. Report. (Biometric gate is in-process — no helper binary to install.)

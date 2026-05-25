@@ -318,7 +318,31 @@ fn file_inbound(
 
     std::fs::create_dir_all(&target_dir)?;
     let path = target_dir.join(filename);
-    std::fs::write(&path, &env.body)
+    std::fs::write(&path, &env.body)?;
+
+    // Verifier chain hop 3 wiring: if the freshly-filed envelope IS an
+    // agentManifest, ingest it (verifies both inner + outer signatures)
+    // and drop a verified copy into the receiver's manifest cache. From
+    // this point on, every subsequent verify of an envelope signed by
+    // any agent listed in this manifest can attribute it to the manifest
+    // signer (the principal). Best-effort: a verify failure here is
+    // logged and skipped — the envelope itself stays on disk for later
+    // human inspection, but the cache is not poisoned.
+    if let Ok(Some(manifest)) =
+        crate::application::ingest_manifest_from_file(&path)
+    {
+        if let Err(e) = crate::infrastructure::manifest_cache::store_envelope_bytes(
+            &paths.root,
+            &manifest,
+            &env.body,
+        ) {
+            eprintln!(
+                "[sync] manifest cache store failed at {}: {e}",
+                path.display()
+            );
+        }
+    }
+    Ok(())
 }
 
 fn short_did(s: &str) -> String {

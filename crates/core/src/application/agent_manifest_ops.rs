@@ -23,7 +23,8 @@ use ed25519_dalek::SigningKey;
 use thiserror::Error;
 
 use crate::domain::{
-    Agent, AgentManifest, AgentManifestFrontmatter, Did, ManifestTarget, AGENT_MANIFEST_TYPE,
+    Agent, AgentManifest, AgentManifestFrontmatter, Did, EnvelopeSignature, ManifestTarget,
+    SignerRole, AGENT_MANIFEST_TYPE,
 };
 
 #[derive(Debug, Error)]
@@ -54,11 +55,15 @@ pub enum AgentManifestOpsError {
 /// `$type`-tagged envelope into the target channel's `envelopes/YYYY/MM/DD/`
 /// day-shard. Returns the absolute path written.
 ///
-/// The envelope body is the manifest YAML (with its own embedded signature
-/// over the manifest fields, signed by the principal). The envelope-level
-/// `$signature` is NOT added here — receivers can derive author identity
-/// from the manifest's own signer field. Future iterations may add an
-/// envelope-level signature for transport consistency.
+/// The on-disk shape carries TWO independent signatures, both produced
+/// by the principal's key:
+///   1. **Inner manifest signature** — over the manifest's canonical
+///      preimage (`signer`/`target`/`authorized_agents`/`declared_at`).
+///      Lets the manifest verify standalone in a cache.
+///   2. **Outer envelope `$signature`** — over the body's canonical hash
+///      (the body is empty for a manifest, so the doc_hash is
+///      `canonical_body_hash("")`). Enforces the substrate's
+///      "every envelope carries `$signature`" invariant (hard rule #4).
 ///
 /// Channel-dir convention: `<channel-dir>/envelopes/YYYY/MM/DD/<rkey>.md`
 /// where `<rkey>` is a millisecond-precision RFC3339-ish timestamp +
@@ -72,9 +77,22 @@ pub fn emit_manifest_into_channel(
     when: DateTime<Utc>,
 ) -> Result<PathBuf, AgentManifestOpsError> {
     let manifest =
-        AgentManifest::sign(signer, target, authorized_agents, when, principal_key);
+        AgentManifest::sign(signer.clone(), target, authorized_agents, when, principal_key);
 
-    let fm: AgentManifestFrontmatter = (&manifest).into();
+    // Outer envelope signature over the body (empty for manifests). The
+    // principal signs in their own person — `SignerRole::Principal` —
+    // since manifest emission is not a scribe-mediated act.
+    const MANIFEST_BODY: &str = "";
+    let envelope_signature = EnvelopeSignature::sign_body(
+        signer,
+        SignerRole::Principal,
+        MANIFEST_BODY,
+        when,
+        principal_key,
+    );
+
+    let mut fm: AgentManifestFrontmatter = (&manifest).into();
+    fm.envelope_signature = Some(envelope_signature);
     let yaml = serde_yaml::to_string(&fm)?;
     let body = format!("---\n{yaml}---\n");
 
@@ -119,12 +137,21 @@ pub fn emit_manifest_into_channel(
 pub fn ingest_manifest_from_file(
     path: &Path,
 ) -> Result<Option<AgentManifest>, AgentManifestOpsError> {
+    use crate::infrastructure::markdown::parse_document;
     let raw = fs::read_to_string(path).map_err(|e| AgentManifestOpsError::Io {
         path: path.to_path_buf(),
         source: e,
     })?;
-    let stripped = strip_frontmatter_delimiters(&raw);
-    let fm: AgentManifestFrontmatter = match serde_yaml::from_str(stripped) {
+    // parse_document gives us the frontmatter/body split — we need the
+    // body bytes for outer-signature verification, not just the YAML.
+    let parsed = match parse_document(&raw) {
+        Ok(p) => p,
+        Err(_) => return Ok(None),
+    };
+    let Some(yaml_block) = parsed.raw_frontmatter.as_deref() else {
+        return Ok(None);
+    };
+    let fm: AgentManifestFrontmatter = match serde_yaml::from_str(yaml_block) {
         Ok(fm) => fm,
         // Frontmatter unparseable before we could see `$type` — treat
         // as not-a-manifest. (If a tamper edit broke the YAML itself,
@@ -135,8 +162,18 @@ pub fn ingest_manifest_from_file(
     if fm.ty != AGENT_MANIFEST_TYPE {
         return Ok(None);
     }
+    // Manifest envelopes carry an empty body by emit contract — any
+    // bytes here are tamper-indicative even before we check the outer
+    // signature.
+    if !parsed.body.is_empty() {
+        return Err(AgentManifestOpsError::TamperDetected {
+            path: path.to_path_buf(),
+            reason: "manifest envelope body must be empty",
+        });
+    }
     // From here on the file claims to be a manifest — any further
     // failure is tamper-evidence, not benign drift.
+    let envelope_signature = fm.envelope_signature.clone();
     let manifest: AgentManifest = fm.try_into().map_err(|_| {
         AgentManifestOpsError::TamperDetected {
             path: path.to_path_buf(),
@@ -155,30 +192,37 @@ pub fn ingest_manifest_from_file(
             reason: "signer's embedded key bytes are not a valid ed25519 verifying key",
         }
     })?;
+    // Layer 1: inner manifest signature must cover the canonical preimage.
     if !manifest.verify(&vk) {
         return Err(AgentManifestOpsError::TamperDetected {
             path: path.to_path_buf(),
-            reason: "embedded signature does not cover the manifest fields",
+            reason: "embedded manifest signature does not cover the manifest fields",
+        });
+    }
+    // Layer 2: outer envelope `$signature` must be present and must
+    // cover the body's canonical hash, with the signer matching the
+    // manifest's signer (manifests are principal-self-emitted by
+    // contract — no scribe in the chain).
+    let env_sig = envelope_signature.ok_or_else(|| {
+        AgentManifestOpsError::TamperDetected {
+            path: path.to_path_buf(),
+            reason: "manifest envelope is missing the outer $signature block",
+        }
+    })?;
+    if env_sig.signer != manifest.signer {
+        return Err(AgentManifestOpsError::TamperDetected {
+            path: path.to_path_buf(),
+            reason: "$signature.signer does not match the manifest's signer",
+        });
+    }
+    const MANIFEST_BODY: &str = "";
+    if !env_sig.verify_body(MANIFEST_BODY, &vk) {
+        return Err(AgentManifestOpsError::TamperDetected {
+            path: path.to_path_buf(),
+            reason: "outer $signature does not verify against the principal's key",
         });
     }
     Ok(Some(manifest))
-}
-
-/// Strip the `^---\n` ... `\n---\n` envelope delimiters so the inner
-/// YAML can be deserialized directly. Tolerates either CRLF or LF
-/// terminators.
-fn strip_frontmatter_delimiters(raw: &str) -> &str {
-    let s = raw.strip_prefix('\u{FEFF}').unwrap_or(raw);
-    let after_open = s
-        .strip_prefix("---\r\n")
-        .or_else(|| s.strip_prefix("---\n"))
-        .unwrap_or(s);
-    // Find the closing `\n---` boundary.
-    if let Some(end) = after_open.find("\n---") {
-        &after_open[..end + 1]
-    } else {
-        after_open
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -269,6 +313,102 @@ mod tests {
             matches!(err, AgentManifestOpsError::TamperDetected { .. }),
             "expected TamperDetected, got {err:?}"
         );
+    }
+
+    #[test]
+    fn ingest_rejects_manifest_missing_outer_signature() {
+        // Strip the `$signature:` block from a freshly-emitted manifest
+        // and confirm ingest reports tamper (outer layer mandatory).
+        let tmp = TempDir::new().unwrap();
+        let channel_dir = tmp.path().join("channel");
+        std::fs::create_dir_all(&channel_dir).unwrap();
+
+        let key = SigningKey::from_bytes(&[0x42; 32]);
+        let signer = Did::from_ed25519_public_key(&key.verifying_key().to_bytes());
+        let target = ManifestTarget::Global;
+        let when = Utc::now();
+        let path = emit_manifest_into_channel(
+            &channel_dir,
+            target,
+            signer,
+            vec![sample_agent(when)],
+            &key,
+            when,
+        )
+        .unwrap();
+
+        // Strip everything from `$signature:` to end-of-frontmatter.
+        let raw = std::fs::read_to_string(&path).unwrap();
+        let start = raw.find("$signature:").expect("$signature: present in emit");
+        let end_delim = raw[start..].find("\n---").expect("closing delim after $signature");
+        let mut without = String::with_capacity(raw.len());
+        without.push_str(&raw[..start]);
+        without.push_str(&raw[start + end_delim + 1..]);
+        std::fs::write(&path, without).unwrap();
+
+        let err = ingest_manifest_from_file(&path).unwrap_err();
+        assert!(
+            matches!(err, AgentManifestOpsError::TamperDetected { reason, .. }
+                if reason.contains("outer $signature block")),
+            "expected outer-signature-missing tamper, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn ingest_rejects_manifest_with_mismatched_outer_signer() {
+        // Emit a manifest, then overwrite its $signature block with one
+        // signed by a different key — outer-signer ≠ inner-signer must
+        // surface as tamper.
+        let tmp = TempDir::new().unwrap();
+        let channel_dir = tmp.path().join("channel");
+        std::fs::create_dir_all(&channel_dir).unwrap();
+
+        let principal = SigningKey::from_bytes(&[0x42; 32]);
+        let attacker = SigningKey::from_bytes(&[0x99; 32]);
+        let signer = Did::from_ed25519_public_key(&principal.verifying_key().to_bytes());
+        let when = Utc::now();
+        let path = emit_manifest_into_channel(
+            &channel_dir,
+            ManifestTarget::Global,
+            signer,
+            vec![sample_agent(when)],
+            &principal,
+            when,
+        )
+        .unwrap();
+
+        // Re-emit the file with the attacker signing the outer
+        // $signature instead of the principal.
+        use crate::domain::SignerRole;
+        let raw = std::fs::read_to_string(&path).unwrap();
+        let attacker_did =
+            Did::from_ed25519_public_key(&attacker.verifying_key().to_bytes());
+        let bad_sig =
+            EnvelopeSignature::sign_body(attacker_did, SignerRole::Principal, "", when, &attacker);
+        let bad_block = serde_yaml::to_string(&serde_yaml::to_value(&bad_sig).unwrap()).unwrap();
+        // Replace the existing `$signature:` ... block with the bad one
+        // by serializing a minimal frontmatter with both blocks.
+        let mut new = raw.clone();
+        let start = new.find("$signature:").unwrap();
+        let end_delim_rel = new[start..].find("\n---").unwrap();
+        new.replace_range(
+            start..start + end_delim_rel + 1,
+            &format!("$signature:\n{}\n", indent_yaml(&bad_block)),
+        );
+        std::fs::write(&path, new).unwrap();
+
+        let err = ingest_manifest_from_file(&path).unwrap_err();
+        assert!(
+            matches!(err, AgentManifestOpsError::TamperDetected { .. }),
+            "expected tamper on outer-signer mismatch, got {err:?}"
+        );
+    }
+
+    fn indent_yaml(yaml: &str) -> String {
+        yaml.lines()
+            .map(|l| format!("  {l}"))
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     #[test]
