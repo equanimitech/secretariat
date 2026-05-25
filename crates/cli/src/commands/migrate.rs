@@ -498,25 +498,7 @@ fn run_vault_v0_10_to_v0_11(args: VaultV010ToV011Args) -> Result<()> {
     );
 
     // 3. Perform the moves. `fs::rename` is atomic within one filesystem.
-    //    Ensure parent dir exists for each destination.
-    for (src, dst) in &plan {
-        if let Some(parent) = dst.parent() {
-            std::fs::create_dir_all(parent)
-                .with_context(|| format!("creating {}", parent.display()))?;
-        }
-        // Refuse to clobber an existing destination — preserves
-        // idempotency-by-failure if someone half-ran a previous attempt.
-        if dst.exists() {
-            bail!(
-                "[sec migrate] destination already exists: {} — refuse to overwrite. \
-                 Snapshots at {}",
-                dst.display(),
-                snapshot_root.display()
-            );
-        }
-        std::fs::rename(src, dst)
-            .with_context(|| format!("rename {} -> {}", src.display(), dst.display()))?;
-    }
+    apply_vault_moves(&plan, &snapshot_root)?;
 
     // 4. Post-count.
     let post_count: usize = plan
@@ -538,6 +520,54 @@ fn run_vault_v0_10_to_v0_11(args: VaultV010ToV011Args) -> Result<()> {
     let _ = remove_dir_if_empty_recursive(&legacy_self);
 
     eprintln!("[sec migrate] OK — vault is on the v0.11 layout");
+    Ok(())
+}
+
+/// Execute the planned (src, dst) moves with crash-resume tolerance.
+///
+/// `(src exists, dst exists)` decision table:
+///   - `(true, false)`  → happy path — `fs::rename`.
+///   - `(false, true)`  → already moved by a prior run. Skip and continue
+///     (preserves the module-docstring "idempotent re-run" invariant).
+///   - `(true, true)`   → genuine ambiguity. Bail for human resolution.
+///   - `(false, false)` → source vanished between plan + execute. Bail.
+///
+/// Parents of every destination are created on demand.
+fn apply_vault_moves(plan: &[(PathBuf, PathBuf)], snapshot_root: &Path) -> Result<()> {
+    for (src, dst) in plan {
+        if let Some(parent) = dst.parent() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("creating {}", parent.display()))?;
+        }
+        match (src.exists(), dst.exists()) {
+            (true, true) => bail!(
+                "[sec migrate] both source and destination exist: \
+                 src={} dst={} — refuse to overwrite. Snapshots at {}",
+                src.display(),
+                dst.display(),
+                snapshot_root.display()
+            ),
+            (false, true) => {
+                eprintln!(
+                    "[sec migrate] skip already-moved: {} (dst {} present)",
+                    src.display(),
+                    dst.display()
+                );
+                continue;
+            }
+            (false, false) => bail!(
+                "[sec migrate] source vanished before move: {} \
+                 (dst {} also missing). Snapshots at {}",
+                src.display(),
+                dst.display(),
+                snapshot_root.display()
+            ),
+            (true, false) => {
+                std::fs::rename(src, dst)
+                    .with_context(|| format!("rename {} -> {}", src.display(), dst.display()))?;
+            }
+        }
+    }
     Ok(())
 }
 
@@ -721,6 +751,60 @@ mod tests {
         assert!(
             !rel_s.contains("sent/"),
             "destination must not use abolished sent/: {rel_s}"
+        );
+    }
+
+    #[test]
+    fn apply_vault_moves_resumes_after_partial_crash() {
+        // Simulates: prior `sec migrate` run did one of two planned moves
+        // then crashed. Re-running must skip the already-moved entry and
+        // complete the remainder — idempotency-on-resume per module docstring.
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        let snapshot_root = root.join(".archive").join("migrations").join("ts");
+        std::fs::create_dir_all(&snapshot_root).unwrap();
+
+        // First move: src absent, dst already present (the "crashed
+        // after this one" case).
+        touch(&root.join("identity.md"));
+        // Second move: src present, dst absent (the work that needs
+        // to finish).
+        touch(&root.join("_self/contract-stub.md"));
+
+        let plan = vec![
+            (
+                root.join("_self/identity.md"),
+                root.join("identity.md"),
+            ),
+            (
+                root.join("_self/contract-stub.md"),
+                root.join("contract-stub.md"),
+            ),
+        ];
+        apply_vault_moves(&plan, &snapshot_root).unwrap();
+        assert!(root.join("identity.md").exists(), "already-moved kept");
+        assert!(root.join("contract-stub.md").exists(), "second move completed");
+    }
+
+    #[test]
+    fn apply_vault_moves_bails_when_both_ends_exist() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        let snapshot_root = root.join(".archive").join("migrations").join("ts");
+        std::fs::create_dir_all(&snapshot_root).unwrap();
+
+        // Both src and dst exist — genuine ambiguity.
+        touch(&root.join("_self/identity.md"));
+        touch(&root.join("identity.md"));
+
+        let plan = vec![(
+            root.join("_self/identity.md"),
+            root.join("identity.md"),
+        )];
+        let err = apply_vault_moves(&plan, &snapshot_root).unwrap_err();
+        assert!(
+            err.to_string().contains("both source and destination exist"),
+            "expected ambiguity bail, got: {err}"
         );
     }
 

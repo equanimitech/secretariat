@@ -36,6 +36,18 @@ pub enum AgentManifestOpsError {
     },
     #[error("yaml serialization error: {0}")]
     Yaml(#[from] serde_yaml::Error),
+    /// File claims to be an agentManifest (`$type` matches or
+    /// frontmatter parses as one) but its cryptographic contract is
+    /// broken — signature verification failed, signer DID embeds no
+    /// ed25519 key, or the embedded key bytes are malformed. Per
+    /// hard rule #8 ("envelope whose signature fails is malformed and
+    /// must be quarantined, not surfaced"), callers MUST quarantine
+    /// rather than fall back to a cached or empty view of the
+    /// signer's `authorized_agents`.
+    #[error(
+        "manifest at {path} failed verification — {reason}; quarantine and do not consume"
+    )]
+    TamperDetected { path: PathBuf, reason: &'static str },
 }
 
 /// Mint + sign an `AgentManifest` for the given scope and write it as a
@@ -88,10 +100,22 @@ pub fn emit_manifest_into_channel(
     Ok(path)
 }
 
-/// Parse an envelope file as an agentManifest. Returns `Ok(None)` if the
-/// file's `$type` is not `agentManifest`. Verifies the manifest's
-/// embedded signature against the signer's `did:key` (the only DID
-/// method this slice supports for manifest verification).
+/// Parse an envelope file as an agentManifest.
+///
+/// Three outcomes:
+///   - `Ok(Some(manifest))` — file IS a verified agentManifest.
+///   - `Ok(None)` — file is NOT an agentManifest (wrong `$type`, no
+///     manifest frontmatter, unparseable YAML before we could see
+///     `$type`). Caller treats as a plain envelope or skips.
+///   - `Err(TamperDetected)` — file claims to be an agentManifest
+///     (`$type` matches) but its cryptographic contract is broken.
+///     Caller MUST quarantine rather than silently fall back to a
+///     stale or empty view of the signer's `authorized_agents`
+///     (hard rule #8).
+///
+/// Verifies the manifest's embedded signature against the signer's
+/// `did:key` (the only DID method this slice supports for manifest
+/// verification).
 pub fn ingest_manifest_from_file(
     path: &Path,
 ) -> Result<Option<AgentManifest>, AgentManifestOpsError> {
@@ -102,24 +126,40 @@ pub fn ingest_manifest_from_file(
     let stripped = strip_frontmatter_delimiters(&raw);
     let fm: AgentManifestFrontmatter = match serde_yaml::from_str(stripped) {
         Ok(fm) => fm,
+        // Frontmatter unparseable before we could see `$type` — treat
+        // as not-a-manifest. (If a tamper edit broke the YAML itself,
+        // the receiver simply won't pick this up; the prior cached
+        // manifest stays in force.)
         Err(_) => return Ok(None),
     };
     if fm.ty != AGENT_MANIFEST_TYPE {
         return Ok(None);
     }
-    let manifest: AgentManifest = match fm.try_into() {
-        Ok(m) => m,
-        Err(_) => return Ok(None),
-    };
-    // Verify against did:key-embedded verifying key. did:web is deferred.
-    let Some(pk) = manifest.signer.embedded_ed25519_key() else {
-        return Ok(None);
-    };
-    let Ok(vk) = ed25519_dalek::VerifyingKey::from_bytes(&pk) else {
-        return Ok(None);
-    };
+    // From here on the file claims to be a manifest — any further
+    // failure is tamper-evidence, not benign drift.
+    let manifest: AgentManifest = fm.try_into().map_err(|_| {
+        AgentManifestOpsError::TamperDetected {
+            path: path.to_path_buf(),
+            reason: "manifest fields malformed",
+        }
+    })?;
+    let pk = manifest.signer.embedded_ed25519_key().ok_or_else(|| {
+        AgentManifestOpsError::TamperDetected {
+            path: path.to_path_buf(),
+            reason: "signer DID embeds no ed25519 key",
+        }
+    })?;
+    let vk = ed25519_dalek::VerifyingKey::from_bytes(&pk).map_err(|_| {
+        AgentManifestOpsError::TamperDetected {
+            path: path.to_path_buf(),
+            reason: "signer's embedded key bytes are not a valid ed25519 verifying key",
+        }
+    })?;
     if !manifest.verify(&vk) {
-        return Ok(None);
+        return Err(AgentManifestOpsError::TamperDetected {
+            path: path.to_path_buf(),
+            reason: "embedded signature does not cover the manifest fields",
+        });
     }
     Ok(Some(manifest))
 }
@@ -220,9 +260,15 @@ mod tests {
         let tampered = raw.replace("claude", "evil");
         std::fs::write(&path, tampered).unwrap();
 
-        // Ingest returns None (signature no longer covers the bytes).
-        let ingested = ingest_manifest_from_file(&path).unwrap();
-        assert!(ingested.is_none());
+        // Ingest returns Err — tamper detected, NOT Ok(None). A silent
+        // None here would let the receiver fall back to a cached or
+        // empty view of the signer's authorized_agents (hard rule #8
+        // violation).
+        let err = ingest_manifest_from_file(&path).unwrap_err();
+        assert!(
+            matches!(err, AgentManifestOpsError::TamperDetected { .. }),
+            "expected TamperDetected, got {err:?}"
+        );
     }
 
     #[test]
