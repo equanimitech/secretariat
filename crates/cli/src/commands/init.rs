@@ -98,10 +98,12 @@ pub fn run(args: Args) -> Result<()> {
         key_type: "ed25519".to_string(),
         key_created_at: now,
         key_rotations: Vec::new(),
+        authorized_agents: Vec::new(),
         created_at: now,
+        signature: None,
         body: String::new(),
     };
-    save_identity(&paths.identity_md, &identity)
+    save_identity(&paths.identity_md, &identity, Some(&key))
         .with_context(|| format!("writing {}", paths.identity_md.display()))?;
 
     // 8. Report. (Biometric gate is in-process — no helper binary to install.)

@@ -140,12 +140,28 @@ impl KeyPaths {
         self.self_root.join("channels")
     }
 
+    /// `<self_root>/identity/agents/` — directory holding per-agent signing
+    /// keys (substrate-for-themia slice; see
+    /// `docs/pitches/2026-05-21-substrate-for-themia.md`). Each agent's key
+    /// lives at `<agents_root>/<name>/key` (raw PKCS#8 bytes, mode `0600`),
+    /// mirroring the principal-key file pattern.
+    pub fn agents_root(&self) -> PathBuf {
+        self.identity_dir.join("agents")
+    }
+
+    /// Path to a specific agent's signing key. Caller is responsible for
+    /// validating the name as an [`crate::domain::AgentName`] before passing.
+    pub fn agent_signing_key_path(&self, name: &str) -> PathBuf {
+        self.agents_root().join(name).join("key")
+    }
+
     pub fn ensure_dirs(&self) -> Result<(), KeyError> {
         for dir in [
             &self.root,
             &self.peers_cache,
             &self.self_root,
             &self.identity_dir,
+            &self.agents_root(),
             &self.personal_channels_root(),
             &self.orgs_root,
             &self.bin,
@@ -250,9 +266,19 @@ mod tests {
         assert!(paths.personal_channels_root().is_dir());
         assert!(paths.orgs_root.is_dir());
         assert!(paths.bin.is_dir());
+        assert!(paths.agents_root().is_dir());
         assert!(paths.self_root.ends_with("_self"));
         assert!(paths.personal_channels_root().ends_with("_self/channels"));
         assert!(paths.orgs_root.ends_with("orgs"));
+        assert!(paths.agents_root().ends_with("_self/identity/agents"));
+    }
+
+    #[test]
+    fn agent_signing_key_path_shape() {
+        let dir = TempDir::new().unwrap();
+        let paths = KeyPaths::under(dir.path().to_path_buf());
+        let p = paths.agent_signing_key_path("claude");
+        assert!(p.ends_with("_self/identity/agents/claude/key"));
     }
 
     #[test]

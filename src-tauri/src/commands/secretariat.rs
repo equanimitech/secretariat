@@ -94,10 +94,12 @@ pub async fn init_identity() -> Result<IdentityState, String> {
         key_type: "ed25519".to_string(),
         key_created_at: now,
         key_rotations: Vec::new(),
+        authorized_agents: Vec::new(),
         created_at: now,
+        signature: None,
         body: String::new(),
     };
-    save_identity(&paths.identity_md, &identity)
+    save_identity(&paths.identity_md, &identity, Some(&key))
         .map_err(|e| format!("writing identity.md: {e}"))?;
 
     log::info!("init_identity: generated new did:key for principal");
@@ -617,6 +619,7 @@ pub async fn get_profile() -> Result<Option<Profile>, String> {
 #[specta::specta]
 pub async fn set_profile(display_name: String) -> Result<Profile, String> {
     use secretariat_core::infrastructure::identity_store::{load_identity, save_identity};
+    use secretariat_core::infrastructure::keys::load_signing_key;
 
     let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
     paths
@@ -627,7 +630,10 @@ pub async fn set_profile(display_name: String) -> Result<Profile, String> {
         .map_err(|e| format!("load_identity: {e}"))?
         .ok_or_else(|| "no identity yet — initialize first".to_string())?;
     identity.display_name = parsed.clone();
-    save_identity(&paths.identity_md, &identity).map_err(|e| format!("save_identity: {e}"))?;
+    let signing_key = load_signing_key(&paths.signing_key)
+        .map_err(|e| format!("load_signing_key for identity re-sign: {e}"))?;
+    save_identity(&paths.identity_md, &identity, Some(&signing_key))
+        .map_err(|e| format!("save_identity: {e}"))?;
     Ok(Profile {
         display_name: parsed.to_string(),
     })

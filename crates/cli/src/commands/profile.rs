@@ -9,6 +9,7 @@ use clap::{Parser, Subcommand};
 
 use secretariat_core::domain::DisplayName;
 use secretariat_core::infrastructure::identity_store::{load_identity, save_identity};
+use secretariat_core::infrastructure::keys::load_signing_key;
 
 use super::paths::key_paths;
 
@@ -70,7 +71,10 @@ fn set(
     if let Some(fname) = full_name {
         identity.full_name = Some(fname.to_string());
     }
-    save_identity(&paths.identity_md, &identity).context("saving identity")?;
+    let signing_key =
+        load_signing_key(&paths.signing_key).context("loading signing key for identity re-sign")?;
+    save_identity(&paths.identity_md, &identity, Some(&signing_key))
+        .context("saving identity")?;
     eprintln!("[sec] profile saved: {}", parsed);
     Ok(())
 }
