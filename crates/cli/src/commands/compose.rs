@@ -10,7 +10,7 @@ use clap::Parser;
 use secretariat_core::application::{
     compose_envelope_with_ag, ComposeRequest, ComposeSigner,
 };
-use secretariat_core::infrastructure::identity_store::load_identity;
+use secretariat_core::infrastructure::identity_store::load_identity_verified;
 use secretariat_core::infrastructure::keys::load_signing_key;
 use secretariat_core::infrastructure::preferences::load_or_migrate as load_or_migrate_preferences;
 use secretariat_core::infrastructure::queue_dir::AliasMap;
@@ -26,11 +26,12 @@ pub struct Args {
     #[arg(long)]
     to: String,
 
-    /// Recipient queue handle on the peer's machine. Defaults to
-    /// `inbox:default` (the conventional handle for direct messages).
-    /// Use a different value to address a non-default queue, e.g. a
-    /// channel the peer publishes (`channel:book-progress`).
-    #[arg(long, default_value_t = String::from("inbox:default"))]
+    /// Recipient queue handle on the peer's machine — a bare
+    /// slash-separated slug like `assemblee_generale` or
+    /// `dommage-corporel/paris-cohort`. Required: Move 3a removed the
+    /// implicit `inbox:default` DM handle, so every compose must name
+    /// the channel it addresses.
+    #[arg(long)]
     handle: String,
 
     /// Sender DID. Defaults to the principal's DID, derived from the seeded
@@ -194,7 +195,14 @@ fn resolve_compose_signer(
     self_did: &Did,
     agent_name: Option<&str>,
 ) -> Result<ResolvedSigner> {
-    let identity = load_identity(&paths.identity_md)
+    // Load principal key up front: its verifying key is the canonical
+    // truth for verifying identity.md's embedded signature, guarding
+    // `authorized_agents` against on-disk tampering before we trust
+    // the list to pick a signing agent.
+    let principal_key = load_signing_key(&paths.signing_key)
+        .context("loading principal signing key")?;
+    let vk = principal_key.verifying_key();
+    let identity = load_identity_verified(&paths.identity_md, Some(&vk))
         .context("loading identity")?
         .ok_or_else(|| anyhow!("no identity at {} — run `sec init` first", paths.identity_md.display()))?;
 
@@ -237,12 +245,10 @@ fn resolve_compose_signer(
             // Fallback: principal signs with their own key. Substrate-
             // for-themia Move 2 prefers an agent, but a principal who
             // hasn't run `sec agent add` should still be able to compose.
-            let key = load_signing_key(&paths.signing_key)
-                .context("loading principal signing key")?;
             Ok(ResolvedSigner {
                 signer_did: self_did.clone(),
                 signer_role: SignerRole::Principal,
-                signing_key: key,
+                signing_key: principal_key,
             })
         }
     }

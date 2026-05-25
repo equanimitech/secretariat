@@ -30,10 +30,8 @@ use thiserror::Error;
 
 use crate::domain::{Agent, AgentName, AgentRole, AgentSubstrate, Did};
 use crate::infrastructure::identity_store::{
-    load_identity, save_identity, IdentityStoreError,
+    load_identity_verified, save_identity, IdentityStoreError, PrincipalIdentity,
 };
-#[cfg(test)]
-use crate::infrastructure::identity_store::PrincipalIdentity;
 use crate::infrastructure::keys::{
     generate_keypair, load_signing_key, save_signing_key, KeyError, KeyPaths,
 };
@@ -58,6 +56,17 @@ pub enum AgentOpsError {
     },
 }
 
+/// Load identity + verify its embedded signature against the principal's
+/// active key. Rejects tampered records before any `authorized_agents` is
+/// consumed for trust-bearing decisions (compose signing, agent add/remove/
+/// rotate). The principal's signing key is the canonical truth — its
+/// verifying key must match whatever signed `identity.md`.
+fn load_verified_identity(paths: &KeyPaths) -> Result<PrincipalIdentity, AgentOpsError> {
+    let principal_key = load_signing_key(&paths.signing_key)?;
+    let vk = principal_key.verifying_key();
+    load_identity_verified(&paths.identity_md, Some(&vk))?.ok_or(AgentOpsError::NoIdentity)
+}
+
 /// Add a new agent. Generates a fresh ed25519 keypair, derives a `did:key`
 /// DID, stores the key at `<agents_root>/<name>/key` (mode 0600), appends
 /// the entry to `authorized_agents`, re-signs the principal's identity
@@ -72,7 +81,7 @@ pub fn add_agent(
     substrate: AgentSubstrate,
     added_at: DateTime<Utc>,
 ) -> Result<Agent, AgentOpsError> {
-    let mut identity = load_identity(&paths.identity_md)?.ok_or(AgentOpsError::NoIdentity)?;
+    let mut identity = load_verified_identity(paths)?;
 
     if identity
         .authorized_agents
@@ -107,7 +116,7 @@ pub fn add_agent(
 /// List the principal's authorized agents. Returns empty `Vec` for a
 /// fresh install with no agents granted.
 pub fn list_agents(paths: &KeyPaths) -> Result<Vec<Agent>, AgentOpsError> {
-    let identity = load_identity(&paths.identity_md)?.ok_or(AgentOpsError::NoIdentity)?;
+    let identity = load_verified_identity(paths)?;
     Ok(identity.authorized_agents)
 }
 
@@ -119,7 +128,7 @@ pub fn remove_agent(
     name: &AgentName,
     removed_at: DateTime<Utc>,
 ) -> Result<Agent, AgentOpsError> {
-    let mut identity = load_identity(&paths.identity_md)?.ok_or(AgentOpsError::NoIdentity)?;
+    let mut identity = load_verified_identity(paths)?;
 
     let idx = identity
         .authorized_agents
@@ -153,7 +162,7 @@ pub fn rotate_agent(
     name: &AgentName,
     rotated_at: DateTime<Utc>,
 ) -> Result<Agent, AgentOpsError> {
-    let mut identity = load_identity(&paths.identity_md)?.ok_or(AgentOpsError::NoIdentity)?;
+    let mut identity = load_verified_identity(paths)?;
 
     let idx = identity
         .authorized_agents
@@ -203,7 +212,7 @@ pub fn add_agent_with_key(
     added_at: DateTime<Utc>,
     principal_key: &SigningKey,
 ) -> Result<Agent, AgentOpsError> {
-    let mut identity = load_identity(&paths.identity_md)?.ok_or(AgentOpsError::NoIdentity)?;
+    let mut identity = load_verified_identity(paths)?;
     if identity.authorized_agents.iter().any(|a| a.name == name) {
         return Err(AgentOpsError::NameTaken(name.to_string()));
     }

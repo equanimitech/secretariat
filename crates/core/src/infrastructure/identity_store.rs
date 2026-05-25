@@ -247,7 +247,13 @@ pub fn save_identity(
     }
     // Build identity with the freshly-computed signature (if signing_key
     // provided) so the on-disk record always reflects what was signed.
+    // Substitute the empty body for BUILTIN_BODY *before* computing the
+    // preimage — otherwise the signed bytes diverge from what we serialize
+    // and any later verify-on-load fails.
     let mut to_write = identity.clone();
+    if to_write.body.is_empty() {
+        to_write.body = BUILTIN_BODY.to_string();
+    }
     if let Some(key) = signing_key {
         let preimage = canonical_preimage(&to_write);
         let sig = key.sign(&preimage);

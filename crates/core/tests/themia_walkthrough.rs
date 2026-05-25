@@ -95,27 +95,46 @@ fn themia_walkthrough_christophe_to_rafa() {
     assert_eq!(list_agents(&christophe_paths).unwrap().len(), 1);
 
     // -----------------------------------------------------------------
-    // Step 2 — Christophe emits an agentManifest into a channel. (Move 1C)
-    // The channel directory simulates a Themia org channel. For the test
-    // we use a self-rooted path; in real usage it'd be an org channel
-    // under orgs/themia.pro/channels/assemblee_generale/.
+    // Step 2 — Christophe emits an agentManifest into an org channel.
+    // (Move 1C). The Themia production flow composes into a channel
+    // owned by the *org* (themia.pro), not Christophe's self-queue.
+    // The alias map carries the binding `themia_did → "themia.pro"`
+    // so `queue_dir` resolves the recipient under
+    // `<root>/orgs/themia.pro/channels/assemblee_generale/`.
     // -----------------------------------------------------------------
     let agent_key_bytes =
         std::fs::read(christophe_paths.agent_signing_key_path(agent_name.as_str())).unwrap();
     let _ = agent_key_bytes; // (sanity: agent key exists on disk)
 
-    let channel_dir = christophe_tmp
-        .path()
-        .join("orgs")
-        .join("themia.pro")
-        .join("channels")
-        .join("assemblee_generale");
+    // Org DID — distinct from Christophe's principal DID. Deterministic
+    // seed so the test is reproducible; real Themia would resolve this
+    // via the org's did:web document.
+    let themia_did = Did::from_ed25519_public_key(&[0xAA; 32]);
+    let mut aliases = AliasMap::new(christophe_did.clone());
+    aliases.insert(themia_did.clone(), "themia.pro");
+
+    let channel_recipient = Recipient::new(
+        themia_did.clone(),
+        QueueHandle::parse("assemblee_generale").unwrap(),
+    );
+    let channel_dir = secretariat_core::infrastructure::queue_dir::queue_dir(
+        &aliases,
+        &channel_recipient,
+        christophe_tmp.path(),
+    );
     std::fs::create_dir_all(&channel_dir).unwrap();
+    // Sanity: the org-channel path is exercised, not the self path.
+    let channel_rel = channel_dir.strip_prefix(christophe_tmp.path()).unwrap();
+    assert_eq!(
+        channel_rel.to_string_lossy(),
+        "orgs/themia.pro/channels/assemblee_generale",
+        "test must exercise the orgs/<alias>/ tree, not the self channels/ tree"
+    );
 
     let manifest_path = emit_manifest_into_channel(
         &channel_dir,
         ManifestTarget::Channel {
-            owner: christophe_did.clone(),
+            owner: themia_did.clone(),
             handle: "assemblee_generale".to_string(),
         },
         christophe_did.clone(),
@@ -142,14 +161,9 @@ fn themia_walkthrough_christophe_to_rafa() {
     // Bootstrap a tiny template so compose has something to read.
     std::fs::write(&template_path, "# Template body\n\nFree-form prose.\n").unwrap();
 
-    let recipient = Recipient::new(
-        christophe_did.clone(),
-        QueueHandle::parse("assemblee_generale").unwrap(),
-    );
-    let aliases = AliasMap::new(christophe_did.clone());
     let request = ComposeRequest {
         from: christophe_did.clone(),
-        recipient: recipient.clone(),
+        recipient: channel_recipient.clone(),
         depth: EnvelopeDepth::Subtle,
         urgency: EnvelopeUrgency::Whenever,
         source: "themia-walkthrough-test".to_string(),
@@ -177,12 +191,16 @@ fn themia_walkthrough_christophe_to_rafa() {
     .unwrap();
     assert!(envelope_path.exists());
 
-    // The envelope lives at:
+    // The envelope MUST live under the org-channel tree:
     //   <christophe>/orgs/themia.pro/channels/assemblee_generale/envelopes/YYYY/MM/DD/<file>.md
-    // BUT queue_dir today still resolves orgs/<alias> as <alias>/, so the
-    // path may be <christophe>/themia.pro/channels/.... The Move 3c
-    // restructure will normalize this. For the walkthrough we just
-    // verify the file exists and has the expected frontmatter.
+    // This is the canonical Themia composer-to-org-channel flow.
+    let envelope_rel = envelope_path.strip_prefix(christophe_tmp.path()).unwrap();
+    let envelope_rel_s = envelope_rel.to_string_lossy();
+    assert!(
+        envelope_rel_s
+            .starts_with("orgs/themia.pro/channels/assemblee_generale/envelopes/"),
+        "envelope must land under orgs/themia.pro/channels/assemblee_generale/envelopes/, got {envelope_rel_s}"
+    );
 
     let envelope_raw = std::fs::read_to_string(&envelope_path).unwrap();
     assert!(

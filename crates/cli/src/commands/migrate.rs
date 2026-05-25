@@ -2,9 +2,15 @@
 //!
 //! Subcommands:
 //!
-//! - `outbox-to-drafts` — v0.8 → v0.9 (`<queue>/outbox/*.md` →
-//!   `<queue>/_drafts/` + `<queue>/envelopes/YYYY/MM/DD/`). See
-//!   `docs/pitches/2026-05-18-drop-outbox.md`.
+//! - `outbox-to-drafts` — v0.8 → v0.9 originally targeted
+//!   `<queue>/_drafts/` + `<queue>/envelopes/YYYY/MM/DD/`. Post-Move-4
+//!   (v0.11) the `_drafts/` and `sent/` subtrees are gone — every
+//!   envelope lands at `<queue>/envelopes/YYYY/MM/DD/` regardless of
+//!   stamped/delivered state. The command keeps its historical name
+//!   for any v0.8 vault still being upgraded; the destination has been
+//!   updated so migrated envelopes remain visible on a post-v0.11
+//!   vault. See `docs/pitches/2026-05-18-drop-outbox.md` and Move 4
+//!   of `docs/pitches/2026-05-21-substrate-for-themia.md`.
 //! - `vault-v0-10-to-v0-11` — drops the `_self/` wrapper and the
 //!   peer-alias channel-tree root. Per Move 3c of
 //!   `docs/pitches/2026-05-21-substrate-for-themia.md` (element §2):
@@ -261,9 +267,9 @@ fn snapshot_queue(root: &Path, outbox: &Path, snapshot_root: &Path) -> Result<()
 }
 
 /// Migrate one `<queue>/outbox/` subtree to the new layout.
-/// - `outbox/*.md` (unstamped) → `<queue>/_drafts/<file>.md`
+/// - `outbox/*.md` (unstamped) → `<queue>/envelopes/YYYY/MM/DD/<file>.md` (drafts identified by absent `delivered:`)
 /// - `outbox/*.md` (stamped)   → `<queue>/envelopes/YYYY/MM/DD/<file>.md`
-/// - `outbox/sent/*.md`        → `<queue>/sent/YYYY/MM/DD/<file>.md`
+/// - `outbox/sent/*.md`        → `<queue>/envelopes/YYYY/MM/DD/<file>.md` (Move 4 collapsed `sent/`)
 fn migrate_one_outbox(
     queue_dir: &Path,
     outbox: &Path,
@@ -314,32 +320,29 @@ fn migrate_one_outbox(
     Ok(())
 }
 
-/// Decide where an `outbox/<file>.md` should land:
-///   - stamped → `<queue>/envelopes/YYYY/MM/DD/<file>.md`
-///   - unstamped → `<queue>/_drafts/<file>.md`
+/// Post-Move-4: there is one envelope state. Every envelope — stamped
+/// or unstamped, sent or unsent — lands at
+/// `<queue>/envelopes/YYYY/MM/DD/<file>.md`. Drafts are identified by
+/// the absence of a `delivered:` frontmatter field, not by a separate
+/// `_drafts/` subdirectory. Routing migrated content into `_drafts/`
+/// or `sent/` would make it invisible to the daemon watcher and to
+/// `list_draft_files` on post-v0.11 vaults.
+///
+/// Shard by the stamp's `stampedAt` when present, else file mtime,
+/// else `now`.
 fn destination_for_outbox_md(queue_dir: &Path, file: &Path) -> Result<PathBuf> {
-    let (stamped, when) = inspect_envelope(file)?;
-    let name = file
-        .file_name()
-        .ok_or_else(|| anyhow!("no filename: {}", file.display()))?;
-    if stamped {
-        let day = when.format("%Y/%m/%d").to_string();
-        Ok(queue_dir.join("envelopes").join(day).join(name))
-    } else {
-        Ok(queue_dir.join("_drafts").join(name))
-    }
-}
-
-/// `<queue>/sent/YYYY/MM/DD/<file>.md`. Sent envelopes always carry a
-/// stamp — we shard by the stamp's `stampedAt` when present, falling
-/// back to file mtime.
-fn destination_for_sent_md(queue_dir: &Path, file: &Path) -> Result<PathBuf> {
     let (_stamped, when) = inspect_envelope(file)?;
     let name = file
         .file_name()
         .ok_or_else(|| anyhow!("no filename: {}", file.display()))?;
     let day = when.format("%Y/%m/%d").to_string();
-    Ok(queue_dir.join("sent").join(day).join(name))
+    Ok(queue_dir.join("envelopes").join(day).join(name))
+}
+
+/// Same target as `destination_for_outbox_md` — Move 4 collapsed the
+/// `sent/` subtree into the unified `envelopes/` tree.
+fn destination_for_sent_md(queue_dir: &Path, file: &Path) -> Result<PathBuf> {
+    destination_for_outbox_md(queue_dir, file)
 }
 
 /// Return `(stamped, when)` for a markdown envelope. `when` is the
@@ -686,6 +689,39 @@ mod tests {
         touch(&root.join("orgs/themia.pro/channels/finance/channel.md"));
         let plan = plan_vault_v0_10_to_v0_11(root).unwrap();
         assert!(plan.is_empty(), "plan should be empty: {plan:?}");
+    }
+
+    #[test]
+    fn outbox_destination_lands_in_envelopes_tree_for_unstamped() {
+        // Move 4 collapsed `_drafts/` and `sent/`. The outbox-to-drafts
+        // migrator must route both stamped and unstamped envelopes into
+        // `<queue>/envelopes/YYYY/MM/DD/` so they remain visible to the
+        // daemon watcher and `list_draft_files` on post-v0.11 vaults.
+        let dir = TempDir::new().unwrap();
+        let queue = dir.path().join("q");
+        let outbox_md = queue.join("outbox").join("draft.md");
+        std::fs::create_dir_all(outbox_md.parent().unwrap()).unwrap();
+        // Minimal unstamped envelope — no stamp frontmatter.
+        std::fs::write(
+            &outbox_md,
+            "---\n$type: tech.equanimi.secretariat.envelope\n---\nbody\n",
+        )
+        .unwrap();
+        let dest = destination_for_outbox_md(&queue, &outbox_md).unwrap();
+        let rel = dest.strip_prefix(&queue).unwrap();
+        let rel_s = rel.to_string_lossy();
+        assert!(
+            rel_s.starts_with("envelopes/"),
+            "expected envelopes/.../, got {rel_s}"
+        );
+        assert!(
+            !rel_s.contains("_drafts"),
+            "destination must not use abolished _drafts/: {rel_s}"
+        );
+        assert!(
+            !rel_s.contains("sent/"),
+            "destination must not use abolished sent/: {rel_s}"
+        );
     }
 
     #[test]

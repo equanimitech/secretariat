@@ -371,9 +371,11 @@ pub struct ReadOutput {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct StampParams {
     /// Absolute path to the envelope to stamp. Post-Move 4 every
-    /// envelope (draft, federated, received) lives at
-    /// `<root>/<alias-of-to>/channels/<handle-path>/envelopes/YYYY/MM/DD/<rkey>.md`.
-    /// Stamping embeds the `$attestation` block in place; no rename.
+    /// envelope (draft, federated, received) lives at one of the two
+    /// channel-tree roots (Move 3c):
+    /// `<root>/channels/<handle-path>/envelopes/YYYY/MM/DD/<rkey>.md` (self-owned)
+    /// or `<root>/orgs/<org-alias>/channels/<handle-path>/envelopes/YYYY/MM/DD/<rkey>.md`
+    /// (org-owned). Stamping embeds the `$attestation` block in place; no rename.
     pub file_path: String,
     /// Re-stamp even if a stamp is already present.
     #[serde(default)]
@@ -2147,8 +2149,10 @@ const SERVER_INSTRUCTIONS: &str = "\
 Secretariat is ambient context for AI, stamped by humans. You live in the \
 context stream — read and draft continuously; the principal only enters to \
 stamp the moments that count. You are the scribe; the principal stamps, you \
-never do. Every envelope — draft, stamped, federated — lives at \
-`<root>/<alias-of-to>/channels/<handle-path>/envelopes/YYYY/MM/DD/<rkey>.md`. \
+never do. Two channel-tree roots (Move 3c): envelopes addressed to a queue the \
+principal owns live under `<root>/channels/<handle-path>/envelopes/YYYY/MM/DD/<rkey>.md`; \
+envelopes addressed to an org-owned channel live under \
+`<root>/orgs/<org-alias>/channels/<handle-path>/envelopes/YYYY/MM/DD/<rkey>.md`. \
 Draft state is the absence of the envelope frontmatter's `delivered:` field; \
 the daemon writes that field after federation succeeds. Stamping embeds an \
 `$attestation` block in place — no rename, no path change. Stamping is gated \
@@ -2363,9 +2367,16 @@ fn resolve_compose_signer(
     agent_name: Option<&str>,
 ) -> Result<ResolvedComposeSigner, ErrorData> {
     use secretariat_core::domain::{AgentRole, SignerRole};
-    use secretariat_core::infrastructure::identity_store::load_identity;
+    use secretariat_core::infrastructure::identity_store::load_identity_verified;
 
-    let identity = load_identity(&paths.identity_md)
+    // Load principal key up front: its verifying key is the canonical
+    // truth for verifying identity.md's embedded signature, guarding
+    // `authorized_agents` against on-disk tampering before we trust the
+    // list to pick a signing agent.
+    let principal_key = load_signing_key(&paths.signing_key)
+        .map_err(|e| invalid_request(format!("loading principal signing key: {e}")))?;
+    let vk = principal_key.verifying_key();
+    let identity = load_identity_verified(&paths.identity_md, Some(&vk))
         .map_err(|e| invalid_request(format!("loading identity: {e}")))?
         .ok_or_else(|| {
             invalid_request(format!(
@@ -2408,16 +2419,11 @@ fn resolve_compose_signer(
                 signing_key: key,
             })
         }
-        None => {
-            let key = load_signing_key(&paths.signing_key).map_err(|e| {
-                invalid_request(format!("loading principal signing key: {e}"))
-            })?;
-            Ok(ResolvedComposeSigner {
-                signer_did: self_did.clone(),
-                signer_role: SignerRole::Principal,
-                signing_key: key,
-            })
-        }
+        None => Ok(ResolvedComposeSigner {
+            signer_did: self_did.clone(),
+            signer_role: SignerRole::Principal,
+            signing_key: principal_key,
+        }),
     }
 }
 

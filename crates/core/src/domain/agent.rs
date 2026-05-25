@@ -72,7 +72,7 @@ pub struct AgentSubstrate(String);
 pub enum AgentSubstrateParseError {
     #[error("substrate must be non-empty")]
     Empty,
-    #[error("substrate must match [a-z0-9_-]+, got `{0}`")]
+    #[error("substrate must match [a-z0-9_.-]+, got `{0}`")]
     InvalidChars(String),
 }
 
