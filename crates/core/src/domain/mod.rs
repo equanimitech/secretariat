@@ -5,6 +5,7 @@
 
 mod acts;
 mod agent;
+mod agent_manifest;
 mod attested_document;
 mod channel_binding;
 mod channel_contract;
@@ -23,6 +24,10 @@ pub use acts::{EnvelopeDepth, EnvelopeUrgency, StampAct};
 pub use agent::{
     Agent, AgentName, AgentNameParseError, AgentRole, AgentRoleParseError, AgentSubstrate,
     AgentSubstrateParseError,
+};
+pub use agent_manifest::{
+    AgentManifest, AgentManifestFrontmatter, AgentManifestParseError, ManifestTarget,
+    ManifestTargetParseError, AGENT_MANIFEST_TYPE,
 };
 pub use attested_document::{canonical_body_hash, AttestedDocument, DocumentInvariantError};
 pub use channel_binding::ChannelBinding;
