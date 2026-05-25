@@ -1,6 +1,7 @@
 //! Application — orchestrates use cases (composition of domain + ports).
 
 pub mod ag_extract;
+pub mod agent_manifest_ops;
 pub mod agent_ops;
 pub mod capture_ops;
 pub mod channels_ops;
@@ -24,6 +25,9 @@ pub use capture_ops::{
 pub use channels_ops::{
     create_channel, delete_channel, list_channels, read_channel, ChannelEnvelope, ChannelOpError,
     ChannelSummary,
+};
+pub use agent_manifest_ops::{
+    emit_manifest_into_channel, ingest_manifest_from_file, AgentManifestOpsError,
 };
 pub use agent_ops::{add_agent, list_agents, remove_agent, rotate_agent, AgentOpsError};
 pub use org_ops::{create_org, delete_org, list_orgs, show_org, OrgOpsError};
