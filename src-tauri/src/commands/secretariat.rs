@@ -339,21 +339,17 @@ pub async fn read_envelope(file_path: String) -> Result<EnvelopeRead, String> {
 pub struct RelaySyncReport {
     pub endpoint: String,
     pub inbound_count: u32,
-    pub auto_added_contacts: u32,
     pub warnings: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, specta::Type)]
 pub struct SyncReport {
     pub per_relay: Vec<RelaySyncReport>,
-    pub sent_envelopes: u32,
-    pub outbox_warnings: Vec<String>,
 }
 
 /// Run one sync cycle against every registered relay. Pulls inbound
-/// envelopes, auto-adds contacts from claim events, drains stamped
-/// self-authored envelopes pending send. Principal-initiated per the
-/// review-session model — no background push.
+/// envelopes on the principal's subscribed org channels. Principal-
+/// initiated per the review-session model — no background push.
 ///
 /// Idempotent and safe to call repeatedly. Returns a report the UI can
 /// surface (counts + non-fatal warnings).
@@ -387,12 +383,9 @@ pub async fn sync_now() -> Result<SyncReport, String> {
             .map(|r| RelaySyncReport {
                 endpoint: r.endpoint,
                 inbound_count: r.inbound_count as u32,
-                auto_added_contacts: r.auto_added_contacts as u32,
                 warnings: r.warnings,
             })
             .collect(),
-        sent_envelopes: outcome.sent_envelopes as u32,
-        outbox_warnings: outcome.outbox_warnings,
     })
 }
 
@@ -429,32 +422,33 @@ pub async fn unarchive_inbox_envelope(file_path: String) -> Result<String, Strin
     Ok(dest.display().to_string())
 }
 
-/// Stamp a draft and (best-effort) deliver it immediately. Touch
-/// ID fires from the app's window context. Returns the relay-assigned
-/// id on successful delivery, or stamp metadata only if delivery fails
-/// (the daemon's next sync tick retries — same fallback as the CLI's
-/// stamp-immediate-send path).
+/// Stamp a draft. Touch ID fires from the app's window context. The
+/// stamp's atomic rename promotes the file into the canonical
+/// `envelopes/YYYY/MM/DD/` day-shard, which is the daemon's wire-send
+/// signal — federation runs in the daemon (substrate-for-themia,
+/// Move 5).
 #[derive(Debug, Serialize, Deserialize, specta::Type)]
 pub struct StampReport {
     pub stamped_path: String,
     pub doc_hash: String,
     pub stamped_at: String,
+    /// Kept for backward compatibility with the frontend; always
+    /// `false` now that federation is daemon-only.
     pub delivered: bool,
-    /// Relay-assigned envelope ID. String to avoid BigInt/JS-number
-    /// roundtripping (specta forbids `u64` directly).
+    /// Kept for backward compatibility with the frontend; always
+    /// `None` now.
     pub relay_assigned_id: Option<String>,
+    /// Kept for backward compatibility with the frontend; always
+    /// `None` now.
     pub delivery_warning: Option<String>,
 }
 
 #[tauri::command]
 #[specta::specta]
 pub async fn stamp_envelope(file_path: String) -> Result<StampReport, String> {
-    use secretariat_core::application::{
-        send_stamped_envelope as core_send, stamp_document, SendError, StampError,
-    };
+    use secretariat_core::application::{stamp_document, StampError};
     use secretariat_core::domain::StampAct;
     use secretariat_core::infrastructure::biometric::build_signer;
-    use secretariat_core::infrastructure::contact_store::ContactBook;
     use secretariat_core::ports::SignerError;
 
     let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
@@ -490,49 +484,14 @@ pub async fn stamp_envelope(file_path: String) -> Result<StampReport, String> {
     .await
     .map_err(|e| format!("join error: {e}"))??;
 
-    let mut report = StampReport {
+    Ok(StampReport {
         stamped_path: stamp_result.stamped_path.display().to_string(),
         doc_hash: stamp_result.stamp.doc_hash.to_string(),
         stamped_at: stamp_result.stamp.stamped_at.to_rfc3339(),
         delivered: false,
         relay_assigned_id: None,
         delivery_warning: None,
-    };
-
-    // Best-effort delivery. On failure the daemon's regular sync picks it up.
-    let parent = stamp_result
-        .stamped_path
-        .parent()
-        .map(|p| p.to_path_buf())
-        .unwrap_or_else(|| path.clone());
-    let sent_dir = parent.join("sent");
-    let contacts = match ContactBook::load(&paths.contacts) {
-        Ok(c) => c,
-        Err(e) => {
-            report.delivery_warning = Some(format!("loading contacts for delivery: {e}"));
-            return Ok(report);
-        }
-    };
-
-    match core_send(&stamp_result.stamped_path, &contacts, &key, &sent_dir).await {
-        Ok(out) => {
-            report.delivered = true;
-            report.relay_assigned_id = Some(out.relay_assigned_id.to_string());
-            report.stamped_path = out.moved_to.display().to_string();
-        }
-        Err(SendError::NotStamped) => {
-            // Shouldn't happen — we just stamped. Surface as warning.
-            report.delivery_warning =
-                Some("internal error: stamp confirmed but file appears unstamped".into());
-        }
-        Err(e) => {
-            report.delivery_warning = Some(format!(
-                "stamped, queued for daemon delivery on next sync ({e})"
-            ));
-        }
-    }
-
-    Ok(report)
+    })
 }
 
 /// Create an invite at the principal's first registered relay. Returns
@@ -637,35 +596,6 @@ pub async fn set_profile(display_name: String) -> Result<Profile, String> {
     Ok(Profile {
         display_name: parsed.to_string(),
     })
-}
-
-// ---------------------------------------------------------------------------
-// Contacts — display-name resolution for Sign-mode blobs
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Serialize, Deserialize, specta::Type)]
-pub struct ContactListing {
-    pub did: String,
-    pub display_name: String,
-}
-
-/// List the principal's known contacts. The Sign-mode home surface
-/// resolves recipient DIDs to display names through this; falls back to
-/// truncated DID when a peer isn't yet in the contact book.
-#[tauri::command]
-#[specta::specta]
-pub async fn list_contacts() -> Result<Vec<ContactListing>, String> {
-    use secretariat_core::application::list_contacts as core_list_contacts;
-    let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
-    let contacts =
-        core_list_contacts(&paths.contacts).map_err(|e| format!("list_contacts: {e}"))?;
-    Ok(contacts
-        .into_iter()
-        .map(|c| ContactListing {
-            did: c.did.as_str().to_string(),
-            display_name: c.display_name.to_string(),
-        })
-        .collect())
 }
 
 // ---------------------------------------------------------------------------

@@ -2,26 +2,19 @@
 //!
 //! After a successful stamp, the file is atomically renamed from the
 //! per-queue `_drafts/` dir into the canonical `envelopes/YYYY/MM/DD/`
-//! day-shard, then immediate delivery is attempted via the recipient's
-//! relay. The principal's stamp is the "send" intent; decoupling that
-//! from delivery (waiting for the next daemon tick) is a T2FM blocker.
-//! If immediate-send fails (contact unknown, network error, relay
-//! unreachable), the stamped file stays in `envelopes/` and the
-//! daemon's next tick retries — best-effort accelerator, not a new
-//! failure surface.
+//! day-shard. That rename IS the wire-send signal for the daemon's
+//! watcher — federation runs in the daemon (substrate-for-themia,
+//! Move 5). `sec stamp` itself no longer attempts immediate delivery.
 
 use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
 use clap::Parser;
 use std::path::{Path, PathBuf};
 
-use secretariat_core::application::{
-    send_stamped_envelope, stamp_document, SendError, StampError,
-};
+use secretariat_core::application::{stamp_document, StampError};
 use secretariat_core::domain::StampAct;
 use secretariat_core::infrastructure::biometric::build_signer;
-use secretariat_core::infrastructure::contact_store::ContactBook;
-use secretariat_core::infrastructure::keys::{load_signing_key, KeyPaths};
+use secretariat_core::infrastructure::keys::load_signing_key;
 use secretariat_core::ports::SignerError;
 
 use super::paths::{key_paths, load_did};
@@ -44,10 +37,10 @@ pub struct Args {
     #[arg(long, default_value_t = false)]
     allow_test_biometrics: bool,
 
-    /// Stamp only — don't try to deliver immediately. The next daemon tick
-    /// will pick it up. Use when you're stamping a file that isn't a
-    /// draft envelope (e.g. a standalone markdown attestation).
-    #[arg(long, default_value_t = false)]
+    /// Kept for backward compatibility. Federation now runs in the
+    /// daemon, so stamp never tries to send synchronously — this flag
+    /// is a no-op.
+    #[arg(long, default_value_t = false, hide = true)]
     no_send: bool,
 }
 
@@ -73,6 +66,7 @@ impl From<ActArg> for StampAct {
 }
 
 pub fn run(args: Args) -> Result<()> {
+    let _ = args.no_send; // accepted for backward compat, no-op now
     let paths = key_paths()?;
     let did = load_did(&paths)?;
     let key = load_signing_key(&paths.signing_key)
@@ -106,26 +100,6 @@ pub fn run(args: Args) -> Result<()> {
         outcome.stamp.stamped_at,
         outcome.stamp.signer
     );
-
-    if args.no_send {
-        return Ok(());
-    }
-
-    // Try immediate delivery. If anything goes wrong (file isn't in
-    // an `envelopes/` tree, contact unknown, network down), fall back
-    // silently to the daemon's regular tick — the file stays put.
-    match try_send_now(&stamped_path, &paths, &key) {
-        Ok(Some(out)) => println!(
-            "✓ delivered to {} (relay id {})",
-            out.relay_endpoint, out.relay_assigned_id
-        ),
-        Ok(None) => {
-            // Not a deliverable envelope (e.g. a standalone attestation).
-        }
-        Err(e) => eprintln!(
-            "stamp ok; immediate delivery skipped ({e}). The daemon will retry on its next tick."
-        ),
-    }
 
     Ok(())
 }
@@ -165,60 +139,4 @@ fn promote_draft_to_envelope(stamped: &Path, now: chrono::DateTime<Utc>) -> Resu
         )
     })?;
     Ok(dest)
-}
-
-/// Returns `Some(SendOutcome)` if the file was delivered, `None` if it
-/// wasn't a deliverable envelope (e.g. a standalone stamped attestation).
-fn try_send_now(
-    stamped_path: &Path,
-    paths: &KeyPaths,
-    key: &ed25519_dalek::SigningKey,
-) -> Result<Option<secretariat_core::application::SendOutcome>> {
-    // Only auto-deliver when the file lives inside an `envelopes/`
-    // tree under some queue dir — i.e. an ancestor named `envelopes`.
-    // The post-stamp rename in `promote_draft_to_envelope` puts the
-    // file at `<queue>/envelopes/YYYY/MM/DD/<file>.md`. Standalone
-    // attestations stamped elsewhere quietly skip.
-    let mut envelopes_anchor: Option<&Path> = None;
-    for ancestor in stamped_path.ancestors() {
-        if ancestor.file_name().and_then(|n| n.to_str()) == Some("envelopes") {
-            envelopes_anchor = Some(ancestor);
-            break;
-        }
-    }
-    let envelopes_anchor = match envelopes_anchor {
-        Some(p) => p,
-        None => return Ok(None),
-    };
-    let queue_dir = match envelopes_anchor.parent() {
-        Some(p) => p,
-        None => return Ok(None),
-    };
-
-    // Mirror the day-shard relative path under `sent/`.
-    let sent_root = queue_dir.join("sent");
-    let day_shard = stamped_path
-        .parent()
-        .and_then(|parent| parent.strip_prefix(envelopes_anchor).ok())
-        .map(|rel| sent_root.join(rel))
-        .unwrap_or(sent_root);
-
-    let contacts = ContactBook::load(&paths.contacts).context("loading contacts")?;
-
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .context("building tokio runtime for immediate send")?;
-
-    match runtime.block_on(send_stamped_envelope(stamped_path, &contacts, key, &day_shard)) {
-        Ok(out) => Ok(Some(out)),
-        Err(SendError::NotStamped) => {
-            // Shouldn't happen — we just stamped it. But handle gracefully.
-            Ok(None)
-        }
-        // SelfAddressed dropped in Move 3a; self-owned-channel routing
-        // moves to the daemon in Move 5. Until then, self-addressed
-        // stamps surface as NoContact errors and bubble up.
-        Err(e) => Err(anyhow!(e)),
-    }
 }
