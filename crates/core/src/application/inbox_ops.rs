@@ -3,12 +3,17 @@
 //! Used by the MCP server (and `sec read` CLI) to surface envelope state
 //! without each caller re-implementing directory walks + frontmatter parsing.
 //!
-//! v0.9 layout collapse (`docs/pitches/2026-05-18-drop-outbox.md`): the
-//! `outbox/` substrate-staging dir is gone. Unstamped drafts live under
-//! per-queue `_drafts/` subdirs; stamped envelopes (received and self-
-//! authored) live under `envelopes/YYYY/MM/DD/`; delivered self-authored
-//! archives live under the queue's `sent/YYYY/MM/DD/`. `list_inbox_files`
-//! still walks `envelopes/`; `list_draft_files` walks `_drafts/`.
+//! Substrate-for-themia Move 4 (per
+//! `docs/pitches/2026-05-21-substrate-for-themia.md`): one envelope
+//! state, one filesystem location. Every envelope — draft, stamped,
+//! received, federated — lives under per-queue
+//! `envelopes/YYYY/MM/DD/*.md`. The `_drafts/` and `sent/` subdirs
+//! are gone. Draft state is signalled by the envelope frontmatter's
+//! `delivered:` field: absent = draft / undelivered, set = federated
+//! (or marked `local` for self-owned channels). Both
+//! `list_inbox_files` and `list_draft_files` walk the same
+//! `envelopes/` tree; `list_draft_files` filters by absence of the
+//! `delivered:` frontmatter field.
 
 use std::path::{Path, PathBuf};
 
@@ -54,6 +59,12 @@ pub struct ListedEnvelope {
     pub queue: Option<String>,
     pub stamped: bool,
     pub encrypted: bool,
+    /// Delivery state marker from the envelope frontmatter. Absent
+    /// (`None`) = draft / undelivered (the substrate's "this is awaiting
+    /// federation" signal, post-Move 4). `Some("<relay-seq-id>")` =
+    /// federated. `Some("local")` = self-owned channel that never
+    /// federates.
+    pub delivered: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -89,15 +100,17 @@ pub fn list_inbox_files(root: &Path) -> Result<Vec<ListedEnvelope>, InboxOpError
     Ok(out)
 }
 
-/// Walk the substrate root and collect every `.md` file under any
-/// `_drafts/` directory — the per-queue unstamped drafts the AI scribe
-/// has composed. Post-v0.9 these are what await the principal's review
-/// in a stamp session; once stamped, the file atomically renames out of
-/// `_drafts/` into `envelopes/YYYY/MM/DD/`.
+/// Walk the substrate root and collect every envelope whose frontmatter
+/// lacks a `delivered:` field — the per-queue undelivered drafts the
+/// AI scribe has composed but the daemon has not yet federated. Post-
+/// Move 4 (substrate-for-themia) drafts share the `envelopes/`
+/// day-shard tree with federated envelopes; the `delivered:` frontmatter
+/// field is the sole disambiguator. The daemon writes that field
+/// in-place after federation succeeds (or sets it to `local` at compose
+/// time for self-owned channels that never federate).
 pub fn list_draft_files(root: &Path) -> Result<Vec<ListedEnvelope>, InboxOpError> {
-    let mut out = Vec::new();
-    walk_drafts_tree(root, &mut out)?;
-    Ok(out)
+    let all = list_inbox_files(root)?;
+    Ok(all.into_iter().filter(|e| e.delivered.is_none()).collect())
 }
 
 fn walk_envelopes_tree(
@@ -125,37 +138,6 @@ fn walk_envelopes_tree(
     Ok(())
 }
 
-fn walk_drafts_tree(
-    dir: &Path,
-    out: &mut Vec<ListedEnvelope>,
-) -> Result<(), InboxOpError> {
-    if !dir.exists() {
-        return Ok(());
-    }
-    for entry in read_dir(dir)? {
-        let entry = io_entry(entry, dir)?;
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
-        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-        if name == "_drafts" {
-            // Flat dir — drafts live as `<ts>-<hash>.md` directly in
-            // the queue's `_drafts/`, no further nesting.
-            for inner in read_dir(&path)? {
-                let inner = io_entry(inner, &path)?;
-                let inner_path = inner.path();
-                if inner_path.is_file() && has_md_ext(&inner_path) {
-                    push_envelope(out, &inner_path)?;
-                }
-            }
-        } else if !should_skip(name) {
-            walk_drafts_tree(&path, out)?;
-        }
-    }
-    Ok(())
-}
-
 fn walk_md_leaves(dir: &Path, out: &mut Vec<ListedEnvelope>) -> Result<(), InboxOpError> {
     for entry in read_dir(dir)? {
         let entry = io_entry(entry, dir)?;
@@ -178,7 +160,6 @@ fn should_skip(name: &str) -> bool {
         || name == "_ciphertext"
         || name == "deferred"
         || name == "archived"
-        || name == "sent"
 }
 
 /// Decrypt + return the body of an envelope file. Plaintext envelopes pass
@@ -250,14 +231,15 @@ fn push_envelope(out: &mut Vec<ListedEnvelope>, path: &Path) -> Result<(), Inbox
         source: e,
     })?;
     let parsed = parse_document(&raw)?;
-    let (from, to, queue, encrypted) = match &parsed.envelope {
+    let (from, to, queue, encrypted, delivered) = match &parsed.envelope {
         Some(e) => (
             Some(e.from.as_str().to_string()),
             Some(e.recipient.owner.as_str().to_string()),
             Some(e.recipient.handle.as_str().to_string()),
             e.is_encrypted(),
+            e.delivered.clone(),
         ),
-        None => (None, None, None, false),
+        None => (None, None, None, false, None),
     };
     out.push(ListedEnvelope {
         file_path: path.display().to_string(),
@@ -266,6 +248,7 @@ fn push_envelope(out: &mut Vec<ListedEnvelope>, path: &Path) -> Result<(), Inbox
         queue,
         stamped: parsed.stamp.is_some(),
         encrypted,
+        delivered,
     });
     Ok(())
 }

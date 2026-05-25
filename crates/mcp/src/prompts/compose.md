@@ -40,7 +40,7 @@ Render the full draft body to the principal verbatim, in a code block. Do NOT ca
 - _"change X"_ → revise inline, re-render, re-ask.
 - _"never mind"_ → abort. Do not write to disk.
 
-This is the pre-disk consent gate. Drafts written to the queue's `_drafts/` are visible to the substrate; only write what the principal endorsed.
+This is the pre-disk consent gate. Drafts written into the queue's `envelopes/YYYY/MM/DD/` tree (their `delivered:` frontmatter field absent) are visible to the substrate; only write what the principal endorsed.
 
 ### 5. Compose
 
@@ -53,7 +53,7 @@ Call the `compose` tool with:
 - `source`: `"mcp-compose-prompt"` (lets the substrate trace provenance)
 - `handle`: omit (defaults to `inbox`) unless the principal specified a non-default queue on the peer's machine.
 
-The tool returns the file_path of the draft in `<root>/<alias-of-peer>/channels/<handle-path>/_drafts/`.
+The tool returns the file_path of the draft in `<root>/<alias-of-peer>/channels/<handle-path>/envelopes/YYYY/MM/DD/`. The envelope's frontmatter omits `delivered:` — that's the substrate's "draft" signal until the daemon federates it.
 
 ### 6. Stamp ceremony
 

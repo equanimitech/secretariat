@@ -4,7 +4,7 @@
 //!
 //! | Tool | Purpose |
 //! |---|---|
-//! | `compose` | Write a peer-addressed draft to the queue's `_drafts/` (principal stamps separately) |
+//! | `compose` | Write a draft envelope into the queue's `envelopes/YYYY/MM/DD/` tree (frontmatter omits `delivered:`; principal stamps separately) |
 //! | `capture` | Drop a body into a local queue (never sent, never stamped without consent) |
 //! | `stamp` | Trigger biometric stamp on a draft (Touch ID gates regardless of caller) |
 //! | `secretariat://orgs` | Org + channel-tree directory — resource |
@@ -354,9 +354,10 @@ pub struct ReadOutput {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct StampParams {
-    /// Absolute path to the draft to stamp. Typically lives under
-    /// `<root>/<alias-of-to>/channels/<handle-path>/_drafts/` (or — after
-    /// the stamp ceremony promotes the file — `envelopes/YYYY/MM/DD/`).
+    /// Absolute path to the envelope to stamp. Post-Move 4 every
+    /// envelope (draft, federated, received) lives at
+    /// `<root>/<alias-of-to>/channels/<handle-path>/envelopes/YYYY/MM/DD/<rkey>.md`.
+    /// Stamping embeds the `$attestation` block in place; no rename.
     pub file_path: String,
     /// Re-stamp even if a stamp is already present.
     #[serde(default)]
@@ -785,11 +786,12 @@ impl SecretariatServer {
             idempotent_hint = false,
             open_world_hint = false
         ),
-        description = "Compose a draft envelope to a recipient and write it to the \
-        recipient queue's `_drafts/` dir. The principal stamps it separately \
-        (biometric-gated, never via this tool); the stamp ceremony atomically \
-        promotes the draft into the queue's `envelopes/YYYY/MM/DD/` tree, which is \
-        the daemon's wire-send signal. \
+        description = "Compose a draft envelope to a recipient and write it directly \
+        into the recipient queue's `envelopes/YYYY/MM/DD/` day-shard. The envelope's \
+        frontmatter omits `delivered:` — absence is the substrate's draft signal. \
+        The principal stamps it separately (biometric-gated, never via this tool); \
+        the daemon's envelope watcher then federates it and writes \
+        `delivered: <relay-seq-id>` in place on success. \
         `to` must be a DID (`did:web:...` / `did:key:...`). \
         \
         AG fields (`title` / `lede` / `summary`) are author-attributed when you \
@@ -856,11 +858,12 @@ impl SecretariatServer {
 
         Ok(Json(ComposeOutput {
             file_path: path.display().to_string(),
-            note: "Draft written to the queue's `_drafts/` dir. Show the body to \
-                   the principal, get explicit confirmation, then stamp via the \
-                   `stamp` tool (biometric-gated). The stamp ceremony atomically \
-                   promotes the file into `envelopes/YYYY/MM/DD/`, which the \
-                   daemon picks up and delivers."
+            note: "Draft written into the queue's `envelopes/YYYY/MM/DD/` tree. \
+                   The envelope frontmatter omits `delivered:` (draft signal). \
+                   Show the body to the principal, get explicit confirmation, \
+                   then stamp via the `stamp` tool (biometric-gated). The daemon \
+                   picks up the file, federates it, and writes `delivered:` \
+                   in-place on success."
                 .to_string(),
         }))
     }
@@ -1122,16 +1125,14 @@ impl SecretariatServer {
                 other => invalid_request(format!("stamp failed: {other}")),
             })?;
 
-        // If the stamped file was a draft (lives in `<queue>/_drafts/`),
-        // promote it into the canonical `<queue>/envelopes/YYYY/MM/DD/`
-        // tree — the rename is the wire-send signal for the daemon.
-        let stamped_path = promote_draft_to_envelope(&outcome.stamped_path, now)
-            .map_err(|e| invalid_request(format!("promoting draft to envelope: {e}")))?;
-
-        info!(file = %stamped_path.display(), "stamped envelope via MCP");
+        // Stamp embeds the `$attestation` block in place; the file
+        // path is unchanged. Federation runs in the daemon — it picks
+        // up envelopes whose frontmatter lacks `delivered:` (regardless
+        // of whether they're stamped) and writes the field on success.
+        info!(file = %outcome.stamped_path.display(), "stamped envelope via MCP");
 
         Ok(Json(StampOutput {
-            stamped_path: stamped_path.display().to_string(),
+            stamped_path: outcome.stamped_path.display().to_string(),
             signer: outcome.stamp.signer.as_str().to_string(),
             stamped_at: outcome.stamp.stamped_at.to_rfc3339(),
             doc_hash: outcome.stamp.doc_hash.to_string(),
@@ -2001,10 +2002,10 @@ impl ServerHandler for SecretariatServer {
         resources.push(build_resource(
             RESOURCE_COMPOSITIONS_URI,
             "Compositions",
-            "Pending drafts under each queue's `_drafts/` awaiting the principal's stamp — \
-             rendered with subject, recipient, and age. Fetch ONLY when the \
-             principal asks 'what drafts do I have?' or initiates a stamp \
-             session.",
+            "Pending drafts — envelopes whose frontmatter lacks `delivered:` — \
+             across every queue's `envelopes/YYYY/MM/DD/` tree, rendered with \
+             subject, recipient, and age. Fetch ONLY when the principal asks \
+             'what drafts do I have?' or initiates a stamp session.",
         ));
 
         Ok(ListResourcesResult {
@@ -2063,11 +2064,11 @@ const SERVER_INSTRUCTIONS: &str = "\
 Secretariat is ambient context for AI, stamped by humans. You live in the \
 context stream — read and draft continuously; the principal only enters to \
 stamp the moments that count. You are the scribe; the principal stamps, you \
-never do. Drafts live under the recipient's queue tree (peer queues at \
-`<peer-alias>/channels/<handle-path>/_drafts/`; org channels at \
-`<orgs-root>/<org>/channels/<handle-path>/_drafts/`) and are promoted \
-into the queue's `envelopes/YYYY/MM/DD/` tree by the stamp ceremony's \
-atomic rename — that rename IS the wire-send signal. Stamping is gated \
+never do. Every envelope — draft, stamped, federated — lives at \
+`<root>/<alias-of-to>/channels/<handle-path>/envelopes/YYYY/MM/DD/<rkey>.md`. \
+Draft state is the absence of the envelope frontmatter's `delivered:` field; \
+the daemon writes that field after federation succeeds. Stamping embeds an \
+`$attestation` block in place — no rename, no path change. Stamping is gated \
 by Touch ID.
 
 Stamp ceremony (mandatory before calling `stamp`):
@@ -2164,44 +2165,6 @@ fn render_compositions(root: &std::path::Path) -> Result<String, ErrorData> {
         out.push('\n');
     }
     Ok(out)
-}
-
-/// Atomically promote a stamped draft from `<queue>/_drafts/<file>` to
-/// `<queue>/envelopes/YYYY/MM/DD/<file>`. No-op when the file isn't a
-/// draft (e.g. a standalone stamped attestation outside any queue). The
-/// rename is the wire-send signal the daemon's envelope watcher picks up.
-fn promote_draft_to_envelope(
-    stamped: &std::path::Path,
-    now: chrono::DateTime<Utc>,
-) -> Result<std::path::PathBuf, String> {
-    let parent = match stamped.parent() {
-        Some(p) => p,
-        None => return Ok(stamped.to_path_buf()),
-    };
-    if parent.file_name().and_then(|n| n.to_str()) != Some("_drafts") {
-        return Ok(stamped.to_path_buf());
-    }
-    let queue_dir = match parent.parent() {
-        Some(p) => p,
-        None => return Ok(stamped.to_path_buf()),
-    };
-    let day_shard = queue_dir
-        .join("envelopes")
-        .join(now.format("%Y/%m/%d").to_string());
-    std::fs::create_dir_all(&day_shard)
-        .map_err(|e| format!("creating {}: {e}", day_shard.display()))?;
-    let file_name = stamped
-        .file_name()
-        .ok_or_else(|| format!("stamped path has no filename: {}", stamped.display()))?;
-    let dest = day_shard.join(file_name);
-    std::fs::rename(stamped, &dest).map_err(|e| {
-        format!(
-            "rename {} -> {}: {e}",
-            stamped.display(),
-            dest.display()
-        )
-    })?;
-    Ok(dest)
 }
 
 fn invalid_request(msg: String) -> ErrorData {

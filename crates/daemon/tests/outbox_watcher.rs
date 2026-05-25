@@ -4,10 +4,12 @@
 //! The real `drain_pending_sends` is exercised in core's integration tests.
 //!
 //! The watcher watches the substrate root and triggers on `.md` events
-//! whose path is NOT under any `_drafts/`, `sent/`, `_ciphertext/`,
-//! `archived/`, or `deferred/` ancestor — so the stamp ceremony's
-//! atomic `_drafts/<x>.md` → `envelopes/YYYY/MM/DD/<x>.md` rename is
-//! what the watcher reacts to.
+//! whose path is NOT under any `_ciphertext/`, `archived/`, or
+//! `deferred/` ancestor — so compose / capture (new draft) and stamp
+//! (in-place attestation embed) both fire it. Post-Move 4 there is
+//! no `_drafts/` / `sent/` filtering; drafts and federated envelopes
+//! share the `envelopes/` tree and the drain reads each envelope's
+//! `delivered:` frontmatter to decide what to do.
 
 use secretariat_daemon::outbox_watcher::{spawn_watcher, DEFAULT_DEBOUNCE};
 use std::path::PathBuf;
@@ -118,14 +120,14 @@ async fn burst_is_debounced() {
     );
 }
 
-/// Writes under any `sent/` ancestor are the daemon's own post-
-/// delivery archive moves. The watcher must ignore them; otherwise
-/// every successful send would re-trigger the drain and loop forever.
+/// Writes under any `_ciphertext/` ancestor are encrypted-at-rest
+/// blobs the daemon should not interpret as compose / stamp events.
+/// The watcher must ignore them.
 #[tokio::test]
-async fn events_in_sent_subdir_are_ignored() {
+async fn events_in_ciphertext_subdir_are_ignored() {
     let (_tmp, root) = make_substrate_root();
-    let sent = root.join("did_key_zsent/channels/inbox/default/sent/2026/05/21");
-    std::fs::create_dir_all(&sent).unwrap();
+    let ciphertext = root.join("did_key_zcipher/channels/inbox/default/_ciphertext");
+    std::fs::create_dir_all(&ciphertext).unwrap();
 
     let (counter, cb) = install_counter();
     let _handle = spawn_watcher(root.clone(), Duration::from_millis(80), cb);
@@ -133,38 +135,13 @@ async fn events_in_sent_subdir_are_ignored() {
     tokio::time::sleep(Duration::from_millis(50)).await;
     let baseline = counter.load(Ordering::SeqCst);
 
-    std::fs::write(sent.join("delivered.md"), "post-send").unwrap();
+    std::fs::write(ciphertext.join("blob.md"), "encrypted").unwrap();
 
     tokio::time::sleep(Duration::from_millis(2000)).await;
     let after = counter.load(Ordering::SeqCst);
     assert_eq!(
         after, baseline,
-        "writes under sent/ must not trigger drain (baseline {baseline} → {after})"
-    );
-}
-
-/// Writes under any `_drafts/` ancestor are unstamped drafts the
-/// drain would skip anyway. The watcher must ignore them so a
-/// /compose tool call doesn't fire a useless drain pass.
-#[tokio::test]
-async fn events_in_drafts_subdir_are_ignored() {
-    let (_tmp, root) = make_substrate_root();
-    let drafts = root.join("did_key_zdrafts/channels/inbox/default/_drafts");
-    std::fs::create_dir_all(&drafts).unwrap();
-
-    let (counter, cb) = install_counter();
-    let _handle = spawn_watcher(root.clone(), Duration::from_millis(80), cb);
-
-    tokio::time::sleep(Duration::from_millis(50)).await;
-    let baseline = counter.load(Ordering::SeqCst);
-
-    std::fs::write(drafts.join("draft.md"), "unstamped").unwrap();
-
-    tokio::time::sleep(Duration::from_millis(2000)).await;
-    let after = counter.load(Ordering::SeqCst);
-    assert_eq!(
-        after, baseline,
-        "writes under _drafts/ must not trigger drain (baseline {baseline} → {after})"
+        "writes under _ciphertext/ must not trigger drain (baseline {baseline} → {after})"
     );
 }
 

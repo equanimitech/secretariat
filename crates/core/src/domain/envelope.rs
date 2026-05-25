@@ -143,6 +143,15 @@ pub struct Envelope {
     /// `Some(Ai)` = scribe auto-populated at write time. Receivers MAY
     /// render the distinction.
     pub ag_source: Option<AgSource>,
+    /// Delivery state marker. Set by the daemon after federation succeeds
+    /// (or marked `local` for self-owned channels that never federate).
+    /// `None` = undelivered (draft state). The substrate-for-themia
+    /// collapse (Move 4, 2026-05-21) replaced filesystem placement
+    /// (`_drafts/` vs `envelopes/`) with this frontmatter field: every
+    /// envelope lives at `<queue>/envelopes/YYYY/MM/DD/<rkey>.md`; the
+    /// `delivered:` field is the source of truth for "has this been
+    /// sent on the wire?".
+    pub delivered: Option<String>,
 }
 
 impl Envelope {
@@ -187,6 +196,8 @@ struct EnvelopeWire {
     summary: Option<String>,
     #[serde(rename = "agSource", default, skip_serializing_if = "Option::is_none")]
     ag_source: Option<AgSource>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    delivered: Option<String>,
 }
 
 impl Serialize for Envelope {
@@ -206,6 +217,7 @@ impl Serialize for Envelope {
             lede: self.lede.clone(),
             summary: self.summary.clone(),
             ag_source: self.ag_source,
+            delivered: self.delivered.clone(),
         }
         .serialize(s)
     }
@@ -234,6 +246,7 @@ impl<'de> Deserialize<'de> for Envelope {
             lede: w.lede,
             summary: w.summary,
             ag_source: w.ag_source,
+            delivered: w.delivered,
         })
     }
 }
@@ -259,6 +272,7 @@ pub struct EnvelopeBuilder {
     lede: Option<String>,
     summary: Option<String>,
     ag_source: Option<AgSource>,
+    delivered: Option<String>,
 }
 
 impl EnvelopeBuilder {
@@ -276,6 +290,7 @@ impl EnvelopeBuilder {
             lede: None,
             summary: None,
             ag_source: None,
+            delivered: None,
         }
     }
 
@@ -329,6 +344,16 @@ impl EnvelopeBuilder {
         self
     }
 
+    /// Mark the envelope as delivered. Typically set by the daemon
+    /// post-federation (`<relay-seq-id>`) or at compose time for
+    /// self-owned channels under `~/.secretariat/channels/` that never
+    /// federate (`"local"`). Callers building draft envelopes leave
+    /// this unset — absence is the substrate's signal for "undelivered".
+    pub fn delivered(mut self, marker: impl Into<String>) -> Self {
+        self.delivered = Some(marker.into());
+        self
+    }
+
     pub fn build(self) -> Envelope {
         Envelope {
             from: self.from,
@@ -343,6 +368,7 @@ impl EnvelopeBuilder {
             lede: self.lede,
             summary: self.summary,
             ag_source: self.ag_source,
+            delivered: self.delivered,
         }
     }
 }

@@ -263,6 +263,11 @@ pub struct EnvelopeListing {
     pub queue: Option<String>,
     pub stamped: bool,
     pub encrypted: bool,
+    /// Delivery state marker from envelope frontmatter. `None` = draft
+    /// / undelivered (substrate-for-themia Move 4). `Some("<relay-seq-id>")`
+    /// = federated. `Some("local")` = self-owned channel that never
+    /// federates.
+    pub delivered: Option<String>,
 }
 
 impl From<secretariat_core::application::ListedEnvelope> for EnvelopeListing {
@@ -274,6 +279,7 @@ impl From<secretariat_core::application::ListedEnvelope> for EnvelopeListing {
             queue: e.queue,
             stamped: e.stamped,
             encrypted: e.encrypted,
+            delivered: e.delivered,
         }
     }
 }
@@ -289,13 +295,13 @@ pub async fn list_inbox() -> Result<Vec<EnvelopeListing>, String> {
     Ok(listed.into_iter().map(EnvelopeListing::from).collect())
 }
 
-/// List the principal's review queue — unstamped drafts plus every
-/// envelope on disk. v0.9 substrate (drop-outbox) unions per-queue
-/// `_drafts/*.md` (drafts awaiting a stamp) with per-queue
-/// `envelopes/YYYY/MM/DD/*.md` (received letters + local captures +
-/// stamped-but-pending-send) under one substrate root. Both `to` and
-/// `queue` are populated on every entry — discriminate local vs peer
-/// by comparing `to` to the principal's own DID.
+/// List the principal's review queue — every envelope on disk under
+/// any queue's `envelopes/YYYY/MM/DD/` tree. Post-Move 4 (substrate-
+/// for-themia) drafts and federated envelopes share that tree; the
+/// envelope frontmatter's `delivered:` field (absent = draft) is the
+/// disambiguator. Both `to` and `queue` are populated on every
+/// entry — discriminate local vs peer by comparing `to` to the
+/// principal's own DID.
 #[tauri::command]
 #[specta::specta]
 pub async fn list_review_queue() -> Result<Vec<EnvelopeListing>, String> {

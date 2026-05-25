@@ -1,4 +1,7 @@
-//! `sec compose` — scaffold a draft envelope into the recipient queue's `_drafts/`.
+//! `sec compose` — scaffold a draft envelope directly into the recipient
+//! queue's `envelopes/YYYY/MM/DD/` tree. The envelope's frontmatter omits
+//! `delivered:` — absence is the substrate's draft signal (substrate-for-
+//! themia Move 4).
 
 use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
