@@ -9,14 +9,11 @@
 //! | `stamp` | Trigger biometric stamp on a draft (Touch ID gates regardless of caller) |
 //! | `secretariat://orgs` | Org + channel-tree directory — resource |
 //! | `secretariat://compositions` | Pending drafts awaiting stamp — resource |
-//! | `secretariat://contacts` | Known peers — resource |
 //! | `defer` | Move a capture envelope out of its active queue ('remind me later') |
 //! | `archive` | Move a capture envelope to its queue's `archived/` ('handled') |
 //! | `unarchive` | Reverse of `archive` — move from `archived/` back into `envelopes/` |
 //! | `read` | Decrypt + return body of an envelope |
 //! | `verify` | Check a stamped artifact |
-//! | `list_contacts` | Known peers |
-//! | `add_contact` | Manual contact entry |
 //!
 //! On `stamp`: the call only *initiates* the ceremony; the platform
 //! biometric gate (Touch ID via the Swift helper) blocks until the
@@ -53,14 +50,14 @@ use rmcp::{
 };
 use schemars::JsonSchema;
 use secretariat_core::application::{
-    add_agent as app_add_agent, add_contact, archive_envelope, capture_to_queue_with_ag,
+    add_agent as app_add_agent, archive_envelope, capture_to_queue_with_ag,
     channels_root_for, claim_invite, compose_envelope_with_ag,
     create_channel as app_create_channel, create_invite, create_org as app_create_org,
-    delete_channel as app_delete_channel, delete_org as app_delete_org, find_by_slug,
+    delete_channel as app_delete_channel, delete_org as app_delete_org,
     list_agents as app_list_agents, remove_agent as app_remove_agent,
     rotate_agent as app_rotate_agent,
     get_channel_contract as app_get_channel_contract,
-    get_org_contract as app_get_org_contract, list_channels, list_contacts,
+    get_org_contract as app_get_org_contract, list_channels,
     list_draft_files, list_orgs as app_list_orgs, read_channel, read_envelope,
     resolve_channel_contract as app_resolve_channel_contract,
     set_channel_contract as app_set_channel_contract, set_org_contract as app_set_org_contract,
@@ -78,7 +75,7 @@ use secretariat_core::infrastructure::did_web_resolver::DidWebResolver;
 use secretariat_core::infrastructure::keys::{load_signing_key, KeyPaths};
 use secretariat_core::infrastructure::transport::RelayState;
 use secretariat_core::ports::SignerError;
-use secretariat_core::{Contact, Did, DisplayName, EnvelopeDepth, EnvelopeUrgency, RelayEndpoint};
+use secretariat_core::{Did, EnvelopeDepth, EnvelopeUrgency};
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
@@ -219,7 +216,7 @@ impl SecretariatServer {
     /// via the Secretariat.app first-launch popover or `sec init`), then
     /// establish the first stampable correspondence relationship via
     /// `invite` (you invite someone) or `accept_invite` (you accept
-    /// someone's invitation). Both auto-add the peer to the contact book.
+    /// someone's invitation).
     #[prompt(name = "onboard")]
     pub async fn onboard_prompt(&self) -> Result<Vec<PromptMessage>, ErrorData> {
         Ok(vec![PromptMessage::new_text(
@@ -246,8 +243,7 @@ impl SecretariatServer {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ComposeParams {
-    /// Recipient DID (`did:web:...` / `did:key:...`) OR a contact's
-    /// display-name slug (case-insensitive).
+    /// Recipient DID (`did:web:...` / `did:key:...`).
     pub to: String,
     /// Plaintext body (markdown). v0 writes it as-is; encryption happens at
     /// stamp / send time. (v0.x: optional `encrypt: bool` here.)
@@ -441,8 +437,9 @@ pub struct AcceptInviteParams {
     /// Claim URL the inviter shared
     /// (e.g. `https://secretariat.equanimi.tech/v0/invite/<token>`).
     pub claim_url: String,
-    /// Display name to give the inviter in the local contact book.
-    /// Defaults to the host portion of their DID.
+    /// Kept for backward compatibility. The local contact book was
+    /// removed in the substrate-for-themia slice (Move 3b); this
+    /// field is now a no-op.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -454,8 +451,6 @@ pub struct AcceptInviteOutput {
     pub claimed_at: String,
     /// Whether the relay registered the claimant's DID during this call.
     pub registered: bool,
-    /// Whether the inviter was added to the local contact book.
-    pub contact_added: bool,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -795,7 +790,7 @@ impl SecretariatServer {
         (biometric-gated, never via this tool); the stamp ceremony atomically \
         promotes the draft into the queue's `envelopes/YYYY/MM/DD/` tree, which is \
         the daemon's wire-send signal. \
-        `to` accepts either a DID or a contact's display-name slug. \
+        `to` must be a DID (`did:web:...` / `did:key:...`). \
         \
         AG fields (`title` / `lede` / `summary`) are author-attributed when you \
         pass them. If you omit all three and a cognition adapter is configured, \
@@ -1252,18 +1247,10 @@ impl SecretariatServer {
         Ok(Json(verify_outcome_to_view(outcome)))
     }
 
-    // Note: `list_contacts` was a tool in 0.2.7-0.2.9. Moved to a resource
-    // (`secretariat://contacts`) in 0.2.10 — contacts is a thing-to-read,
-    // not an action-to-perform. Resource semantics fit; tool semantics
-    // don't.
-
-    // Note: `add_contact` was a tool in 0.2.7-0.2.10. Dropped in 0.2.11
-    // because the normal contact-add path is invite-driven (`invite` /
-    // `accept_invite` both auto-add the peer to the local contact book —
-    // this is the bidirectional-contact-add per
-    // memory/project_invite_is_correspondence). The remaining case —
-    // someone hands the principal a DID out of band with no claim URL —
-    // is rare enough that CLI handles it.
+    // Note: `list_contacts`, `add_contact`, and `secretariat://contacts`
+    // were removed in the substrate-for-themia slice (Move 3b). DM /
+    // peer / bilateral correspondence primitives are gone — recipients
+    // address by DID (or, soon, by AT-URI channel address) directly.
 
     #[tool(
         name = "invite",
@@ -1328,15 +1315,14 @@ impl SecretariatServer {
             open_world_hint = true
         ),
         description = "Accept an invite issued by another principal. Auto-registers \
-        the local DID with the relay if not already registered, and adds the \
-        inviter to the local contact book (the bidirectional contact-add IS the \
-        relationship). Returns inviter DID + acceptance metadata. Pair with \
-        `invite` on the inviter side."
+        the local DID with the relay if not already registered. Returns inviter DID \
+        + acceptance metadata. Pair with `invite` on the inviter side."
     )]
     async fn accept_invite(
         &self,
         Parameters(params): Parameters<AcceptInviteParams>,
     ) -> Result<Json<AcceptInviteOutput>, ErrorData> {
+        let _ = params.name; // accepted for backward compat, no-op now
         let did = load_principal_did(&self.paths)?;
         let key = load_signing_key(&self.paths.signing_key).map_err(|e| {
             invalid_request(format!(
@@ -1357,18 +1343,10 @@ impl SecretariatServer {
         let claimed = claim_invite(&params.claim_url, &did, &key)
             .map_err(|e| invalid_request(format!("claim_invite failed: {e}")))?;
 
-        // Auto-add inviter as a contact, plus persist the relay endpoint.
+        // Persist the relay endpoint in relay-state so the daemon polls it.
+        // Contact-book auto-add was removed in the substrate-for-themia
+        // slice (Move 3b).
         let endpoint_origin = relay_origin_from_claim_url(&params.claim_url)?;
-        let display = match params.name.as_deref() {
-            Some(s) => DisplayName::parse(s)
-                .map_err(|e| invalid_request(format!("invalid name: {e}")))?,
-            None => default_display_for_did(&claimed.inviter_did)?,
-        };
-        let endpoint = RelayEndpoint::parse(&endpoint_origin)
-            .map_err(|e| invalid_request(format!("derived relay endpoint invalid: {e}")))?;
-        let contact = Contact::new(claimed.inviter_did.clone(), display, Some(endpoint));
-        let contact_added = add_contact(&self.paths.contacts, contact).is_ok();
-
         if let Ok(mut state) = RelayState::load(&self.paths.relay_state) {
             let entry = state.entry_mut(&endpoint_origin);
             entry.registered = true;
@@ -1382,7 +1360,6 @@ impl SecretariatServer {
             claimant_did: claimed.claimant_did.as_str().to_string(),
             claimed_at: claimed.claimed_at.to_rfc3339(),
             registered: claimed.registered,
-            contact_added,
         }))
     }
 
@@ -1908,9 +1885,9 @@ impl SecretariatServer {
             idempotent_hint = true,
             open_world_hint = true
         ),
-        description = "Run one sync cycle against every registered relay: poll inbound, \
-        drain claim notifications (auto-add bilateral contacts from accepted invites), \
-        drain stamped self-authored envelopes pending send. Idempotent and safe to call repeatedly. \
+        description = "Run one sync cycle against every registered relay: poll inbound \
+        envelopes on the principal's subscribed org channels. Idempotent and safe to \
+        call repeatedly. \
         \
         Prefers the running daemon's IPC socket so it doesn't race the daemon's own poll \
         loop on `RelayState` saves; falls back to running the cycle in-proc when no \
@@ -1977,7 +1954,6 @@ impl SecretariatServer {
 // stay in sync.
 // ---------------------------------------------------------------------------
 
-const RESOURCE_CONTACTS_URI: &str = "secretariat://contacts";
 const RESOURCE_ORGS_URI: &str = "secretariat://orgs";
 const RESOURCE_COMPOSITIONS_URI: &str = "secretariat://compositions";
 
@@ -2005,16 +1981,6 @@ impl ServerHandler for SecretariatServer {
         _context: RequestContext<RoleServer>,
     ) -> Result<ListResourcesResult, ErrorData> {
         let mut resources = Vec::new();
-
-        // Contacts always available (even if empty) — needed before composing
-        // to resolve a name or slug to a DID.
-        resources.push(build_resource(
-            RESOURCE_CONTACTS_URI,
-            "Contacts",
-            "The principal's contact book — peers known to the substrate, \
-             with display names, DIDs, and relay endpoints. Fetch before \
-             composing to a peer to confirm the slug or DID.",
-        ));
 
         // Orgs — the channel tree directory. Fetch before routing a capture
         // or composing to a channel so you know what orgs and channels exist.
@@ -2051,7 +2017,6 @@ impl ServerHandler for SecretariatServer {
         _context: RequestContext<RoleServer>,
     ) -> Result<ReadResourceResult, ErrorData> {
         let text = match request.uri.as_str() {
-            RESOURCE_CONTACTS_URI => render_contacts(&self.paths.contacts)?,
             RESOURCE_ORGS_URI => render_orgs(&self.paths.orgs_root)?,
             RESOURCE_COMPOSITIONS_URI => render_compositions(&self.paths.root)?,
             other => {
@@ -2116,7 +2081,7 @@ you displayed, abort.
 Cadence: Secretariat is for low-cadence, intentional review. Do not fetch \
 `secretariat://compositions` proactively — only when the principal asks \
 (\"any drafts pending?\", \"what's waiting for stamp?\"). Do not fetch \
-`secretariat://orgs` or `secretariat://contacts` between unrelated requests. \
+`secretariat://orgs` between unrelated requests. \
 Captures (`capture`) stay local and CANNOT be stamped — use them for \
 ideas/journal entries the principal will revisit at the next review session. \
 Always `verify` inbound envelopes before trusting their content.";
@@ -2193,30 +2158,6 @@ fn render_compositions(root: &std::path::Path) -> Result<String, ErrorData> {
         }
         if d.encrypted {
             out.push_str(" · encrypted");
-        }
-        out.push('\n');
-    }
-    Ok(out)
-}
-
-fn render_contacts(path: &std::path::Path) -> Result<String, ErrorData> {
-    let contacts =
-        list_contacts(path).map_err(|e| internal_error(format!("list_contacts: {e}")))?;
-    if contacts.is_empty() {
-        return Ok("# Contacts\n\nNo contacts yet. Use `invite` (you invite a peer) or \
-                  `accept_invite` (a peer invited you) to establish your first \
-                  correspondence relationship — both auto-add the peer.\n"
-            .to_string());
-    }
-    let mut out = String::from("# Contacts\n\n");
-    for c in contacts {
-        out.push_str(&format!(
-            "- **{}** — `{}`",
-            c.display_name.as_str(),
-            c.did.as_str()
-        ));
-        if let Some(relay) = &c.relay_endpoint {
-            out.push_str(&format!(" · relay: `{}`", relay.as_str()));
         }
         out.push('\n');
     }
@@ -2313,15 +2254,14 @@ fn build_contract_patch(
     })
 }
 
-fn resolve_to_did(paths: &KeyPaths, to: &str) -> Result<Did, ErrorData> {
-    if to.starts_with("did:") {
-        Did::parse(to).map_err(|e| invalid_request(format!("invalid did: {e}")))
-    } else {
-        let contact = find_by_slug(&paths.contacts, to)
-            .map_err(|e| invalid_request(format!("contact lookup failed: {e}")))?
-            .ok_or_else(|| invalid_request(format!("no contact matches `{to}`")))?;
-        Ok(contact.did)
-    }
+fn resolve_to_did(_paths: &KeyPaths, to: &str) -> Result<Did, ErrorData> {
+    // Substrate-for-themia (Move 3b) removed the contact-book lookup path;
+    // recipients are now DIDs (or future channel addresses) only.
+    Did::parse(to).map_err(|e| {
+        invalid_request(format!(
+            "invalid did `{to}`: {e} — recipients must be DIDs (contact-slug lookup removed)"
+        ))
+    })
 }
 
 fn parse_depth(s: Option<&str>) -> Result<EnvelopeDepth, ErrorData> {
@@ -2380,19 +2320,6 @@ fn relay_origin_from_claim_url(claim_url: &str) -> Result<String, ErrorData> {
         .find("/v0/invite/")
         .ok_or_else(|| invalid_request("claim URL does not contain `/v0/invite/`".to_string()))?;
     Ok(claim_url[..idx].to_string())
-}
-
-fn default_display_for_did(did: &Did) -> Result<DisplayName, ErrorData> {
-    let s = did.as_str();
-    let name = if let Some(rest) = s.strip_prefix("did:web:") {
-        rest.split(':').next().unwrap_or(rest).to_string()
-    } else if let Some(rest) = s.strip_prefix("did:key:") {
-        format!("did-key-{}", &rest.chars().take(8).collect::<String>())
-    } else {
-        s.to_string()
-    };
-    DisplayName::parse(name)
-        .map_err(|e| invalid_request(format!("default display name invalid: {e}")))
 }
 
 fn verify_outcome_to_view(outcome: VerifyOutcome) -> VerifyOutput {

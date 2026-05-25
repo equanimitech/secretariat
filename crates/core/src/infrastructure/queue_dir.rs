@@ -54,7 +54,6 @@
 //! address stays `(to-DID, handle)`.
 
 use crate::domain::{Did, Recipient};
-use crate::infrastructure::contact_store::{ContactBook, ContactStoreError};
 use crate::infrastructure::keys::KeyPaths;
 use crate::infrastructure::org_store::{list_org_dirs, OrgStoreError};
 use std::collections::BTreeMap;
@@ -90,20 +89,15 @@ impl AliasMap {
         self.by_did.insert(did.as_str().to_string(), alias.into());
     }
 
-    /// Build the alias map from the principal's contact book and org
-    /// directory. Contacts contribute `display_name.slug() → did`;
-    /// orgs contribute `OrgAlias.as_str() → did` (skipping orgs that
+    /// Build the alias map from the org directory.
+    /// Orgs contribute `OrgAlias.as_str() → did` (skipping orgs that
     /// don't yet have a canonical DID, since those can't be wire-
-    /// addressed). Missing files are tolerated as empty — a fresh
-    /// install with no contacts/orgs still produces a valid (empty)
-    /// map.
+    /// addressed). The contact-book contribution was removed in the
+    /// substrate-for-themia slice (Move 3b) — peer aliases are gone.
+    /// Missing files are tolerated as empty — a fresh install with no
+    /// orgs still produces a valid (empty) map.
     pub fn load(self_did: Did, paths: &KeyPaths) -> Result<Self, AliasMapError> {
         let mut map = Self::new(self_did);
-
-        let book = ContactBook::load(&paths.contacts)?;
-        for contact in book.iter() {
-            map.insert(contact.did.clone(), contact.display_name.slug());
-        }
 
         if paths.orgs_root.exists() {
             for org in list_org_dirs(&paths.orgs_root)? {
@@ -138,8 +132,6 @@ fn sanitize_did_fallback(did: &str) -> String {
 
 #[derive(Debug, Error)]
 pub enum AliasMapError {
-    #[error("contact store: {0}")]
-    Contacts(#[from] ContactStoreError),
     #[error("org store: {0}")]
     Orgs(#[from] OrgStoreError),
 }

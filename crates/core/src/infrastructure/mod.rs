@@ -7,7 +7,6 @@ pub mod channel_def_store;
 pub mod cognition;
 pub mod contract_store;
 pub mod composite_did_resolver;
-pub mod contact_store;
 pub mod crypto;
 pub mod identity_store;
 pub mod did_key_resolver;
@@ -24,7 +23,6 @@ pub mod transport;
 
 pub use biometric::{build_signer, pick_gate, AnyGate};
 pub use composite_did_resolver::CompositeDidResolver;
-pub use contact_store::{ContactBook, ContactStoreError};
 pub use did_key_resolver::DidKeyResolver;
 pub use did_web_resolver::DidWebResolver;
 pub use ed25519_signer::{AlwaysAllowGate, BiometricGate, Ed25519Signer};

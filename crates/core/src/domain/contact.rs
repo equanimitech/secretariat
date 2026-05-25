@@ -1,26 +1,15 @@
-//! Contact — a known peer the principal can correspond with.
+//! Value objects that previously lived alongside the (now removed) `Contact`
+//! aggregate: `DisplayName` (human-friendly nickname, also used for the
+//! principal's profile) and `RelayEndpoint` (transport URL). The `Contact`
+//! aggregate itself and its persistence layer were removed in the
+//! substrate-for-themia slice (Move 3b) — DM / peer / bilateral
+//! correspondence primitives are gone entirely, not deferred.
 //!
-//! A contact links a [`Did`] (cryptographic identity) to the operational
-//! address needed to reach that peer over a transport. v0 carries an
-//! optional [`RelayEndpoint`]:
-//!
-//! - For `did:web` peers, the endpoint is `None` — the recipient's relay
-//!   is discovered live from their DID document's `serviceEndpoint`.
-//! - For `did:key` peers (no published document), the endpoint is `Some(_)`
-//!   — exchanged out-of-band when the contact is added.
-//!
-//! Future versions will add transport-specific addresses (Iroh peer-id,
-//! Slack workspace+user, etc.) as additional optional fields on the same
-//! aggregate, and the `Transport` trait will pick the best mutual one.
-//!
-//! The contact book is the consistency boundary: at most one entry per DID,
-//! at most one entry per (lowercased) display-name slug. See
-//! `infrastructure::contact_store` for persistence.
+//! Kept here under the `contact` module name to minimise import churn —
+//! both types are re-exported from `crate::domain` and `secretariat_core`.
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-
-use crate::domain::Did;
 
 // ---------------------------------------------------------------------------
 // RelayEndpoint
@@ -131,9 +120,9 @@ impl std::fmt::Display for RelayEndpoint {
 // DisplayName
 // ---------------------------------------------------------------------------
 
-/// Human-friendly nickname for a contact (e.g. "Marcelo"). Non-empty after
-/// trim, no control characters, bounded length. UTF-8 friendly — nicknames
-/// in any script are fine.
+/// Human-friendly nickname (e.g. "Marcelo"). Non-empty after trim, no
+/// control characters, bounded length. UTF-8 friendly — nicknames in any
+/// script are fine.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct DisplayName(String);
 
@@ -197,38 +186,6 @@ impl<'de> Deserialize<'de> for DisplayName {
 impl std::fmt::Display for DisplayName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.0)
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Contact
-// ---------------------------------------------------------------------------
-
-/// A known peer: cryptographic identity + transport address.
-///
-/// `relay_endpoint` is `None` when the peer's relay can be discovered live
-/// from their DID document (`did:web` with a `serviceEndpoint`), or
-/// `Some(_)` when it was exchanged out-of-band (`did:key` peers, or
-/// `did:web` peers whose relay hasn't been published yet).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Contact {
-    pub did: Did,
-    pub display_name: DisplayName,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub relay_endpoint: Option<RelayEndpoint>,
-}
-
-impl Contact {
-    pub fn new(
-        did: Did,
-        display_name: DisplayName,
-        relay_endpoint: Option<RelayEndpoint>,
-    ) -> Self {
-        Contact {
-            did,
-            display_name,
-            relay_endpoint,
-        }
     }
 }
 
@@ -389,33 +346,5 @@ mod tests {
             DisplayName::parse("Marcelo\nBallestiero"),
             Err(DisplayNameParseError::ControlChar)
         ));
-    }
-
-    #[test]
-    fn contact_serde_roundtrip_with_endpoint() {
-        let c = Contact::new(
-            Did::parse("did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK").unwrap(),
-            DisplayName::parse("Marcelo").unwrap(),
-            Some(RelayEndpoint::parse("wss://relay.rafa.equanimi.tech").unwrap()),
-        );
-        let json = serde_json::to_string(&c).unwrap();
-        let back: Contact = serde_json::from_str(&json).unwrap();
-        assert_eq!(c, back);
-    }
-
-    #[test]
-    fn contact_serde_roundtrip_without_endpoint() {
-        // did:web peer — relay discovered live from DID document
-        let c = Contact::new(
-            Did::parse("did:web:rafa.equanimi.tech").unwrap(),
-            DisplayName::parse("Rafa").unwrap(),
-            None,
-        );
-        let json = serde_json::to_string(&c).unwrap();
-        // Optional field with None should be skipped in serialization.
-        assert!(!json.contains("relay_endpoint"));
-        let back: Contact = serde_json::from_str(&json).unwrap();
-        assert_eq!(c, back);
-        assert!(back.relay_endpoint.is_none());
     }
 }

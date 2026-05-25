@@ -79,43 +79,10 @@ pub async fn serve(paths: &KeyPaths, did: &Did, key: &SigningKey) -> Result<()> 
     // listener and unlink the socket file before the process exits.
     let ipc_handle = crate::ipc::spawn_server(paths.clone(), did.clone(), key.clone());
 
-    // FS-notify watcher on the substrate root: stamp → send latency
-    // drops from cadence (15 min default) to ~200ms debounce. The drain
-    // shares `tick_lock` with `run_tick` so it can't race the poll
-    // loop. The poll loop stays as the safety net for missed events
-    // (e.g. watcher restart during a write).
-    //
-    // v0.9 drop-outbox pitch: drafts live under `<queue>/_drafts/` and
-    // get atomically renamed into `<queue>/envelopes/YYYY/MM/DD/`
-    // post-stamp. The watcher filter targets `.md` files NOT under any
-    // `_drafts/`, `sent/`, `_ciphertext/`, `archived/`, or `deferred/`
-    // ancestor — so the post-stamp rename fires exactly once.
-    let watcher_did = did.clone();
-    let watcher_key = key.clone();
-    let watcher_paths = paths.clone();
-    let outbox_handle = crate::outbox_watcher::spawn_watcher(
-        paths.root.clone(),
-        crate::outbox_watcher::DEFAULT_DEBOUNCE,
-        move || {
-            let paths = watcher_paths.clone();
-            let did = watcher_did.clone();
-            let key = watcher_key.clone();
-            async move {
-                let _guard = tick_lock().lock().await;
-                match secretariat_core::application::drain_pending_sends(&paths, &did, &key).await {
-                    Ok((sent, warnings)) => {
-                        if sent > 0 {
-                            info!(count = sent, "fs-notify drained pending sends");
-                        }
-                        for w in &warnings {
-                            warn!(warning = %w, "envelope drain warning");
-                        }
-                    }
-                    Err(e) => warn!(error = %e, "fs-notify envelope drain failed"),
-                }
-            }
-        },
-    );
+    // Outbound envelope federation moved to a future move in the
+    // substrate-for-themia slice (Move 5). The FS-notify watcher that
+    // previously triggered immediate send on stamp is no longer wired
+    // — the daemon's poll loop handles inbound only for now.
 
     // SIGTERM is what `launchctl unload` sends; Ctrl-C in a foreground
     // `sec daemon serve` produces SIGINT. Handle both so the next start
@@ -161,7 +128,6 @@ pub async fn serve(paths: &KeyPaths, did: &Did, key: &SigningKey) -> Result<()> 
     // the `UnixListener`; removing the socket path ensures the next
     // boot sees a clean slate even if the listener already exited.
     ipc_handle.abort();
-    outbox_handle.abort();
     let _ = std::fs::remove_file(crate::ipc::socket_path(paths));
     Ok(())
 }
@@ -197,17 +163,15 @@ pub async fn tick(paths: &KeyPaths, did: &Did, key: &SigningKey) -> Result<()> {
 /// quiet under `RUST_LOG=info`.
 pub fn summary_line(outcome: &SyncOutcome) -> String {
     let inbound: usize = outcome.per_relay.iter().map(|r| r.inbound_count).sum();
-    let sent = outcome.sent_envelopes;
     let warnings: usize = outcome
         .per_relay
         .iter()
         .map(|r| r.warnings.len())
-        .sum::<usize>()
-        + outcome.outbox_warnings.len();
-    if inbound == 0 && sent == 0 && warnings == 0 {
+        .sum();
+    if inbound == 0 && warnings == 0 {
         "[sec] tick: nothing to do".to_string()
     } else {
-        format!("[sec] tick: {inbound} inbound, {sent} sent, {warnings} warnings")
+        format!("[sec] tick: {inbound} inbound, {warnings} warnings")
     }
 }
 
@@ -216,22 +180,9 @@ pub fn log_outcome(outcome: &SyncOutcome) {
         if r.inbound_count > 0 {
             info!(endpoint = %r.endpoint, count = r.inbound_count, "filed inbound envelopes");
         }
-        if r.auto_added_contacts > 0 {
-            info!(
-                endpoint = %r.endpoint,
-                added = r.auto_added_contacts,
-                "auto-added correspondence contacts"
-            );
-        }
         for w in &r.warnings {
             warn!(endpoint = %r.endpoint, warning = %w, "relay sync warning");
         }
-    }
-    if outcome.sent_envelopes > 0 {
-        info!(count = outcome.sent_envelopes, "sent stamped envelopes");
-    }
-    for w in &outcome.outbox_warnings {
-        warn!(warning = %w, "envelope drain warning");
     }
 }
 

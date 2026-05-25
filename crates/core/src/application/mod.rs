@@ -7,16 +7,13 @@ pub mod channels_ops;
 pub mod compose_envelope;
 pub mod contract_ops;
 pub mod org_ops;
-pub mod contact_ops;
 pub mod contextify_capture;
 pub mod delivery_policy;
 pub mod inbox_actions;
 pub mod inbox_ops;
 pub mod invite_ops;
 pub mod launch_channel;
-pub mod process_correspondence_claims;
 pub mod review_queue;
-pub mod send_envelope;
 pub mod sync;
 pub mod stamp_document;
 pub mod verify_document;
@@ -38,9 +35,6 @@ pub use contract_ops::{
     set_org_contract, ContractLevel, ContractOpsError, ContractPatch, ContractView, PatchField,
     ResolvedContract,
 };
-pub use contact_ops::{
-    add_contact, find_by_did, find_by_slug, list_contacts, remove_contact, ContactOpError,
-};
 pub use contextify_capture::{
     contextify_capture, try_contextify_after_capture, ContextifyError, ContextifyOutcome,
     ContextifySkipReason, ROUTABLE_QUEUE,
@@ -61,14 +55,7 @@ pub use invite_ops::{
     InviteView, OrgInviteContext, DEFAULT_INVITE_TTL_HOURS,
 };
 pub use launch_channel::{launch_channel, launch_channel_with_binding, LaunchChannelError};
-pub use process_correspondence_claims::{
-    process_correspondence_claims, ClaimProcessError, ClaimProcessOutcome, CorrespondenceClaim,
-    SkipReason,
-};
 pub use review_queue::{list_drafts_queue, list_local_queues, list_review_queue};
-pub use send_envelope::{send_stamped_envelope, SendError, SendOutcome};
-pub use sync::{
-    drain_outbox, drain_pending_sends, sync_now, RelaySyncReport, SyncError, SyncOutcome,
-};
+pub use sync::{sync_now, RelaySyncReport, SyncError, SyncOutcome};
 pub use stamp_document::{stamp_document, StampError, StampOutcome};
 pub use verify_document::{verify_document, VerifyError, VerifyOutcome};

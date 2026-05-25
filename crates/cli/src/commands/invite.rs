@@ -13,11 +13,10 @@ use anyhow::{anyhow, Context, Result};
 use clap::{Parser, Subcommand};
 
 use secretariat_core::application::{
-    add_contact, claim_invite, create_invite, view_invite, DEFAULT_INVITE_TTL_HOURS,
+    claim_invite, create_invite, view_invite, DEFAULT_INVITE_TTL_HOURS,
 };
 use secretariat_core::infrastructure::keys::load_signing_key;
 use secretariat_core::infrastructure::transport::RelayState;
-use secretariat_core::{Contact, Did, DisplayName, RelayEndpoint};
 
 use super::paths::{key_paths, load_did};
 
@@ -49,15 +48,16 @@ enum Cmd {
     },
 
     /// Claim an invite. Auto-registers your DID with the relay if not yet
-    /// registered, and adds the inviter to your contact book.
+    /// registered.
     Claim {
         /// Claim URL the inviter shared, e.g.
         /// `https://secretariat.equanimi.tech/v0/invite/<token>`.
         url: String,
 
-        /// Display name to give the inviter in your contact book.
-        /// Defaults to the host portion of their DID.
-        #[arg(long)]
+        /// Kept for backward compatibility. The local contact book was
+        /// removed in the substrate-for-themia slice (Move 3b); this
+        /// flag is now a no-op.
+        #[arg(long, hide = true)]
         name: Option<String>,
     },
 }
@@ -104,7 +104,7 @@ fn run_create(purpose: Option<&str>, ttl_hours: Option<i64>, endpoint_override: 
     Ok(())
 }
 
-fn run_claim(url: &str, name_override: Option<&str>) -> Result<()> {
+fn run_claim(url: &str, _name_override: Option<&str>) -> Result<()> {
     let paths = key_paths()?;
     let did = load_did(&paths)?;
     let key = load_signing_key(&paths.signing_key)
@@ -135,27 +135,10 @@ fn run_claim(url: &str, name_override: Option<&str>) -> Result<()> {
         eprintln!("[sec]   relay also registered your DID (single-shot setup).");
     }
 
-    // Auto-add the inviter as a contact, using the same relay endpoint we
-    // just claimed against.
-    let endpoint_url = relay_origin_from_claim_url(url)?;
-    let display = match name_override {
-        Some(s) => DisplayName::parse(s).map_err(|e| anyhow!("invalid --name: {e}"))?,
-        None => default_display_for_did(&claimed.inviter_did)?,
-    };
-    let endpoint = RelayEndpoint::parse(&endpoint_url)
-        .map_err(|e| anyhow!("computed relay endpoint is invalid: {e}"))?;
-    let contact = Contact::new(claimed.inviter_did.clone(), display, Some(endpoint));
-    if let Err(e) = add_contact(&paths.contacts, contact) {
-        eprintln!(
-            "[sec] (note) could not add inviter to contact book: {e}. \
-             Add manually with `sec contact add ...`."
-        );
-    } else {
-        eprintln!("[sec]   added {} to your contacts.", claimed.inviter_did);
-    }
-
     // Persist the relay endpoint in relay-state if not already present
-    // (so `sec daemon serve` will poll it).
+    // (so `sec daemon serve` will poll it). Contact-book auto-add was
+    // removed in the substrate-for-themia slice (Move 3b).
+    let endpoint_url = relay_origin_from_claim_url(url)?;
     if let Ok(mut state) = RelayState::load(&paths.relay_state) {
         let entry = state.entry_mut(&endpoint_url);
         entry.registered = true;
@@ -184,16 +167,4 @@ fn relay_origin_from_claim_url(claim_url: &str) -> Result<String> {
         .find("/v0/invite/")
         .ok_or_else(|| anyhow!("claim URL does not contain `/v0/invite/`"))?;
     Ok(claim_url[..idx].to_string())
-}
-
-fn default_display_for_did(did: &Did) -> Result<DisplayName> {
-    let s = did.as_str();
-    let host_or_short = if let Some(rest) = s.strip_prefix("did:web:") {
-        rest.split(':').next().unwrap_or(rest).to_string()
-    } else if let Some(rest) = s.strip_prefix("did:key:") {
-        format!("did-key-{}", &rest.chars().take(8).collect::<String>())
-    } else {
-        s.to_string()
-    };
-    DisplayName::parse(host_or_short).map_err(|e| anyhow!("default display name invalid: {e}"))
 }
