@@ -77,6 +77,15 @@ struct ChannelDefFrontmatter {
     description: String,
     #[serde(default)]
     created_at: String,
+    /// Channel-governance policy: receivers MUST treat unstamped envelopes
+    /// as ambient on stamp-required channels. Default `false` (omitted from
+    /// frontmatter when at default).
+    #[serde(default, skip_serializing_if = "is_false")]
+    requires_stamp: bool,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 /// Legacy v1 JSON shape, kept for back-compat reads only.
@@ -184,7 +193,14 @@ fn load_from_markdown(path: &Path) -> Result<ChannelDef, ChannelDefStoreError> {
             path: path.to_path_buf(),
             message: e.to_string(),
         })?;
-    finalize(fm.handle, fm.name, fm.description, fm.created_at, path)
+    finalize(
+        fm.handle,
+        fm.name,
+        fm.description,
+        fm.created_at,
+        fm.requires_stamp,
+        path,
+    )
 }
 
 fn load_from_legacy_json(path: &Path) -> Result<ChannelDef, ChannelDefStoreError> {
@@ -202,6 +218,7 @@ fn load_from_legacy_json(path: &Path) -> Result<ChannelDef, ChannelDefStoreError
         file.name,
         file.description,
         file.created_at,
+        false,
         path,
     )
 }
@@ -211,6 +228,7 @@ fn finalize(
     name: String,
     description: String,
     created_at: String,
+    requires_stamp: bool,
     path: &Path,
 ) -> Result<ChannelDef, ChannelDefStoreError> {
     let parsed_handle =
@@ -224,7 +242,8 @@ fn finalize(
             path: path.to_path_buf(),
         })?
         .with_timezone(&Utc);
-    Ok(ChannelDef::new(parsed_handle, name, description, created_at))
+    Ok(ChannelDef::new(parsed_handle, name, description, created_at)
+        .with_requires_stamp(requires_stamp))
 }
 
 pub fn save_channel_def(
@@ -256,6 +275,7 @@ pub fn save_channel_def(
         name: def.name.clone(),
         description: def.description.clone(),
         created_at: def.created_at.to_rfc3339(),
+        requires_stamp: def.requires_stamp,
     };
     let yaml = serde_yaml::to_string(&fm).map_err(|e| {
         ChannelDefStoreError::MalformedFrontmatter {
@@ -360,6 +380,48 @@ mod tests {
         // New shape on disk.
         assert!(channel_def_path(&root, &d.handle).is_file());
         assert_eq!(channel_def_path(&root, &d.handle).extension().unwrap(), "md");
+    }
+
+    #[test]
+    fn requires_stamp_roundtrips() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path().join("channels");
+        let when = Utc.with_ymd_and_hms(2026, 5, 21, 0, 0, 0).unwrap();
+        let d = ChannelDef::new(
+            QueueHandle::parse("assemblee_generale").unwrap(),
+            "AG",
+            "Assemblée générale",
+            when,
+        )
+        .with_requires_stamp(true);
+        save_channel_def(&root, &d, false).unwrap();
+        let loaded = load_channel_def(&root, &d.handle).unwrap().unwrap();
+        assert!(loaded.requires_stamp);
+        assert_eq!(loaded, d);
+
+        // Verify it actually appears in the rendered frontmatter (regression
+        // guard against `skip_serializing_if` swallowing it).
+        let raw = std::fs::read_to_string(channel_def_path(&root, &d.handle)).unwrap();
+        assert!(raw.contains("requires_stamp: true"));
+    }
+
+    #[test]
+    fn requires_stamp_default_false_when_absent_in_yaml() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path().join("channels");
+        let when = Utc.with_ymd_and_hms(2026, 5, 12, 0, 0, 0).unwrap();
+        // Save a default channel (requires_stamp = false) — should NOT
+        // emit the field (skip_serializing_if = is_false).
+        let d = def(when);
+        save_channel_def(&root, &d, false).unwrap();
+        let raw = std::fs::read_to_string(channel_def_path(&root, &d.handle)).unwrap();
+        assert!(
+            !raw.contains("requires_stamp"),
+            "default-false field should be omitted from frontmatter"
+        );
+        // And it loads back as false.
+        let loaded = load_channel_def(&root, &d.handle).unwrap().unwrap();
+        assert!(!loaded.requires_stamp);
     }
 
     #[test]

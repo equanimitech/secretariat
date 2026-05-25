@@ -105,6 +105,7 @@ mod tests {
             name: "test".to_string(),
             description: String::new(),
             created_at: Utc::now(),
+            requires_stamp: false,
         };
         crate::infrastructure::save_channel_def(channels_root, &def, false).unwrap();
         dir
