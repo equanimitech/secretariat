@@ -111,10 +111,9 @@ pub struct Invite {
 
 /// Composite key for the queue index — `(owner_did, handle)`. The owner is the
 /// principal whose relay sequences this queue (owner-as-sequencer invariant);
-/// the handle picks which queue on that owner's machine. DMs are
-/// `(peer_did, "inbox:default")` — same primitive (queues-as-primitive,
-/// [[project_namespace_symmetry]]). Multi-subscriber org channels are queues
-/// with rosters > 2; the relay treats them identically.
+/// the handle picks which queue on that owner's machine. One primitive,
+/// one address shape — channels (single-subscriber or multi-subscriber)
+/// all sit on this axis.
 pub type QueueKey = (Did, QueueHandle);
 
 #[derive(Default)]
@@ -123,8 +122,8 @@ pub struct AppState {
     pub auth: AuthState,
     registry: RwLock<HashMap<Did, RegisteredTenant>>,
     invites: RwLock<HashMap<String, Invite>>,
-    /// All queues, indexed by `(owner, handle)`. DMs are `(peer, "inbox:default")`;
-    /// org channels are `(org_did, "dev:secretariat")` etc. One axis, one primitive.
+    /// All queues, indexed by `(owner, handle)`. Bare-slug handles only —
+    /// no namespace prefixes. One axis, one primitive.
     queues: RwLock<HashMap<QueueKey, TenantQueue>>,
 }
 

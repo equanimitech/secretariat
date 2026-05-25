@@ -1654,9 +1654,11 @@ impl SecretariatServer {
             invalid_request(format!("invalid handle `{}`: {e}", params.handle))
         })?;
         let root = self.resolve_channels_root(params.org.as_deref())?;
+        // Default channel name = the bare slug itself (last segment for
+        // nested handles, the whole handle for single-segment ones).
         let name = params
             .name
-            .unwrap_or_else(|| handle.slug().to_string());
+            .unwrap_or_else(|| handle.segments().last().copied().unwrap_or("").to_string());
         let description = params.description.unwrap_or_default();
         let def = app_create_channel(
             &root,

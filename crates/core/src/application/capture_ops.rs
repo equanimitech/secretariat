@@ -296,7 +296,8 @@ mod tests {
 
         let env = parsed.envelope.unwrap();
         assert_eq!(env.recipient.handle.as_str(), "triage");
-        assert!(env.recipient.is_local(&rafa()));
+        // Captures are always self-addressed — owner DID is the principal.
+        assert_eq!(env.recipient.owner, rafa());
     }
 
     #[test]

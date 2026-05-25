@@ -324,9 +324,11 @@ fn run_create(
     let handle = QueueHandle::parse(&args.handle)
         .map_err(|e| anyhow!("invalid handle `{}`: {e}", args.handle))?;
     let root = resolve_channels_root(paths, args.org.as_deref())?;
+    // Default channel name = the bare slug itself (last segment for
+    // nested handles, the whole handle for single-segment ones).
     let name = args
         .name
-        .unwrap_or_else(|| handle.slug().to_string());
+        .unwrap_or_else(|| handle.segments().last().copied().unwrap_or("").to_string());
     let def = create_channel(
         &root,
         handle,

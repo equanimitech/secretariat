@@ -216,10 +216,9 @@ fn try_send_now(
             // Shouldn't happen — we just stamped it. But handle gracefully.
             Ok(None)
         }
-        Err(SendError::SelfAddressed { .. }) => {
-            // Local capture — never relayed. Quiet success.
-            Ok(None)
-        }
+        // SelfAddressed dropped in Move 3a; self-owned-channel routing
+        // moves to the daemon in Move 5. Until then, self-addressed
+        // stamps surface as NoContact errors and bubble up.
         Err(e) => Err(anyhow!(e)),
     }
 }

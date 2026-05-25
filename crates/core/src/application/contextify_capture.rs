@@ -351,7 +351,7 @@ fn relocate(
     envelope: &Envelope,
     body: &str,
 ) -> Result<PathBuf, ContextifyError> {
-    let new_dir = queues_root.join(new_queue.namespace()).join(new_queue.slug());
+    let new_dir = queues_root.join(new_queue.as_path_segment());
     std::fs::create_dir_all(&new_dir).map_err(|e| ContextifyError::Io {
         path: new_dir.clone(),
         source: e,

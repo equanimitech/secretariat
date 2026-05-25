@@ -612,7 +612,8 @@ async fn drain_one_envelopes_tree(
             match send_stamped_envelope(&p, contacts, key, &day_shard).await {
                 Ok(_) => *sent += 1,
                 Err(SendError::NotStamped) => continue,
-                Err(SendError::SelfAddressed { .. }) => continue,
+                // SelfAddressed dropped in Move 3a; self-owned-channel
+                // routing moves to the daemon in Move 5.
                 Err(e) => warnings.push(format!("{}: {e}", p.display())),
             }
         }
