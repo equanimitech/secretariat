@@ -17,6 +17,9 @@ enum Cmd {
     /// One-time setup: generate signing key, write ~/.secretariat/* defaults.
     Init(commands::init::Args),
 
+    /// Manage authorized agents (scribes + future roles).
+    Agent(commands::agent::Args),
+
     /// Scaffold an AG-shaped envelope into the recipient queue's `_drafts/` dir.
     Compose(commands::compose::Args),
 
@@ -67,6 +70,7 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.cmd {
         Cmd::Init(a) => commands::init::run(a),
+        Cmd::Agent(a) => commands::agent::run(a),
         Cmd::Compose(a) => commands::compose::run(a),
         Cmd::Capture(a) => commands::capture::run(a),
         Cmd::Channels(a) => commands::channels::run(a),

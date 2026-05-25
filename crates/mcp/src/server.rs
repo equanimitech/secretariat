@@ -53,10 +53,12 @@ use rmcp::{
 };
 use schemars::JsonSchema;
 use secretariat_core::application::{
-    add_contact, archive_envelope, capture_to_queue_with_ag, channels_root_for, claim_invite,
-    compose_envelope_with_ag,
+    add_agent as app_add_agent, add_contact, archive_envelope, capture_to_queue_with_ag,
+    channels_root_for, claim_invite, compose_envelope_with_ag,
     create_channel as app_create_channel, create_invite, create_org as app_create_org,
     delete_channel as app_delete_channel, delete_org as app_delete_org, find_by_slug,
+    list_agents as app_list_agents, remove_agent as app_remove_agent,
+    rotate_agent as app_rotate_agent,
     get_channel_contract as app_get_channel_contract,
     get_org_contract as app_get_org_contract, list_channels, list_contacts,
     list_draft_files, list_orgs as app_list_orgs, read_channel, read_envelope,
@@ -517,6 +519,53 @@ pub struct ChannelEnvelopeDto {
     pub stamped: bool,
     pub encrypted: bool,
     pub body: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct AgentAddParams {
+    /// Principal-chosen nickname for the agent. Conventionally matches the
+    /// substrate identifier (e.g. `claude` for `--substrate claude-code`).
+    /// Must be lowercase `[a-z0-9_-]+`, max 64 chars.
+    pub name: String,
+    /// Agent role. Today only `scribe`. Defaults to `scribe` when omitted.
+    #[serde(default)]
+    pub role: Option<String>,
+    /// Cognition provider this agent runs under. Today only `claude-code`.
+    /// Defaults to `claude-code` when omitted.
+    #[serde(default)]
+    pub substrate: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct AgentRemoveParams {
+    /// Nickname of the agent to remove or rotate.
+    pub name: String,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct AgentDto {
+    pub did: String,
+    pub role: String,
+    pub name: String,
+    pub substrate: String,
+    pub added_at: String,
+}
+
+impl From<secretariat_core::domain::Agent> for AgentDto {
+    fn from(a: secretariat_core::domain::Agent) -> Self {
+        Self {
+            did: a.did.as_str().to_string(),
+            role: a.role.as_str().to_string(),
+            name: a.name.as_str().to_string(),
+            substrate: a.substrate.as_str().to_string(),
+            added_at: a.added_at.to_rfc3339(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct ListAgentsOutput {
+    pub agents: Vec<AgentDto>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -1468,6 +1517,118 @@ impl SecretariatServer {
             deleted: true,
             note: "Org tree removed from disk.".to_string(),
         }))
+    }
+
+    #[tool(
+        name = "agent_add",
+        annotations(
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = false
+        ),
+        description = "Grant a new agent (scribe today; future roles reuse the shape) \
+        signing authority on the principal's behalf. Generates a fresh did:key keypair, \
+        stores the key at `~/.secretariat/_self/identity/agents/<name>/key` (mode 0600), \
+        appends an entry to the principal's `authorized_agents`, re-signs the identity \
+        record with the principal's active key. \
+        \
+        Use this on first launch to wire Claude (or any cognition substrate) as the \
+        principal's scribe. After this, MCP `compose` signs envelopes with the agent \
+        key, not the principal's — Touch ID stays cold for stamping curation only."
+    )]
+    async fn agent_add(
+        &self,
+        Parameters(params): Parameters<AgentAddParams>,
+    ) -> Result<Json<AgentDto>, ErrorData> {
+        use secretariat_core::domain::{AgentName, AgentRole, AgentSubstrate};
+        let name = AgentName::parse(&params.name)
+            .map_err(|e| invalid_request(format!("invalid agent name `{}`: {e}", params.name)))?;
+        let role = AgentRole::parse(params.role.as_deref().unwrap_or("scribe"))
+            .map_err(|e| invalid_request(format!("invalid role: {e}")))?;
+        let substrate =
+            AgentSubstrate::parse(params.substrate.as_deref().unwrap_or("claude-code").to_string())
+                .map_err(|e| invalid_request(format!("invalid substrate: {e}")))?;
+        let agent = app_add_agent(&self.paths, name, role, substrate, Utc::now())
+            .map_err(|e| invalid_request(format!("agent_add failed: {e}")))?;
+        info!(name = %agent.name, did = %agent.did, "agent added via MCP");
+        Ok(Json(AgentDto::from(agent)))
+    }
+
+    #[tool(
+        name = "agent_list",
+        annotations(
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        ),
+        description = "List the principal's authorized agents. Each entry includes the \
+        agent's DID, role (scribe today), nickname, substrate identifier (claude-code, etc.), \
+        and the timestamp the agent was granted authority. Returns an empty list when \
+        no agents have been provisioned (the substrate works without scribes — manual \
+        compose stays available)."
+    )]
+    async fn agent_list(&self) -> Result<Json<ListAgentsOutput>, ErrorData> {
+        let agents = app_list_agents(&self.paths)
+            .map_err(|e| invalid_request(format!("agent_list failed: {e}")))?;
+        Ok(Json(ListAgentsOutput {
+            agents: agents.into_iter().map(AgentDto::from).collect(),
+        }))
+    }
+
+    #[tool(
+        name = "agent_remove",
+        annotations(
+            destructive_hint = true,
+            idempotent_hint = false,
+            open_world_hint = false
+        ),
+        description = "Remove an agent by nickname. The agent's signing key file is \
+        archived (renamed with a timestamp suffix) rather than deleted, preserving the \
+        audit trail. The principal's identity record is re-signed to remove the entry. \
+        \
+        After removal, any envelope signed by the removed agent will fail the \
+        `agent → principal` binding check on the receiver side — receivers will see the \
+        signature as valid but the agent as unauthorized."
+    )]
+    async fn agent_remove(
+        &self,
+        Parameters(params): Parameters<AgentRemoveParams>,
+    ) -> Result<Json<AgentDto>, ErrorData> {
+        use secretariat_core::domain::AgentName;
+        let name = AgentName::parse(&params.name)
+            .map_err(|e| invalid_request(format!("invalid agent name `{}`: {e}", params.name)))?;
+        let removed = app_remove_agent(&self.paths, &name, Utc::now())
+            .map_err(|e| invalid_request(format!("agent_remove failed: {e}")))?;
+        info!(name = %removed.name, "agent removed via MCP");
+        Ok(Json(AgentDto::from(removed)))
+    }
+
+    #[tool(
+        name = "agent_rotate",
+        annotations(
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = false
+        ),
+        description = "Rotate an agent's keypair. Generates a fresh did:key, archives \
+        the prior key file (timestamped), updates the agent's DID in `authorized_agents`. \
+        Name, role, and substrate are preserved. \
+        \
+        Use when key compromise is suspected, or as part of routine key hygiene. \
+        Envelopes signed before rotation remain verifiable against the archived key; \
+        new envelopes must use the fresh key."
+    )]
+    async fn agent_rotate(
+        &self,
+        Parameters(params): Parameters<AgentRemoveParams>,
+    ) -> Result<Json<AgentDto>, ErrorData> {
+        use secretariat_core::domain::AgentName;
+        let name = AgentName::parse(&params.name)
+            .map_err(|e| invalid_request(format!("invalid agent name `{}`: {e}", params.name)))?;
+        let rotated = app_rotate_agent(&self.paths, &name, Utc::now())
+            .map_err(|e| invalid_request(format!("agent_rotate failed: {e}")))?;
+        info!(name = %rotated.name, new_did = %rotated.did, "agent rotated via MCP");
+        Ok(Json(AgentDto::from(rotated)))
     }
 
     #[tool(
