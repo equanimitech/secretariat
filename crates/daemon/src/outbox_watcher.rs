@@ -1,14 +1,20 @@
 //! Filesystem watcher on the substrate root. When a `.md` file appears
-//! or changes under any queue's `envelopes/` tree — which is what the
-//! stamp ceremony's atomic `_drafts/` → `envelopes/YYYY/MM/DD/` rename
-//! triggers — debounce briefly, then fire a callback. Wiring this up
-//! to `drain_pending_sends` drops stamp→send latency from the poll
+//! or changes under any queue's `envelopes/` tree — which is what
+//! `compose`/`capture` (writing a new undelivered envelope) and `stamp`
+//! (embedding `$attestation` in place) both trigger — debounce
+//! briefly, then fire a callback. Wiring this up to the daemon's
+//! federation drain drops compose/stamp → send latency from the poll
 //! cadence (15 min default) to the debounce window (~200 ms).
 //!
-//! v0.9 drop-outbox pitch (`docs/pitches/2026-05-18-drop-outbox.md`):
-//! the old `outbox_watcher` watched `outbox/`; this module name is kept
-//! for module-path stability while the behavior moves to envelope-tree
-//! watching. The poll loop remains the safety net.
+//! Substrate-for-themia Move 4 (per
+//! `docs/pitches/2026-05-21-substrate-for-themia.md`): there is one
+//! envelope state and one filesystem location. The `_drafts/` and
+//! `sent/` substrate-staging subdirs are gone. Drafts are envelopes
+//! whose frontmatter lacks `delivered:`; the drain skips delivered
+//! envelopes by reading that field. The module name (`outbox_watcher`)
+//! is kept for module-path stability across the v0.8 → v0.9 → Move 4
+//! collapse history; behaviorally it's now a plain envelope-tree
+//! watcher. The poll loop remains the safety net.
 //!
 //! # Why the API takes a callback
 //!
@@ -50,12 +56,12 @@ pub const DEFAULT_DEBOUNCE: Duration = Duration::from_millis(200);
 ///
 /// `on_drain` is invoked once per debounce window when relevant
 /// `.md` events arrive under the watched root. Events under
-/// substrate-staging trees (`_drafts/`, `_ciphertext/`, `sent/`,
-/// `archived/`, `deferred/`) are ignored — `_drafts/` carries
-/// unstamped files which the drain skips anyway; `sent/` is the
-/// post-delivery archive (re-triggering would loop); the rest are
-/// out-of-active-surface. The callback is sync over a `Future` so
-/// callers can run any async drain logic.
+/// out-of-active-surface trees (`_ciphertext/`, `archived/`,
+/// `deferred/`) are ignored. Drafts and federated envelopes share
+/// the `envelopes/` tree; the drain reads each envelope's
+/// `delivered:` frontmatter field to decide whether federation
+/// applies. The callback is sync over a `Future` so callers can run
+/// any async drain logic.
 pub fn spawn_watcher<F, Fut>(
     root_dir: PathBuf,
     debounce: Duration,
@@ -135,9 +141,11 @@ where
 
 /// Decide whether an event under the watched root should fire a drain.
 /// Triggers on Create / Modify of `.md` files outside any out-of-active-
-/// surface ancestor (`_drafts`, `sent`, `_ciphertext`, `archived`,
-/// `deferred`). Everything else (the daemon's own post-delivery moves,
-/// unstamped drafts, dotfiles, directory metadata) is ignored.
+/// surface ancestor (`_ciphertext`, `archived`, `deferred`). Drafts and
+/// federated envelopes both live under `envelopes/`; the drain reads
+/// each envelope's `delivered:` frontmatter to decide whether
+/// federation applies (a delivered envelope's modify event still fires
+/// the drain, which then no-ops on it — debounce keeps the burst cheap).
 fn should_trigger(event: &notify::Result<Event>, _root: &Path) -> bool {
     let Ok(event) = event else {
         return false;
@@ -161,11 +169,7 @@ fn is_envelope_send_candidate(path: &Path) -> bool {
     !path.components().any(|c| {
         matches!(
             c.as_os_str().to_str(),
-            Some("_drafts")
-                | Some("sent")
-                | Some("_ciphertext")
-                | Some("archived")
-                | Some("deferred")
+            Some("_ciphertext") | Some("archived") | Some("deferred")
         )
     })
 }

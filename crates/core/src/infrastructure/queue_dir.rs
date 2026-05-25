@@ -1,41 +1,39 @@
 //! Resolver for `(Recipient) → on-disk queue directory`.
 //!
-//! Every envelope is addressed to a queue identified by `(to, handle)`
-//! per the v0.3 substrate. This module decides where that queue lives
-//! on disk. The layout is uniform across namespaces (`inbox`, `area`,
-//! `channel`) and across queue-owner kinds (self, peer, org):
+//! Every envelope is addressed to a queue identified by `(to, handle)`.
+//! This module decides where that queue lives on disk. The layout is
+//! uniform across queue-owner kinds (self, org):
 //!
 //! ```text
 //! ~/.secretariat/
-//!   <alias-of-to>/<namespace>/<segments>/
-//!     envelopes/YYYY/MM/DD/*.md      (decrypted: drafts, stamped, received)
-//!     sent/YYYY/MM/DD/*.md            (delivered self-authored archive)
+//!   <alias-of-to>/channels/<segments>/
+//!     envelopes/YYYY/MM/DD/*.md      (every envelope — draft, stamped, received, delivered)
 //!     _ciphertext/                    (encrypted-at-rest blobs)
 //! ```
 //!
-//! v0.9 collapse (per `docs/pitches/2026-05-18-drop-outbox.md`): the
-//! `outbox/` substrate-staging subdir is gone. Drafts now carry a
-//! `.draft.md` filename suffix and live in `envelopes/YYYY/MM/DD/`
-//! alongside their post-stamp `.md` siblings. The stamp ceremony's
-//! atomic rename (`.draft.md` → `.md`) IS the wire-send signal. Delivered
-//! self-authored envelopes are archived under the queue's `sent/`
-//! day-sharded tree by the daemon's drain.
+//! Substrate-for-themia Move 4 (2026-05-21, per
+//! `docs/pitches/2026-05-21-substrate-for-themia.md`): the `_drafts/`
+//! and `sent/` substrate-staging subdirs are gone. There is one
+//! envelope state and one filesystem location: every envelope —
+//! draft, stamped, received, federated — lives at
+//! `<queue>/envelopes/YYYY/MM/DD/<rkey>.md`. Delivery state is now
+//! the envelope frontmatter's `delivered:` field: absent = draft /
+//! undelivered, `<relay-seq-id>` = federated, `local` = self-owned
+//! channel that never federates. The daemon's envelope watcher
+//! reacts to new files lacking `delivered:` and writes the field
+//! post-federation.
+//!
+//! (Earlier collapses: v0.9 drop-outbox replaced the v0.8 `outbox/`
+//! tree with a `.draft.md` filename suffix sibling in `envelopes/`;
+//! this Move 4 supersedes both — the filename-suffix scheme is gone,
+//! the frontmatter is the source of truth.)
 //!
 //! Examples:
 //!
-//! - DM to Marcelo (`to == marcelo_did`, `handle == inbox:default`)
-//!   → `marcelo/inbox/default/`
-//! - Local triage capture (`to == self_did`, `handle == inbox:triage`)
-//!   → `_self/inbox/triage/`
-//! - Writing area (`to == self_did`, `handle == area:writing`)
-//!   → `_self/area/writing/`
-//! - Themia channel (`to == themia_did`, `handle == channel:dommage-corporel:paris-cohort`)
-//!   → `themia.pro/channel/dommage-corporel/paris-cohort/`
-//!
-//! See [[project_namespace_symmetry]] for the design rationale — the
-//! tldr is that `inbox:`, `area:`, `channel:` are sibling *namespaces*
-//! in the handle grammar (same primitive, different publishability
-//! semantics), so they share storage layout.
+//! - Local triage capture (`to == self_did`, `handle == triage`)
+//!   → `_self/channels/triage/`
+//! - Themia channel (`to == themia_did`, `handle == dommage-corporel:paris-cohort`)
+//!   → `themia.pro/channels/dommage-corporel/paris-cohort/`
 //!
 //! # Aliases
 //!
@@ -138,18 +136,16 @@ pub enum AliasMapError {
 
 /// Compute the on-disk queue directory for a `Recipient` under the
 /// principal's substrate root. The result is the directory that
-/// *contains* `envelopes/`, `sent/`, `_ciphertext/` for this queue.
+/// *contains* `envelopes/` and `_ciphertext/` for this queue.
 ///
-/// Path shape (v0.7+ — queue_dir alignment slice): `<root>/<alias>/channels/<segs>/`.
-/// Three kinds of `<alias>` — `_self`, `<org-alias>`, `<peer-alias>` —
-/// all sit at the same depth with `channels/` between alias and
-/// handle segments. Per [[project_contracts_attach_to_queues]] a DM
-/// is a 2-roster channel; cardinality changes shape, not primitive.
+/// Path shape: `<root>/<alias>/channels/<segs>/`. Two kinds of
+/// `<alias>` — `_self` and `<org-alias>` — sit at the same depth with
+/// `channels/` between alias and handle segments.
 ///
 /// Pure compute — no IO. Path is not guaranteed to exist on disk;
 /// callers that need it materialized should `create_dir_all` against
-/// the result (or against [`envelopes_dir`] / [`sent_dir`] /
-/// [`ciphertext_dir`] which compose on top).
+/// the result (or against [`envelopes_dir`] / [`ciphertext_dir`]
+/// which compose on top).
 pub fn queue_dir(aliases: &AliasMap, recipient: &Recipient, root: &Path) -> PathBuf {
     let alias = aliases.alias_for(&recipient.owner);
     let mut dir = root.join(alias);
@@ -160,29 +156,12 @@ pub fn queue_dir(aliases: &AliasMap, recipient: &Recipient, root: &Path) -> Path
     dir
 }
 
-/// `<queue-dir>/envelopes/` — decrypted markdown, time-sharded by the
-/// caller via `<year>/<month>/<day>/` sub-paths.
+/// `<queue-dir>/envelopes/` — every envelope addressed to this queue,
+/// time-sharded by the caller via `<year>/<month>/<day>/` sub-paths.
+/// Drafts and federated envelopes share this tree; delivery state is
+/// the envelope frontmatter's `delivered:` field (absent = draft).
 pub fn envelopes_dir(aliases: &AliasMap, recipient: &Recipient, root: &Path) -> PathBuf {
     queue_dir(aliases, recipient, root).join("envelopes")
-}
-
-/// `<queue-dir>/_drafts/` — unstamped drafts the AI scribe has
-/// composed and the principal has not yet reviewed. The compose verb
-/// writes here; the stamp ceremony renames the file out of `_drafts/`
-/// into `envelopes/YYYY/MM/DD/` atomically. The `_` prefix keeps this
-/// dir clustered with other substrate-private trees (`_ciphertext`)
-/// and out of grep noise when the principal is reading their queue.
-pub fn drafts_dir(aliases: &AliasMap, recipient: &Recipient, root: &Path) -> PathBuf {
-    queue_dir(aliases, recipient, root).join("_drafts")
-}
-
-/// `<queue-dir>/sent/` — day-sharded archive of envelopes the daemon
-/// has successfully delivered to a relay. Drain moves stamped self-
-/// authored envelopes here post-delivery; the sibling `envelopes/`
-/// tree never gets emptied (received envelopes and pre-delivery
-/// stamped envelopes share its day-shard).
-pub fn sent_dir(aliases: &AliasMap, recipient: &Recipient, root: &Path) -> PathBuf {
-    queue_dir(aliases, recipient, root).join("sent")
 }
 
 /// `<queue-dir>/_ciphertext/` — encrypted-at-rest blobs (what crosses
@@ -279,14 +258,6 @@ mod tests {
         assert_eq!(
             envelopes_dir(&aliases, &recipient, base),
             PathBuf::from("/var/secretariat/_self/channels/writing/envelopes"),
-        );
-        assert_eq!(
-            drafts_dir(&aliases, &recipient, base),
-            PathBuf::from("/var/secretariat/_self/channels/writing/_drafts"),
-        );
-        assert_eq!(
-            sent_dir(&aliases, &recipient, base),
-            PathBuf::from("/var/secretariat/_self/channels/writing/sent"),
         );
         assert_eq!(
             ciphertext_dir(&aliases, &recipient, base),

@@ -1,15 +1,17 @@
 //! `sec stamp` — biometric attestation of a markdown file.
 //!
-//! After a successful stamp, the file is atomically renamed from the
-//! per-queue `_drafts/` dir into the canonical `envelopes/YYYY/MM/DD/`
-//! day-shard. That rename IS the wire-send signal for the daemon's
-//! watcher — federation runs in the daemon (substrate-for-themia,
-//! Move 5). `sec stamp` itself no longer attempts immediate delivery.
+//! Stamping embeds the `$attestation` block in the envelope's
+//! frontmatter in place. Post-Move 4 (substrate-for-themia) there
+//! is no path rename — every envelope already lives at
+//! `<queue>/envelopes/YYYY/MM/DD/<rkey>.md`. Federation runs in the
+//! daemon: it picks up envelopes whose frontmatter lacks
+//! `delivered:` and writes the field on success. `sec stamp` itself
+//! does not attempt immediate delivery.
 
 use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
 use clap::Parser;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use secretariat_core::application::{stamp_document, StampError};
 use secretariat_core::domain::StampAct;
@@ -89,54 +91,16 @@ pub fn run(args: Args) -> Result<()> {
         Err(e) => return Err(anyhow!(e)),
     };
 
-    // If the file is a draft (lives under `_drafts/`), atomically
-    // rename it into the canonical day-sharded `envelopes/` tree. The
-    // rename is the wire-send signal for the daemon's watcher.
-    let stamped_path = promote_draft_to_envelope(&outcome.stamped_path, now)?;
-
+    // Stamp embeds the `$attestation` block in place; no path
+    // rename. Federation is the daemon's job — it watches the
+    // `envelopes/` tree for files lacking `delivered:` frontmatter
+    // and writes the field on successful relay push.
     println!(
         "✓ stamped {} at {} (signer {})",
-        stamped_path.display(),
+        outcome.stamped_path.display(),
         outcome.stamp.stamped_at,
         outcome.stamp.signer
     );
 
     Ok(())
-}
-
-/// Promote a stamped draft from `<queue>/_drafts/<file>` into the
-/// canonical `<queue>/envelopes/YYYY/MM/DD/<file>` day-shard. The
-/// `<file>` keeps its original filename so the principal can correlate
-/// pre/post-stamp paths if needed. Atomic on a single filesystem
-/// (rename is guaranteed atomic by POSIX); no-op (returns the input
-/// path unchanged) when the file isn't inside `_drafts/`.
-fn promote_draft_to_envelope(stamped: &Path, now: chrono::DateTime<Utc>) -> Result<PathBuf> {
-    let parent = match stamped.parent() {
-        Some(p) => p,
-        None => return Ok(stamped.to_path_buf()),
-    };
-    if parent.file_name().and_then(|n| n.to_str()) != Some("_drafts") {
-        return Ok(stamped.to_path_buf());
-    }
-    let queue_dir = match parent.parent() {
-        Some(p) => p,
-        None => return Ok(stamped.to_path_buf()),
-    };
-    let day_shard = queue_dir
-        .join("envelopes")
-        .join(now.format("%Y/%m/%d").to_string());
-    std::fs::create_dir_all(&day_shard)
-        .with_context(|| format!("creating {}", day_shard.display()))?;
-    let file_name = stamped
-        .file_name()
-        .ok_or_else(|| anyhow!("stamped path has no filename: {}", stamped.display()))?;
-    let dest = day_shard.join(file_name);
-    std::fs::rename(stamped, &dest).with_context(|| {
-        format!(
-            "promoting draft {} -> {}",
-            stamped.display(),
-            dest.display()
-        )
-    })?;
-    Ok(dest)
 }

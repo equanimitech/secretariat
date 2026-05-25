@@ -20,7 +20,9 @@ enum Cmd {
     /// Manage authorized agents (scribes + future roles).
     Agent(commands::agent::Args),
 
-    /// Scaffold an AG-shaped envelope into the recipient queue's `_drafts/` dir.
+    /// Scaffold an AG-shaped envelope into the recipient queue's
+    /// `envelopes/YYYY/MM/DD/` day-shard. Draft state is the absence
+    /// of the `delivered:` frontmatter field.
     Compose(commands::compose::Args),
 
     /// Capture a body of text into a local queue (idea, journal, future-self note).

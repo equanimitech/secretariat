@@ -2,12 +2,20 @@
 //!
 //! Reads the user's customizable template at `~/.secretariat/template.md`,
 //! prepends a `$envelope:` frontmatter block, and writes the result to
-//! `<root>/<alias-of-to>/channels/<segments>/_drafts/<timestamp>.md` —
-//! the per-queue drafts dir, derived from the recipient via the
-//! `queue_dir` resolver. No stamp is added — the principal stamps
-//! later via `sec stamp`, which atomically renames the file out of
-//! `_drafts/` into `envelopes/YYYY/MM/DD/` (per the drop-outbox pitch,
-//! `docs/pitches/2026-05-18-drop-outbox.md`).
+//! `<root>/<alias-of-to>/channels/<segments>/envelopes/YYYY/MM/DD/<rkey>.md` —
+//! the per-queue day-shard tree, derived from the recipient via the
+//! `queue_dir` resolver. No stamp is added — the principal stamps later
+//! via `sec stamp`, which embeds the `$attestation` block in place.
+//!
+//! Substrate-for-themia Move 4 (2026-05-21, per
+//! `docs/pitches/2026-05-21-substrate-for-themia.md`): there is one
+//! envelope state and one filesystem location. The compose verb
+//! writes directly into `envelopes/YYYY/MM/DD/` — no `_drafts/`
+//! intermediate. The envelope's frontmatter does NOT carry the
+//! `delivered:` field at compose time; absence IS the substrate's
+//! signal for "undelivered / draft state." The daemon's envelope
+//! watcher reacts to the new file, federates it, and writes
+//! `delivered: <relay-seq-id>` in place on success.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -83,7 +91,11 @@ fn compose_envelope_inner(
         envelope.ag_source = Some(src);
     }
     let queue_root = crate::infrastructure::queue_dir::queue_dir(aliases, &request.recipient, root);
-    let target_dir = queue_root.join("_drafts");
+    // One envelope state: write straight into the day-shard. The
+    // envelope's frontmatter omits `delivered:` — absence IS the
+    // substrate's "undelivered / draft" signal.
+    let day_shard = now.format("%Y/%m/%d").to_string();
+    let target_dir = queue_root.join("envelopes").join(&day_shard);
     fs::create_dir_all(&target_dir).map_err(|e| ComposeError::Io {
         path: target_dir.clone(),
         source: e,
@@ -270,7 +282,7 @@ mod tests {
     }
 
     #[test]
-    fn composes_to_peer_queue_drafts() {
+    fn composes_to_peer_queue_envelopes_day_shard() {
         let dir = TempDir::new().unwrap();
         let template = dir.path().join("template.md");
         fs::write(&template, "# Title\n\nBody.\n").unwrap();
@@ -297,10 +309,11 @@ mod tests {
         let now = Utc.with_ymd_and_hms(2026, 4, 30, 14, 25, 0).unwrap();
         let path = compose_envelope(req, &template, root, &aliases, now).unwrap();
 
-        // Lives under <root>/marcelo/channels/inbox/default/_drafts/.
+        // Lives under <root>/marcelo/channels/inbox/default/envelopes/YYYY/MM/DD/.
+        // No `_drafts/` intermediate — substrate-for-themia Move 4.
         assert_eq!(
             path.parent().unwrap(),
-            root.join("marcelo/channels/inbox/default/_drafts"),
+            root.join("marcelo/channels/inbox/default/envelopes/2026/04/30"),
         );
         assert!(path
             .file_name()
@@ -311,14 +324,16 @@ mod tests {
         let parsed = parse_document(&fs::read_to_string(&path).unwrap()).unwrap();
         assert!(parsed.envelope.is_some());
         assert!(parsed.stamp.is_none());
+        // Absence of `delivered:` is the draft signal — never set at compose.
+        assert!(parsed.envelope.as_ref().unwrap().delivered.is_none());
         assert!(parsed.body.contains("Body."));
     }
 
     #[test]
     fn composes_self_letter_under_self_alias() {
         // Self-addressed envelope — owner == from. The resolver maps
-        // to `_self`, the handle's namespace + segments give the
-        // rest, and the file lands in that queue's `_drafts/`.
+        // to `_self`, the handle's segments give the rest, and the
+        // file lands directly in that queue's `envelopes/YYYY/MM/DD/`.
         let dir = TempDir::new().unwrap();
         let template = dir.path().join("template.md");
         fs::write(&template, "# Self\n").unwrap();
@@ -345,8 +360,12 @@ mod tests {
         let path = compose_envelope(req, &template, root, &aliases, now).unwrap();
         assert_eq!(
             path.parent().unwrap(),
-            root.join("_self/channels/inbox/default/_drafts"),
+            root.join("_self/channels/inbox/default/envelopes/2026/04/30"),
         );
+        // No `_drafts/` dir should be created anywhere under the queue.
+        assert!(!root
+            .join("_self/channels/inbox/default/_drafts")
+            .exists());
     }
 
     #[test]

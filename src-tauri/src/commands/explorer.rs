@@ -22,7 +22,7 @@ pub enum EntryKind {
     /// Directory containing a `channel.md` — clickable to open a session tab.
     ChannelLeaf,
     /// Directory inside the channel tree without a `channel.md` (a non-leaf
-    /// handle segment, or a child dir like `envelopes/`, `_drafts/`).
+    /// handle segment, or a child dir like `envelopes/`).
     Dir,
     /// Regular file. The extension is exposed so the renderer can decide
     /// how to open it (markdown editor for `.md`, Finder for others).
@@ -113,13 +113,13 @@ pub async fn list_dir(path: String) -> Result<Vec<TreeEntry>, String> {
             continue;
         }
         // Hide substrate-staging dirs from the principal-facing tree.
-        // `_drafts/` is sender-side draft staging (v0.9 drop-outbox);
-        // surfaced via the "drafts" review verb, not the explorer.
         // `_ciphertext/` is wire-form cache, never principal-readable.
         // `envelopes/` is materialized timeline content surfaced via
         // the channel-tab timeline, not via the explorer tree.
-        // `sent/` is the post-delivery archive.
-        if name == "_drafts" || name == "_ciphertext" || name == "envelopes" || name == "sent" {
+        // (Substrate-for-themia Move 4: `_drafts/` and `sent/` are gone
+        // — drafts and delivered envelopes share `envelopes/`, with
+        // `delivered:` frontmatter as the state marker.)
+        if name == "_ciphertext" || name == "envelopes" {
             continue;
         }
         let entry_path = dent.path();
@@ -175,8 +175,8 @@ pub async fn list_dir(path: String) -> Result<Vec<TreeEntry>, String> {
 
 /// True if `p` itself contains a `channel.md`, or any descendant
 /// directory does. Walks bounded subtrees only — skips `envelopes`,
-/// `_ciphertext`, `_drafts`, `sent`, `.claude` which are non-channel substrate.
-/// Bounded depth (8) to avoid pathological walks.
+/// `_ciphertext`, `.claude` which are non-channel substrate. Bounded
+/// depth (8) to avoid pathological walks.
 fn dir_has_channel_descendants(p: &std::path::Path) -> bool {
     fn walk(p: &std::path::Path, depth: usize) -> bool {
         if depth == 0 {
@@ -194,7 +194,7 @@ fn dir_has_channel_descendants(p: &std::path::Path) -> bool {
             }
             // Skip envelope/transport substrate — pure leaf storage,
             // never holds channel subdirs.
-            if matches!(s.as_ref(), "envelopes" | "_ciphertext" | "_drafts" | "sent") {
+            if matches!(s.as_ref(), "envelopes" | "_ciphertext") {
                 continue;
             }
             let child = dent.path();
@@ -219,8 +219,7 @@ fn dir_has_children(p: &std::path::Path) -> bool {
                 let n = d.file_name();
                 let s = n.to_string_lossy();
                 let hidden = s.starts_with('.') && s != ".claude";
-                let staging =
-                    matches!(s.as_ref(), "_drafts" | "_ciphertext" | "envelopes" | "sent");
+                let staging = matches!(s.as_ref(), "_ciphertext" | "envelopes");
                 !hidden && !staging
             }
             Err(_) => false,

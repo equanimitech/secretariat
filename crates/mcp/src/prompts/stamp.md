@@ -4,7 +4,7 @@ You are about to walk the principal through stamping a draft envelope. This prom
 
 ## Argument
 
-- `file` (required): the absolute path to a draft envelope under `<root>/<alias-of-recipient>/channels/<handle-path>/_drafts/`. If omitted, fetch the `secretariat://compositions` resource, render the unstamped drafts, and ask the principal to pick one by path.
+- `file` (required): the absolute path to a draft envelope under `<root>/<alias-of-recipient>/channels/<handle-path>/envelopes/YYYY/MM/DD/`. Drafts are envelopes whose frontmatter lacks the `delivered:` field. If omitted, fetch the `secretariat://compositions` resource, render the pending drafts, and ask the principal to pick one by path.
 
 ## Recipe (non-skippable — phishing / habituation defense)
 

@@ -52,7 +52,7 @@ pub use identity_store::{
     KeyRotation, PrincipalIdentity,
 };
 pub use queue_dir::{
-    ciphertext_dir, drafts_dir, envelopes_dir, queue_dir, sent_dir, AliasMap, SELF_ALIAS,
+    ciphertext_dir, envelopes_dir, queue_dir, AliasMap, SELF_ALIAS,
 };
 pub use membership_store::{
     load_membership, save_membership, MembershipStoreError, OrgMembership, MEMBERSHIP_FILENAME,
