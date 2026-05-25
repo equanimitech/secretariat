@@ -12,19 +12,16 @@ use secretariat_core::infrastructure::keys::KeyPaths;
 use secretariat_core::infrastructure::transport::{RelayClient, RelayState};
 use secretariat_core::Did;
 
-pub async fn register(
-    paths: &KeyPaths,
-    did: &Did,
-    key: &SigningKey,
-    endpoint: &str,
-) -> Result<()> {
+pub async fn register(paths: &KeyPaths, did: &Did, key: &SigningKey, endpoint: &str) -> Result<()> {
     let client = RelayClient::new(endpoint, did.clone(), key);
     client.register().await.context("relay registration")?;
 
     let mut state = RelayState::load(&paths.relay_state).context("loading relay state")?;
     let entry = state.entry_mut(client.endpoint.as_str());
     entry.registered = true;
-    state.save(&paths.relay_state).context("saving relay state")?;
+    state
+        .save(&paths.relay_state)
+        .context("saving relay state")?;
 
     eprintln!("[sec] registered with {}", client.endpoint);
     eprintln!("[sec]   did: {did}");

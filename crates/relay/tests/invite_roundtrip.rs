@@ -105,7 +105,14 @@ async fn double_claim_is_rejected() {
 
     let endpoint_for_create = endpoint.clone();
     let invite = tokio::task::spawn_blocking(move || {
-        create_invite(&endpoint_for_create, &rafa_did, &rafa_key, None, Some(1), None)
+        create_invite(
+            &endpoint_for_create,
+            &rafa_did,
+            &rafa_key,
+            None,
+            Some(1),
+            None,
+        )
     })
     .await
     .unwrap()
@@ -182,12 +189,11 @@ async fn org_invite_roundtrips_with_context() {
     // Claim should surface the same org context.
     let claim_url = invite.claim_url.clone();
     let did_for_claim = marcelo_did.clone();
-    let claim = tokio::task::spawn_blocking(move || {
-        claim_invite(&claim_url, &did_for_claim, &marcelo_key)
-    })
-    .await
-    .unwrap()
-    .unwrap();
+    let claim =
+        tokio::task::spawn_blocking(move || claim_invite(&claim_url, &did_for_claim, &marcelo_key))
+            .await
+            .unwrap()
+            .unwrap();
     assert_eq!(claim.org_did.as_ref().unwrap(), &org_did);
     assert_eq!(claim.role.as_deref(), Some("publish"));
     assert_eq!(claim.channel_handles, vec!["dev:secretariat", "book"]);
@@ -201,7 +207,14 @@ async fn unregistered_inviter_cannot_create() {
 
     let endpoint_for_create = endpoint.clone();
     let r = tokio::task::spawn_blocking(move || {
-        create_invite(&endpoint_for_create, &rafa_did, &rafa_key, None, Some(1), None)
+        create_invite(
+            &endpoint_for_create,
+            &rafa_did,
+            &rafa_key,
+            None,
+            Some(1),
+            None,
+        )
     })
     .await
     .unwrap();

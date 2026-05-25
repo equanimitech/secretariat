@@ -114,7 +114,15 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let root = dir.path().join("orgs");
         create_org(&root, alias("themia.pro"), None, "Themia", "", when(), None).unwrap();
-        let r = create_org(&root, alias("themia.pro"), None, "Themia v2", "", when(), None);
+        let r = create_org(
+            &root,
+            alias("themia.pro"),
+            None,
+            "Themia v2",
+            "",
+            when(),
+            None,
+        );
         assert!(matches!(
             r,
             Err(OrgOpsError::Store(OrgStoreError::AlreadyExists(_)))
@@ -126,7 +134,16 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let root = dir.path().join("orgs");
         create_org(&root, alias("themia.pro"), None, "Themia", "", when(), None).unwrap();
-        create_org(&root, alias("equanimi.tech"), None, "Equanimi", "", when(), None).unwrap();
+        create_org(
+            &root,
+            alias("equanimi.tech"),
+            None,
+            "Equanimi",
+            "",
+            when(),
+            None,
+        )
+        .unwrap();
         create_org(&root, alias("nwyana"), None, "Nwyana", "", when(), None).unwrap();
         let orgs = list_orgs(&root).unwrap();
         assert_eq!(orgs.len(), 3);
@@ -152,7 +169,10 @@ mod tests {
         let contract_path = crate::infrastructure::contract_store::org_contract_path(
             &crate::infrastructure::org_store::org_dir(&root, &a),
         );
-        assert!(contract_path.is_file(), "stub org contract.local.md should be written");
+        assert!(
+            contract_path.is_file(),
+            "stub org contract.local.md should be written"
+        );
         let (loaded, body) = crate::infrastructure::contract_store::load_contract(&contract_path)
             .unwrap()
             .unwrap();

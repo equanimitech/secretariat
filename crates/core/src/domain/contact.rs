@@ -66,7 +66,11 @@ impl RelayEndpoint {
         let scheme = &s[..scheme_end];
         match scheme {
             "wss" | "https" | "ws" | "http" => {}
-            _ => return Err(RelayEndpointParseError::UnsupportedScheme(scheme.to_string())),
+            _ => {
+                return Err(RelayEndpointParseError::UnsupportedScheme(
+                    scheme.to_string(),
+                ))
+            }
         }
 
         let after_scheme = &s[scheme_end + 3..];

@@ -27,8 +27,8 @@ use ed25519_dalek::SigningKey;
 use secretariat_core::application::{
     decide_poll, sync_now, CadenceConfig, PollDecision, SyncOutcome,
 };
-use secretariat_core::infrastructure::preferences::load_or_migrate as load_or_migrate_preferences;
 use secretariat_core::infrastructure::keys::KeyPaths;
+use secretariat_core::infrastructure::preferences::load_or_migrate as load_or_migrate_preferences;
 use secretariat_core::Did;
 use std::sync::OnceLock;
 use tokio::sync::Mutex;
@@ -136,11 +136,7 @@ pub async fn serve(paths: &KeyPaths, did: &Did, key: &SigningKey) -> Result<()> 
 /// notifications, drain stamped self-authored envelopes pending send. Returns the [`SyncOutcome`] so
 /// callers (loop, IPC server, CLI fallback) can decide how to surface
 /// results.
-pub async fn run_tick(
-    paths: &KeyPaths,
-    did: &Did,
-    key: &SigningKey,
-) -> Result<SyncOutcome> {
+pub async fn run_tick(paths: &KeyPaths, did: &Did, key: &SigningKey) -> Result<SyncOutcome> {
     let _guard = tick_lock().lock().await;
     sync_now(paths, did, key).await.context("sync_now")
 }
@@ -163,11 +159,7 @@ pub async fn tick(paths: &KeyPaths, did: &Did, key: &SigningKey) -> Result<()> {
 /// quiet under `RUST_LOG=info`.
 pub fn summary_line(outcome: &SyncOutcome) -> String {
     let inbound: usize = outcome.per_relay.iter().map(|r| r.inbound_count).sum();
-    let warnings: usize = outcome
-        .per_relay
-        .iter()
-        .map(|r| r.warnings.len())
-        .sum();
+    let warnings: usize = outcome.per_relay.iter().map(|r| r.warnings.len()).sum();
     if inbound == 0 && warnings == 0 {
         "[sec] tick: nothing to do".to_string()
     } else {

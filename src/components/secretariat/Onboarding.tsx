@@ -21,7 +21,9 @@ export function Onboarding({ onComplete }: OnboardingProps) {
   return (
     <div className="flex h-full items-center justify-center bg-background p-8">
       <div className="w-full max-w-md space-y-6">
-        {step === 'identity' && <IdentityStep onDone={() => setStep('scribe')} />}
+        {step === 'identity' && (
+          <IdentityStep onDone={() => setStep('scribe')} />
+        )}
         {step === 'scribe' && <ScribeStep onDone={onComplete} />}
       </div>
     </div>
@@ -187,8 +189,8 @@ function ScribeStep({ onDone }: { onDone: () => void }) {
         <header className="space-y-2">
           <h1 className="text-2xl font-semibold">Scribe already set up.</h1>
           <p className="text-sm text-muted-foreground">
-            <code>{existingScribe}</code> is wired as your scribe. You can manage
-            scribes anytime from preferences.
+            <code>{existingScribe}</code> is wired as your scribe. You can
+            manage scribes anytime from preferences.
           </p>
         </header>
         <button
@@ -207,8 +209,8 @@ function ScribeStep({ onDone }: { onDone: () => void }) {
         <h1 className="text-2xl font-semibold">Add a scribe?</h1>
         <p className="text-sm text-muted-foreground">
           A scribe drafts envelopes on your behalf. You always stamp the ones
-          worth elevating to authoritative; ambient drafts stay signed-only.
-          You can add or remove scribes anytime.
+          worth elevating to authoritative; ambient drafts stay signed-only. You
+          can add or remove scribes anytime.
         </p>
       </header>
 
@@ -237,7 +239,7 @@ function ScribeStep({ onDone }: { onDone: () => void }) {
 
       <p className="text-xs italic text-muted-foreground">
         The scribe gets its own keypair, stored only on this device. Every
-        envelope it composes carries the scribe's signature — verifiable as
+        envelope it composes carries the scribe&apos;s signature — verifiable as
         authorized by you, distinct from your own Touch-ID stamps.
       </p>
 

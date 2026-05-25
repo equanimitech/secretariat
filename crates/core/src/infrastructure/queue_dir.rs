@@ -245,7 +245,9 @@ mod tests {
         );
         assert_eq!(
             queue_dir(&aliases, &recipient, root()),
-            PathBuf::from("/var/secretariat/orgs/themia.pro/channels/dommage-corporel/paris-cohort"),
+            PathBuf::from(
+                "/var/secretariat/orgs/themia.pro/channels/dommage-corporel/paris-cohort"
+            ),
         );
     }
 

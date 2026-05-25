@@ -267,8 +267,7 @@ mod tests {
         let did = fixture_signer_did(&key);
         let body = "# Hello\n";
         let when = Utc.with_ymd_and_hms(2026, 5, 25, 12, 0, 0).unwrap();
-        let sig =
-            EnvelopeSignature::sign_body(did, SignerRole::Principal, body, when, &key);
+        let sig = EnvelopeSignature::sign_body(did, SignerRole::Principal, body, when, &key);
         let yaml = serde_yaml::to_string(&sig).unwrap();
         assert!(yaml.contains("$type: tech.equanimi.secretariat.signature"));
         assert!(yaml.contains("signerRole: principal"));

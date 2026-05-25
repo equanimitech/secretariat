@@ -33,9 +33,7 @@ use crate::infrastructure::markdown::parse_document;
 use crate::infrastructure::membership_store::{load_membership, MEMBERSHIP_FILENAME};
 use crate::infrastructure::org_store::{list_org_dirs, org_channels_root};
 use crate::infrastructure::queue_dir::{envelopes_dir, AliasMap, AliasMapError};
-use crate::infrastructure::transport::{
-    RelayClient, RelayClientError, RelayInbound, RelayState,
-};
+use crate::infrastructure::transport::{RelayClient, RelayClientError, RelayInbound, RelayState};
 use crate::Did;
 
 const TOKEN_REFRESH_BUFFER: Duration = Duration::minutes(5);
@@ -328,9 +326,7 @@ fn file_inbound(
     // signer (the principal). Best-effort: a verify failure here is
     // logged and skipped — the envelope itself stays on disk for later
     // human inspection, but the cache is not poisoned.
-    if let Ok(Some(manifest)) =
-        crate::application::ingest_manifest_from_file(&path)
-    {
+    if let Ok(Some(manifest)) = crate::application::ingest_manifest_from_file(&path) {
         if let Err(e) = crate::infrastructure::manifest_cache::store_envelope_bytes(
             &paths.root,
             &manifest,

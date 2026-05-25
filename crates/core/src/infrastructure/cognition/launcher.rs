@@ -247,6 +247,9 @@ mod tests {
             Some("http://localhost:1234")
         );
         // Binding wins on collision.
-        assert_eq!(plan.env.get("SHARED").map(String::as_str), Some("from-binding"));
+        assert_eq!(
+            plan.env.get("SHARED").map(String::as_str),
+            Some("from-binding")
+        );
     }
 }

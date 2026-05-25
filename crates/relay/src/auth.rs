@@ -97,12 +97,12 @@ impl AuthState {
             return Err(AuthError::UnknownChallenge);
         }
 
-        let sig: [u8; 64] = signature_bytes
-            .try_into()
-            .map_err(|_| AuthError::MalformedSignature(format!(
+        let sig: [u8; 64] = signature_bytes.try_into().map_err(|_| {
+            AuthError::MalformedSignature(format!(
                 "expected 64 bytes, got {}",
                 signature_bytes.len()
-            )))?;
+            ))
+        })?;
         let dalek_sig = DalekSig::from_bytes(&sig);
 
         let mut to_verify = AUTH_DOMAIN.to_vec();
@@ -116,7 +116,10 @@ impl AuthState {
             did: did.clone(),
             expires_at: now + Duration::seconds(SESSION_TTL_SECS),
         };
-        self.sessions.write().unwrap().insert(token.clone(), session);
+        self.sessions
+            .write()
+            .unwrap()
+            .insert(token.clone(), session);
         Ok(token)
     }
 

@@ -29,8 +29,7 @@ use ed25519_dalek::{Signature as DalekSignature, Verifier, VerifyingKey};
 use thiserror::Error;
 
 use crate::domain::{
-    AttestedDocument, Did, DocHash, DocumentInvariantError, EnvelopeSignature, SignerRole,
-    StampAct,
+    AttestedDocument, Did, DocHash, DocumentInvariantError, EnvelopeSignature, SignerRole, StampAct,
 };
 use crate::infrastructure::markdown::{parse_document, MarkdownError};
 use crate::ports::{DidResolutionError, DidResolver};
@@ -220,48 +219,45 @@ pub fn verify_document_layered<R: DidResolver>(
     // invariant for the stamp; we don't want to re-read the file.
     let stamp_outcome = match parsed.stamp {
         None => VerifyOutcome::Unsigned,
-        Some(stamp) => {
-            match AttestedDocument::new(parsed.envelope, stamp.clone(), body) {
-                Err(DocumentInvariantError::HashMismatch { claimed, computed }) => {
-                    VerifyOutcome::Tampered {
-                        claimed_hash: claimed,
-                        computed_hash: computed,
+        Some(stamp) => match AttestedDocument::new(parsed.envelope, stamp.clone(), body) {
+            Err(DocumentInvariantError::HashMismatch { claimed, computed }) => {
+                VerifyOutcome::Tampered {
+                    claimed_hash: claimed,
+                    computed_hash: computed,
+                }
+            }
+            Ok(aggregate) => match resolver.resolve(&stamp.signer) {
+                Err(e) => VerifyOutcome::SignerUnresolvable {
+                    signer: stamp.signer.clone(),
+                    cause: e,
+                },
+                Ok(resolved) => {
+                    let dalek_sig = DalekSignature::from_bytes(stamp.signature.as_bytes());
+                    let payload = aggregate.signed_payload();
+                    let mut verified = false;
+                    for key_bytes in &resolved.stamp_public_keys {
+                        let Ok(vk) = VerifyingKey::from_bytes(key_bytes) else {
+                            continue;
+                        };
+                        if vk.verify(payload, &dalek_sig).is_ok() {
+                            verified = true;
+                            break;
+                        }
+                    }
+                    if verified {
+                        VerifyOutcome::Verified {
+                            signer: stamp.signer.clone(),
+                            stamped_at: stamp.stamped_at,
+                            act: stamp.act,
+                        }
+                    } else {
+                        VerifyOutcome::SignatureInvalid {
+                            signer: stamp.signer.clone(),
+                        }
                     }
                 }
-                Ok(aggregate) => match resolver.resolve(&stamp.signer) {
-                    Err(e) => VerifyOutcome::SignerUnresolvable {
-                        signer: stamp.signer.clone(),
-                        cause: e,
-                    },
-                    Ok(resolved) => {
-                        let dalek_sig =
-                            DalekSignature::from_bytes(stamp.signature.as_bytes());
-                        let payload = aggregate.signed_payload();
-                        let mut verified = false;
-                        for key_bytes in &resolved.stamp_public_keys {
-                            let Ok(vk) = VerifyingKey::from_bytes(key_bytes) else {
-                                continue;
-                            };
-                            if vk.verify(payload, &dalek_sig).is_ok() {
-                                verified = true;
-                                break;
-                            }
-                        }
-                        if verified {
-                            VerifyOutcome::Verified {
-                                signer: stamp.signer.clone(),
-                                stamped_at: stamp.stamped_at,
-                                act: stamp.act,
-                            }
-                        } else {
-                            VerifyOutcome::SignatureInvalid {
-                                signer: stamp.signer.clone(),
-                            }
-                        }
-                    }
-                },
-            }
-        }
+            },
+        },
     };
 
     Ok(LayeredVerifyOutcome {
@@ -452,11 +448,8 @@ mod tests {
         let path = dir.path().join("doc.md");
         fs::write(&path, "# raw\n").unwrap();
 
-        let resolver = StubResolver::new(|_| {
-            Err(DidResolutionError::NotFound {
-                url: "n/a".into(),
-            })
-        });
+        let resolver =
+            StubResolver::new(|_| Err(DidResolutionError::NotFound { url: "n/a".into() }));
 
         let outcome = verify_document(&path, &resolver).unwrap();
         assert!(matches!(outcome, VerifyOutcome::Unsigned));

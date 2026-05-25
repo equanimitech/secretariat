@@ -164,13 +164,15 @@ fn run_contract_resolve(
         .map_err(|e| anyhow!("invalid handle `{}`: {e}", args.handle))?;
     let org_alias = match args.org.as_deref() {
         None => None,
-        Some(s) => Some(
-            OrgAlias::parse(s).map_err(|e| anyhow!("invalid org alias `{s}`: {e}"))?,
-        ),
+        Some(s) => Some(OrgAlias::parse(s).map_err(|e| anyhow!("invalid org alias `{s}`: {e}"))?),
     };
-    let resolved =
-        resolve_channel_contract(&paths.orgs_root, &paths.personal_channels_root(), org_alias.as_ref(), &handle)
-            .with_context(|| format!("resolving contract for `{}`", handle.as_str()))?;
+    let resolved = resolve_channel_contract(
+        &paths.orgs_root,
+        &paths.personal_channels_root(),
+        org_alias.as_ref(),
+        &handle,
+    )
+    .with_context(|| format!("resolving contract for `{}`", handle.as_str()))?;
     println!("handle: {}", handle.as_str());
     println!(
         "merged cadence_floor_minutes: {}",
@@ -280,9 +282,9 @@ pub(crate) fn build_patch(
         (Some(_), true) => unreachable!("clap conflicts_with"),
     };
     let min_trust = match (min_trust, clear_min_trust) {
-        (Some(s), false) => PatchField::Set(
-            TrustGate::parse(s).ok_or_else(|| anyhow!("invalid min_trust `{s}`"))?,
-        ),
+        (Some(s), false) => {
+            PatchField::Set(TrustGate::parse(s).ok_or_else(|| anyhow!("invalid min_trust `{s}`"))?)
+        }
         (None, true) => PatchField::Clear,
         (None, false) => PatchField::Leave,
         (Some(_), true) => unreachable!("clap conflicts_with"),
@@ -300,8 +302,7 @@ fn resolve_channels_root(
     match org {
         None => Ok(paths.personal_channels_root()),
         Some(s) => {
-            let alias = OrgAlias::parse(s)
-                .map_err(|e| anyhow!("invalid org alias `{s}`: {e}"))?;
+            let alias = OrgAlias::parse(s).map_err(|e| anyhow!("invalid org alias `{s}`: {e}"))?;
             if show_org(&paths.orgs_root, &alias)
                 .context("looking up org")?
                 .is_none()
@@ -317,10 +318,7 @@ fn resolve_channels_root(
     }
 }
 
-fn run_create(
-    paths: &secretariat_core::infrastructure::KeyPaths,
-    args: CreateArgs,
-) -> Result<()> {
+fn run_create(paths: &secretariat_core::infrastructure::KeyPaths, args: CreateArgs) -> Result<()> {
     let handle = QueueHandle::parse(&args.handle)
         .map_err(|e| anyhow!("invalid handle `{}`: {e}", args.handle))?;
     let root = resolve_channels_root(paths, args.org.as_deref())?;
@@ -351,13 +349,9 @@ fn run_create(
     Ok(())
 }
 
-fn run_list(
-    paths: &secretariat_core::infrastructure::KeyPaths,
-    args: ListArgs,
-) -> Result<()> {
+fn run_list(paths: &secretariat_core::infrastructure::KeyPaths, args: ListArgs) -> Result<()> {
     let root = resolve_channels_root(paths, args.org.as_deref())?;
-    let mut summaries =
-        list_channels(&root).context("walking channels tree")?;
+    let mut summaries = list_channels(&root).context("walking channels tree")?;
     if let Some(prefix) = args.prefix.as_deref() {
         summaries.retain(|s| s.handle.starts_with(prefix));
     }
@@ -427,24 +421,28 @@ fn print_grouped(summaries: &[secretariat_core::application::ChannelSummary]) {
             let envelopes = if s.envelope_count == 0 {
                 String::new()
             } else {
-                format!("  [{} envelope{}]", s.envelope_count, if s.envelope_count == 1 { "" } else { "s" })
+                format!(
+                    "  [{} envelope{}]",
+                    s.envelope_count,
+                    if s.envelope_count == 1 { "" } else { "s" }
+                )
             };
             println!("│     {}{display}{envelopes}", s.handle);
         }
     }
 }
 
-fn run_read(
-    paths: &secretariat_core::infrastructure::KeyPaths,
-    args: ReadArgs,
-) -> Result<()> {
+fn run_read(paths: &secretariat_core::infrastructure::KeyPaths, args: ReadArgs) -> Result<()> {
     let handle = QueueHandle::parse(&args.handle)
         .map_err(|e| anyhow!("invalid handle `{}`: {e}", args.handle))?;
     let root = resolve_channels_root(paths, args.org.as_deref())?;
     let envelopes = read_channel(&root, &handle, args.limit)
         .with_context(|| format!("reading channel `{}`", handle.as_str()))?;
     if envelopes.is_empty() {
-        println!("(channel `{}` exists but has no envelopes)", handle.as_str());
+        println!(
+            "(channel `{}` exists but has no envelopes)",
+            handle.as_str()
+        );
         return Ok(());
     }
     for (i, e) in envelopes.iter().enumerate() {
@@ -475,10 +473,7 @@ fn run_read(
     Ok(())
 }
 
-fn run_delete(
-    paths: &secretariat_core::infrastructure::KeyPaths,
-    args: DeleteArgs,
-) -> Result<()> {
+fn run_delete(paths: &secretariat_core::infrastructure::KeyPaths, args: DeleteArgs) -> Result<()> {
     if !args.yes {
         return Err(anyhow!(
             "refusing to delete `{}` without --yes (destructive)",

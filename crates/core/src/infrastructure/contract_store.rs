@@ -108,10 +108,11 @@ pub fn save_contract(
     if path.exists() && !overwrite {
         return Err(ContractStoreError::AlreadyExists(path.to_path_buf()));
     }
-    let yaml = emit_frontmatter(contract).map_err(|e| ContractStoreError::MalformedFrontmatter {
-        path: path.to_path_buf(),
-        message: e,
-    })?;
+    let yaml =
+        emit_frontmatter(contract).map_err(|e| ContractStoreError::MalformedFrontmatter {
+            path: path.to_path_buf(),
+            message: e,
+        })?;
     let rendered = format!("---\n{yaml}---\n{body}");
     let tmp = path.with_extension("local.md.tmp");
     std::fs::write(&tmp, rendered.as_bytes()).map_err(|e| ContractStoreError::Io {
@@ -158,9 +159,7 @@ fn resolve_stub_body(override_stub: Option<&Path>) -> Result<String, ContractSto
 }
 
 /// Load a contract. Returns `Ok(None)` if the file doesn't exist.
-pub fn load_contract(
-    path: &Path,
-) -> Result<Option<(ChannelContract, String)>, ContractStoreError> {
+pub fn load_contract(path: &Path) -> Result<Option<(ChannelContract, String)>, ContractStoreError> {
     Ok(load_contract_with_binding(path)?.map(|(c, _b, body)| (c, body)))
 }
 
@@ -177,12 +176,11 @@ pub fn load_contract_with_binding(
         path: path.to_path_buf(),
         source: e,
     })?;
-    let (yaml_block, body) = split_frontmatter(&raw).ok_or_else(|| {
-        ContractStoreError::MalformedFrontmatter {
+    let (yaml_block, body) =
+        split_frontmatter(&raw).ok_or_else(|| ContractStoreError::MalformedFrontmatter {
             path: path.to_path_buf(),
             message: "missing `---` frontmatter delimiters".into(),
-        }
-    })?;
+        })?;
     let (contract, binding) = parse_frontmatter_full(yaml_block, path)?;
     Ok(Some((contract, binding, body.to_string())))
 }
@@ -237,20 +235,21 @@ fn parse_frontmatter_full(
     if yaml.trim().is_empty() {
         return Ok((ChannelContract::empty(), ChannelBinding::empty()));
     }
-    let file: ContractFile = serde_yaml::from_str(yaml).map_err(|e| {
-        ContractStoreError::MalformedFrontmatter {
+    let file: ContractFile =
+        serde_yaml::from_str(yaml).map_err(|e| ContractStoreError::MalformedFrontmatter {
             path: path.to_path_buf(),
             message: e.to_string(),
-        }
-    })?;
+        })?;
     let min_trust = match file.min_trust.as_deref() {
         None | Some("") => None,
-        Some(s) => Some(TrustGate::parse(s).ok_or_else(|| {
-            ContractStoreError::UnknownTrustGate {
-                value: s.to_string(),
-                path: path.to_path_buf(),
-            }
-        })?),
+        Some(s) => {
+            Some(
+                TrustGate::parse(s).ok_or_else(|| ContractStoreError::UnknownTrustGate {
+                    value: s.to_string(),
+                    path: path.to_path_buf(),
+                })?,
+            )
+        }
     };
     let contract = ChannelContract {
         cadence_floor_minutes: file.cadence_floor_minutes,
@@ -352,7 +351,10 @@ mod tests {
         let path = dir.path().join(CONTRACT_FILENAME);
         std::fs::write(&path, "---\nmin_trust: wide-open\n---\n").unwrap();
         let r = load_contract(&path);
-        assert!(matches!(r, Err(ContractStoreError::UnknownTrustGate { .. })));
+        assert!(matches!(
+            r,
+            Err(ContractStoreError::UnknownTrustGate { .. })
+        ));
     }
 
     #[test]
@@ -386,7 +388,10 @@ mod tests {
         let path = dir.path().join(CONTRACT_FILENAME);
         std::fs::write(&path, "no frontmatter at all\n").unwrap();
         let r = load_contract(&path);
-        assert!(matches!(r, Err(ContractStoreError::MalformedFrontmatter { .. })));
+        assert!(matches!(
+            r,
+            Err(ContractStoreError::MalformedFrontmatter { .. })
+        ));
     }
 
     #[test]

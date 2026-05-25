@@ -91,7 +91,8 @@ fn parse_ed25519_signature(s: &str) -> Result<Vec<u8>, String> {
     let body = s
         .strip_prefix("ed25519:")
         .ok_or_else(|| "signature must start with `ed25519:`".to_string())?;
-    B64.decode(body).map_err(|e| format!("signature base64 invalid: {e}"))
+    B64.decode(body)
+        .map_err(|e| format!("signature base64 invalid: {e}"))
 }
 
 /// Re-export the canonical input so client + tests can reproduce it.

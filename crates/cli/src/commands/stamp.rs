@@ -71,8 +71,12 @@ pub fn run(args: Args) -> Result<()> {
     let _ = args.no_send; // accepted for backward compat, no-op now
     let paths = key_paths()?;
     let did = load_did(&paths)?;
-    let key = load_signing_key(&paths.signing_key)
-        .with_context(|| format!("loading {} (run `sec init` first)", paths.signing_key.display()))?;
+    let key = load_signing_key(&paths.signing_key).with_context(|| {
+        format!(
+            "loading {} (run `sec init` first)",
+            paths.signing_key.display()
+        )
+    })?;
 
     let signer = build_signer(did.clone(), key.clone(), args.allow_test_biometrics)?;
     let act: StampAct = args.act.into();

@@ -113,10 +113,7 @@ pub fn list_draft_files(root: &Path) -> Result<Vec<ListedEnvelope>, InboxOpError
     Ok(all.into_iter().filter(|e| e.delivered.is_none()).collect())
 }
 
-fn walk_envelopes_tree(
-    dir: &Path,
-    out: &mut Vec<ListedEnvelope>,
-) -> Result<(), InboxOpError> {
+fn walk_envelopes_tree(dir: &Path, out: &mut Vec<ListedEnvelope>) -> Result<(), InboxOpError> {
     if !dir.exists() {
         return Ok(());
     }
@@ -165,7 +162,10 @@ fn should_skip(name: &str) -> bool {
 /// Decrypt + return the body of an envelope file. Plaintext envelopes pass
 /// through unchanged; encrypted envelopes load the local signing key,
 /// derive the X25519 secret, and decrypt in-process.
-pub fn read_envelope(file_path: &Path, signing_key_path: &Path) -> Result<ReadResult, InboxOpError> {
+pub fn read_envelope(
+    file_path: &Path,
+    signing_key_path: &Path,
+) -> Result<ReadResult, InboxOpError> {
     let raw = std::fs::read_to_string(file_path).map_err(|e| InboxOpError::Io {
         path: file_path.to_path_buf(),
         source: e,
@@ -276,8 +276,7 @@ mod tests {
             .path()
             .join("channels/inbox/default/envelopes/2026/05/12");
         std::fs::create_dir_all(&nested).unwrap();
-        let env =
-            EnvelopeBuilder::new(rafa_did(), self_recipient()).build();
+        let env = EnvelopeBuilder::new(rafa_did(), self_recipient()).build();
         let body = "hello\n";
         let content = embed_stamp(body, Some(&env), None).unwrap();
         std::fs::write(nested.join("a.md"), content).unwrap();
@@ -285,7 +284,10 @@ mod tests {
 
         let listed = list_inbox_files(root.path()).unwrap();
         assert_eq!(listed.len(), 1);
-        assert_eq!(listed[0].from.as_deref(), Some("did:web:rafa.equanimi.tech"));
+        assert_eq!(
+            listed[0].from.as_deref(),
+            Some("did:web:rafa.equanimi.tech")
+        );
         assert!(!listed[0].stamped);
         assert!(!listed[0].encrypted);
     }
@@ -293,8 +295,7 @@ mod tests {
     #[test]
     fn list_inbox_skips_deferred_and_archived_siblings() {
         let root = TempDir::new().unwrap();
-        let env =
-            EnvelopeBuilder::new(rafa_did(), self_recipient()).build();
+        let env = EnvelopeBuilder::new(rafa_did(), self_recipient()).build();
         let body = "active\n";
         let active_dir = root
             .path()
@@ -325,8 +326,7 @@ mod tests {
     #[test]
     fn read_plaintext_envelope_returns_body() {
         let dir = TempDir::new().unwrap();
-        let env =
-            EnvelopeBuilder::new(rafa_did(), self_recipient()).build();
+        let env = EnvelopeBuilder::new(rafa_did(), self_recipient()).build();
         let body = "the body content\n";
         let content = embed_stamp(body, Some(&env), None).unwrap();
         let path = dir.path().join("envelope.md");

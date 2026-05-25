@@ -91,7 +91,14 @@ pub async fn post(
         .and_then(|s| Did::parse(s).ok());
 
     let now = Utc::now();
-    let id = state.enqueue(owner_did, handle, body.to_vec(), content_type, sender_did, now);
+    let id = state.enqueue(
+        owner_did,
+        handle,
+        body.to_vec(),
+        content_type,
+        sender_did,
+        now,
+    );
 
     (
         StatusCode::ACCEPTED,

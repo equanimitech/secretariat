@@ -52,7 +52,9 @@ pub mod serve;
 pub mod tracing_init;
 
 pub use ipc::{tick_via_ipc_or_inproc, Request as IpcRequest, Response as IpcResponse};
-pub use launchagent::{install_launchagent, report_status, uninstall_launchagent, LAUNCHAGENT_LABEL};
+pub use launchagent::{
+    install_launchagent, report_status, uninstall_launchagent, LAUNCHAGENT_LABEL,
+};
 pub use relay_register::register;
 pub use serve::{run_tick, serve, tick_once};
 pub use tracing_init::init_tracing;

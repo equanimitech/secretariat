@@ -106,7 +106,10 @@ fn compose_and_stamp_with_handle(
     // Write to outbox; stamp_document operates on the file in place.
     let recipient_dir = outbox_root.join(marcelo_did.as_str().replace([':', '/'], "_"));
     std::fs::create_dir_all(&recipient_dir).unwrap();
-    let path = recipient_dir.join(format!("{}-test.md", Utc::now().format("%Y-%m-%dT%H-%M-%SZ")));
+    let path = recipient_dir.join(format!(
+        "{}-test.md",
+        Utc::now().format("%Y-%m-%dT%H-%M-%SZ")
+    ));
     std::fs::write(&path, unstamped).unwrap();
 
     // Stamp it (test biometric gate always allows).
@@ -173,7 +176,10 @@ async fn rafa_to_marcelo_full_correspondence_loop() {
     assert_eq!(inbound.len(), 1, "marcelo should see exactly one envelope");
 
     let inbound_env = &inbound[0];
-    assert_eq!(inbound_env.body, stamped_bytes, "wire bytes survive transit");
+    assert_eq!(
+        inbound_env.body, stamped_bytes,
+        "wire bytes survive transit"
+    );
 
     // File to marcelo's inbox.
     let inbox_filename = format!("v0-test-id{:06}.md", inbound_env.id);

@@ -158,7 +158,10 @@ mod tests {
         let resolved = resolver.resolve(&did).unwrap();
         assert_eq!(resolved.did, did);
         assert_eq!(resolved.stamp_public_keys.len(), 1);
-        assert_eq!(resolved.stamp_public_keys[0], key.verifying_key().to_bytes());
+        assert_eq!(
+            resolved.stamp_public_keys[0],
+            key.verifying_key().to_bytes()
+        );
     }
 
     #[test]

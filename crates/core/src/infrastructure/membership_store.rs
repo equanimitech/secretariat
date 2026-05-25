@@ -120,12 +120,11 @@ pub fn load_membership(path: &Path) -> Result<Option<OrgMembership>, MembershipS
         path: path.to_path_buf(),
         source: e,
     })?;
-    let (yaml, body) = split_frontmatter(&raw).ok_or_else(|| {
-        MembershipStoreError::MalformedFrontmatter {
+    let (yaml, body) =
+        split_frontmatter(&raw).ok_or_else(|| MembershipStoreError::MalformedFrontmatter {
             path: path.to_path_buf(),
             message: "missing `---` frontmatter delimiters".into(),
-        }
-    })?;
+        })?;
     let fm: MembershipFrontmatter =
         serde_yaml::from_str(yaml).map_err(|e| MembershipStoreError::MalformedFrontmatter {
             path: path.to_path_buf(),
@@ -152,12 +151,16 @@ pub fn save_membership(
         role: membership.role.clone(),
         relay_endpoint: membership.relay_endpoint.as_str().to_string(),
         joined_at: membership.joined_at.to_rfc3339(),
-        inviter_did: membership.inviter_did.as_ref().map(|d| d.as_str().to_string()),
+        inviter_did: membership
+            .inviter_did
+            .as_ref()
+            .map(|d| d.as_str().to_string()),
     };
-    let yaml = serde_yaml::to_string(&fm).map_err(|e| MembershipStoreError::MalformedFrontmatter {
-        path: path.to_path_buf(),
-        message: format!("could not serialize frontmatter: {e}"),
-    })?;
+    let yaml =
+        serde_yaml::to_string(&fm).map_err(|e| MembershipStoreError::MalformedFrontmatter {
+            path: path.to_path_buf(),
+            message: format!("could not serialize frontmatter: {e}"),
+        })?;
     let body = if membership.body.is_empty() {
         BUILTIN_BODY.to_string()
     } else {
@@ -199,10 +202,12 @@ fn finalize(
         })?
         .with_timezone(&Utc);
     let inviter_did = match fm.inviter_did {
-        Some(s) => Some(Did::parse(&s).map_err(|e| MembershipStoreError::InvalidInviterDid {
-            did: s,
-            reason: e.to_string(),
-        })?),
+        Some(s) => Some(
+            Did::parse(&s).map_err(|e| MembershipStoreError::InvalidInviterDid {
+                did: s,
+                reason: e.to_string(),
+            })?,
+        ),
         None => None,
     };
     Ok(OrgMembership {

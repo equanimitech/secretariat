@@ -79,9 +79,7 @@ pub fn run(args: Args) -> Result<()> {
         }
         (Some(_), true) => unreachable!("clap conflicts_with prevents this"),
         (None, false) => {
-            return Err(anyhow!(
-                "must supply either --body <text> or --stdin"
-            ));
+            return Err(anyhow!("must supply either --body <text> or --stdin"));
         }
     };
 
@@ -98,8 +96,7 @@ pub fn run(args: Args) -> Result<()> {
     let root = match args.org.as_deref() {
         None => Root::Self_,
         Some(s) => {
-            let alias = OrgAlias::parse(s)
-                .map_err(|e| anyhow!("invalid --org `{s}`: {e}"))?;
+            let alias = OrgAlias::parse(s).map_err(|e| anyhow!("invalid --org `{s}`: {e}"))?;
             if show_org(&paths.orgs_root, &alias)
                 .context("looking up org")?
                 .is_none()

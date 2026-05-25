@@ -155,7 +155,12 @@ mod tests {
         let old = Utc::now() - Duration::days(10);
         let recent = Utc::now();
         q.push(b"old".to_vec(), "text/markdown".to_string(), None, old);
-        q.push(b"recent".to_vec(), "text/markdown".to_string(), None, recent);
+        q.push(
+            b"recent".to_vec(),
+            "text/markdown".to_string(),
+            None,
+            recent,
+        );
 
         let cutoff = Utc::now() - Duration::days(7);
         let pruned = q.prune_older_than(cutoff);
@@ -166,10 +171,25 @@ mod tests {
     #[test]
     fn ids_continue_after_prune() {
         let mut q = TenantQueue::new();
-        q.push(b"old".to_vec(), "text/markdown".to_string(), None, Utc::now() - Duration::days(10)); // id 1
-        q.push(b"old".to_vec(), "text/markdown".to_string(), None, Utc::now() - Duration::days(10)); // id 2
+        q.push(
+            b"old".to_vec(),
+            "text/markdown".to_string(),
+            None,
+            Utc::now() - Duration::days(10),
+        ); // id 1
+        q.push(
+            b"old".to_vec(),
+            "text/markdown".to_string(),
+            None,
+            Utc::now() - Duration::days(10),
+        ); // id 2
         q.prune_older_than(Utc::now() - Duration::days(7));
-        let id = q.push(b"new".to_vec(), "text/markdown".to_string(), None, Utc::now());
+        let id = q.push(
+            b"new".to_vec(),
+            "text/markdown".to_string(),
+            None,
+            Utc::now(),
+        );
         // next_id is monotonic and not reset by pruning.
         assert_eq!(id, 3);
     }

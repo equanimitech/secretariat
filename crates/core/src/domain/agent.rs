@@ -86,10 +86,9 @@ impl AgentSubstrate {
         if s.is_empty() {
             return Err(AgentSubstrateParseError::Empty);
         }
-        if !s
-            .chars()
-            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_' || c == '.')
-        {
+        if !s.chars().all(|c| {
+            c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_' || c == '.'
+        }) {
             return Err(AgentSubstrateParseError::InvalidChars(s));
         }
         Ok(Self(s))

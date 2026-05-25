@@ -83,11 +83,7 @@ pub fn add_agent(
 ) -> Result<Agent, AgentOpsError> {
     let mut identity = load_verified_identity(paths)?;
 
-    if identity
-        .authorized_agents
-        .iter()
-        .any(|a| a.name == name)
-    {
+    if identity.authorized_agents.iter().any(|a| a.name == name) {
         return Err(AgentOpsError::NameTaken(name.to_string()));
     }
 

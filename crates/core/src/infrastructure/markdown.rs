@@ -73,9 +73,17 @@ pub struct ParsedDocument {
 struct FrontmatterShape {
     #[serde(rename = "$envelope", default, skip_serializing_if = "Option::is_none")]
     envelope: Option<Envelope>,
-    #[serde(rename = "$signature", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "$signature",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     signature: Option<EnvelopeSignature>,
-    #[serde(rename = "$attestation", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "$attestation",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     attestation: Option<Stamp>,
 }
 

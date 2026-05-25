@@ -22,12 +22,10 @@ use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 use crate::domain::{ChannelContract, OrgAlias, QueueHandle, TrustGate};
-use crate::infrastructure::channel_def_store::{
-    channel_def_path, ChannelDefStoreError,
-};
+use crate::infrastructure::channel_def_store::{channel_def_path, ChannelDefStoreError};
 use crate::infrastructure::contract_store::{
-    channel_contract_path, load_contract, org_contract_path, save_contract,
-    save_stub_if_absent, ContractStoreError,
+    channel_contract_path, load_contract, org_contract_path, save_contract, save_stub_if_absent,
+    ContractStoreError,
 };
 use crate::infrastructure::org_store::{org_dir, org_metadata_path};
 
@@ -87,7 +85,9 @@ impl ContractPatch {
 
     fn apply(&self, current: ChannelContract) -> ChannelContract {
         ChannelContract {
-            cadence_floor_minutes: self.cadence_floor_minutes.apply(current.cadence_floor_minutes),
+            cadence_floor_minutes: self
+                .cadence_floor_minutes
+                .apply(current.cadence_floor_minutes),
             min_trust: self.min_trust.apply(current.min_trust),
         }
     }
@@ -126,7 +126,9 @@ pub fn get_channel_contract(
     handle: &QueueHandle,
 ) -> Result<ContractView, ContractOpsError> {
     if !channel_def_path(channels_root, handle).is_file() {
-        return Err(ContractOpsError::ChannelNotFound(handle.as_str().to_string()));
+        return Err(ContractOpsError::ChannelNotFound(
+            handle.as_str().to_string(),
+        ));
     }
     let path = channel_contract_path(channels_root, handle);
     let (contract, body) = match load_contract(&path)? {
@@ -251,7 +253,10 @@ pub fn resolve_channel_contract(
                     contract: c,
                 });
             }
-            (org_root_dir.join("channels"), Some(alias.as_str().to_string()))
+            (
+                org_root_dir.join("channels"),
+                Some(alias.as_str().to_string()),
+            )
         }
         None => (personal_channels_root.to_path_buf(), None),
     };
@@ -294,10 +299,8 @@ pub fn resolve_channel_contract(
         }
     } else {
         // Inside an org: same guard but scoped under the org's channels root.
-        let leaf_def = crate::infrastructure::channel_def_store::channel_def_path(
-            &channels_root,
-            handle,
-        );
+        let leaf_def =
+            crate::infrastructure::channel_def_store::channel_def_path(&channels_root, handle);
         if !leaf_def.is_file() {
             return Err(ContractOpsError::ChannelNotFound(
                 handle.as_str().to_string(),
@@ -309,12 +312,13 @@ pub fn resolve_channel_contract(
 }
 
 fn merge_into(running: &mut ChannelContract, level: &ChannelContract) {
-    running.cadence_floor_minutes = match (running.cadence_floor_minutes, level.cadence_floor_minutes) {
-        (Some(a), Some(b)) => Some(a.max(b)),
-        (Some(a), None) => Some(a),
-        (None, Some(b)) => Some(b),
-        (None, None) => None,
-    };
+    running.cadence_floor_minutes =
+        match (running.cadence_floor_minutes, level.cadence_floor_minutes) {
+            (Some(a), Some(b)) => Some(a.max(b)),
+            (Some(a), None) => Some(a),
+            (None, Some(b)) => Some(b),
+            (None, None) => None,
+        };
     running.min_trust = match (running.min_trust, level.min_trust) {
         (Some(a), Some(b)) => Some(TrustGate::max_restrictive(a, b)),
         (Some(a), None) => Some(a),
@@ -507,13 +511,11 @@ mod tests {
         let a = alias("themia.pro");
         create_org(&orgs, a.clone(), None, "", "", when(), None).unwrap();
         let h = QueueHandle::parse("dev:leggia").unwrap();
-        let channels_in_org =
-            crate::infrastructure::org_store::org_channels_root(&orgs, &a);
+        let channels_in_org = crate::infrastructure::org_store::org_channels_root(&orgs, &a);
         create_channel(&channels_in_org, h.clone(), "", "", when(), None).unwrap();
         // create_org auto-writes a stub at org-root that is empty;
         // create_channel writes a stub at leaf that is empty.
-        let r =
-            resolve_channel_contract(&orgs, &dir.path().join("ignored"), Some(&a), &h).unwrap();
+        let r = resolve_channel_contract(&orgs, &dir.path().join("ignored"), Some(&a), &h).unwrap();
         assert!(r.merged.is_empty());
         // Chain: org-root + leaf stubs were both loaded as empty
         // contracts; they show up in the chain even if they contribute
@@ -527,8 +529,7 @@ mod tests {
         let orgs = dir.path().join("orgs");
         let a = alias("themia.pro");
         create_org(&orgs, a.clone(), None, "", "", when(), None).unwrap();
-        let channels_in_org =
-            crate::infrastructure::org_store::org_channels_root(&orgs, &a);
+        let channels_in_org = crate::infrastructure::org_store::org_channels_root(&orgs, &a);
         let h = QueueHandle::parse("dev:leggia").unwrap();
         create_channel(&channels_in_org, h.clone(), "", "", when(), None).unwrap();
 
@@ -559,8 +560,7 @@ mod tests {
         )
         .unwrap();
 
-        let r =
-            resolve_channel_contract(&orgs, &dir.path().join("ignored"), Some(&a), &h).unwrap();
+        let r = resolve_channel_contract(&orgs, &dir.path().join("ignored"), Some(&a), &h).unwrap();
         assert_eq!(r.merged.cadence_floor_minutes, Some(60));
         assert_eq!(r.chain.len(), 3);
         assert_eq!(r.chain[0].scope, "org:themia.pro");
@@ -574,8 +574,7 @@ mod tests {
         let orgs = dir.path().join("orgs");
         let a = alias("themia.pro");
         create_org(&orgs, a.clone(), None, "", "", when(), None).unwrap();
-        let channels_in_org =
-            crate::infrastructure::org_store::org_channels_root(&orgs, &a);
+        let channels_in_org = crate::infrastructure::org_store::org_channels_root(&orgs, &a);
         let h = QueueHandle::parse("assemblee_generale").unwrap();
         create_channel(&channels_in_org, h.clone(), "", "", when(), None).unwrap();
 
@@ -598,8 +597,7 @@ mod tests {
         )
         .unwrap();
 
-        let r =
-            resolve_channel_contract(&orgs, &dir.path().join("ignored"), Some(&a), &h).unwrap();
+        let r = resolve_channel_contract(&orgs, &dir.path().join("ignored"), Some(&a), &h).unwrap();
         assert_eq!(r.merged.min_trust, Some(TrustGate::StampRequired));
     }
 
@@ -609,8 +607,7 @@ mod tests {
         let orgs = dir.path().join("orgs");
         let a = alias("themia.pro");
         create_org(&orgs, a.clone(), None, "", "", when(), None).unwrap();
-        let channels_in_org =
-            crate::infrastructure::org_store::org_channels_root(&orgs, &a);
+        let channels_in_org = crate::infrastructure::org_store::org_channels_root(&orgs, &a);
         let h = QueueHandle::parse("clients").unwrap();
         create_channel(&channels_in_org, h.clone(), "", "", when(), None).unwrap();
 
@@ -623,8 +620,7 @@ mod tests {
             },
         );
         // Leaf left empty.
-        let r =
-            resolve_channel_contract(&orgs, &dir.path().join("ignored"), Some(&a), &h).unwrap();
+        let r = resolve_channel_contract(&orgs, &dir.path().join("ignored"), Some(&a), &h).unwrap();
         assert_eq!(r.merged.cadence_floor_minutes, Some(15));
         assert_eq!(r.merged.min_trust, None);
     }

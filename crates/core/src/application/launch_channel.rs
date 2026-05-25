@@ -75,10 +75,7 @@ pub fn launch_channel_with_binding(
     }
 
     let binding = load_channel_binding(&default)?;
-    let cwd = binding
-        .root_path
-        .clone()
-        .unwrap_or_else(|| default.clone());
+    let cwd = binding.root_path.clone().unwrap_or_else(|| default.clone());
     // Sanity: if root_path was set, prefer it even if resolve_channel_path
     // ever diverges from binding.root_path (it shouldn't — keep aligned).
     debug_assert_eq!(cwd, resolve_channel_path(&default)?);
@@ -90,8 +87,8 @@ pub fn launch_channel_with_binding(
 mod tests {
     use super::*;
     use crate::infrastructure::contract_store::CONTRACT_FILENAME;
-    use crate::infrastructure::PrefsLauncher;
     use crate::infrastructure::preferences::CognitionPrefs;
+    use crate::infrastructure::PrefsLauncher;
     use chrono::Utc;
     use tempfile::TempDir;
 

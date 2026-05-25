@@ -45,9 +45,7 @@ pub enum OrgAliasError {
 
 /// Top-level directory names already used by the substrate root. An org
 /// alias must not shadow one or the on-disk layout collides.
-const RESERVED_NAMES: &[&str] = &[
-    "inbox", "queues", "peers", "bin",
-];
+const RESERVED_NAMES: &[&str] = &["inbox", "queues", "peers", "bin"];
 
 /// Maximum alias length. Matches DNS-label conventions; the alias often
 /// mirrors a domain (`themia.pro`, `equanimi.tech`).

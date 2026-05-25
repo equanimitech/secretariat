@@ -8,8 +8,8 @@
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 pub fn init_tracing() {
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info,sec=info"));
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,sec=info"));
     let _ = tracing_subscriber::registry()
         .with(filter)
         // Diagnostic output belongs on stderr; the LaunchAgent plist

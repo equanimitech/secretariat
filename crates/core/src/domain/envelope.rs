@@ -182,7 +182,11 @@ struct EnvelopeWire {
     depth: EnvelopeDepth,
     urgency: EnvelopeUrgency,
     source: String,
-    #[serde(rename = "cadenceHint", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "cadenceHint",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     cadence_hint: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     encryption: Option<EncryptionScheme>,

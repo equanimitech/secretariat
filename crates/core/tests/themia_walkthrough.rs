@@ -33,9 +33,7 @@ use secretariat_core::domain::{
 };
 use secretariat_core::infrastructure::ed25519_signer::{AlwaysAllowGate, Ed25519Signer};
 use secretariat_core::infrastructure::identity_store::{save_identity, PrincipalIdentity};
-use secretariat_core::infrastructure::keys::{
-    generate_keypair, save_signing_key, KeyPaths,
-};
+use secretariat_core::infrastructure::keys::{generate_keypair, save_signing_key, KeyPaths};
 use secretariat_core::infrastructure::queue_dir::AliasMap;
 use secretariat_core::ports::{DidResolver, ResolvedDid};
 use tempfile::TempDir;
@@ -149,10 +147,9 @@ fn themia_walkthrough_christophe_to_rafa() {
     // Step 3 — Christophe's-scribe composes an envelope. (Move 2 + Move 4)
     // Uses the agent's signing key — envelope.$signature carries agent DID.
     // -----------------------------------------------------------------
-    let signer_pem = std::fs::read_to_string(
-        christophe_paths.agent_signing_key_path(agent_name.as_str()),
-    )
-    .unwrap();
+    let signer_pem =
+        std::fs::read_to_string(christophe_paths.agent_signing_key_path(agent_name.as_str()))
+            .unwrap();
     use ed25519_dalek::pkcs8::DecodePrivateKey;
     let agent_signing_key = SigningKey::from_pkcs8_pem(&signer_pem).unwrap();
     let agent_did = agent.did.clone();
@@ -168,9 +165,7 @@ fn themia_walkthrough_christophe_to_rafa() {
         urgency: EnvelopeUrgency::Whenever,
         source: "themia-walkthrough-test".to_string(),
         cadence_hint: None,
-        body: Some(
-            "# PV — assemblée générale\n\nDraft minutes for board review.\n".to_string(),
-        ),
+        body: Some("# PV — assemblée générale\n\nDraft minutes for board review.\n".to_string()),
         title: Some("PV — assemblée générale".to_string()),
         lede: Some("Draft minutes for board review.".to_string()),
         summary: None,
@@ -237,7 +232,9 @@ fn themia_walkthrough_christophe_to_rafa() {
     // Confirms: signature valid, signer == Christophe principal,
     // authorized_agents includes Claude.
     // -----------------------------------------------------------------
-    let manifest = ingest_manifest_from_file(&rafa_manifest_dest).unwrap().unwrap();
+    let manifest = ingest_manifest_from_file(&rafa_manifest_dest)
+        .unwrap()
+        .unwrap();
     assert_eq!(manifest.signer, christophe_did);
     assert_eq!(manifest.authorized_agents.len(), 1);
     assert_eq!(manifest.authorized_agents[0].did, agent_did);
@@ -248,14 +245,12 @@ fn themia_walkthrough_christophe_to_rafa() {
     // the manifest. Expect OkUnverifiedAgent: signature crypto verifies
     // but no cached manifest binds the agent to a principal yet.
     // -----------------------------------------------------------------
-    let resolver = StubKeyResolver { keys: agent_did.embedded_ed25519_key().unwrap() };
-    let outcome = verify_document_layered(
-        &rafa_envelope_dest,
-        &resolver,
-        None,
-        Some(rafa_tmp.path()),
-    )
-    .unwrap();
+    let resolver = StubKeyResolver {
+        keys: agent_did.embedded_ed25519_key().unwrap(),
+    };
+    let outcome =
+        verify_document_layered(&rafa_envelope_dest, &resolver, None, Some(rafa_tmp.path()))
+            .unwrap();
     match outcome.signature {
         SignatureOutcome::OkUnverifiedAgent { signer, .. } => {
             assert_eq!(signer, agent_did);
@@ -279,18 +274,12 @@ fn themia_walkthrough_christophe_to_rafa() {
         &manifest_bytes,
     )
     .unwrap();
-    let outcome_cached = verify_document_layered(
-        &rafa_envelope_dest,
-        &resolver,
-        None,
-        Some(rafa_tmp.path()),
-    )
-    .unwrap();
+    let outcome_cached =
+        verify_document_layered(&rafa_envelope_dest, &resolver, None, Some(rafa_tmp.path()))
+            .unwrap();
     match outcome_cached.signature {
         SignatureOutcome::VerifiedAgent {
-            agent,
-            principal,
-            ..
+            agent, principal, ..
         } => {
             assert_eq!(agent, agent_did);
             assert_eq!(principal, christophe_did);
@@ -304,9 +293,14 @@ fn themia_walkthrough_christophe_to_rafa() {
     // alongside the existing $signature.
     // -----------------------------------------------------------------
     let rafa_signer = Ed25519Signer::new(_rafa_did.clone(), _rafa_key.clone(), AlwaysAllowGate);
-    let _stamped =
-        stamp_document(&rafa_envelope_dest, &rafa_signer, StampAct::Attest, false, Utc::now())
-            .unwrap();
+    let _stamped = stamp_document(
+        &rafa_envelope_dest,
+        &rafa_signer,
+        StampAct::Attest,
+        false,
+        Utc::now(),
+    )
+    .unwrap();
 
     let stamped_raw = std::fs::read_to_string(&rafa_envelope_dest).unwrap();
     assert!(
@@ -339,7 +333,10 @@ fn themia_walkthrough_christophe_to_rafa() {
         outcome_final.signature,
         SignatureOutcome::VerifiedAgent { .. }
     ));
-    assert!(matches!(outcome_final.stamp, VerifyOutcome::Verified { .. }));
+    assert!(matches!(
+        outcome_final.stamp,
+        VerifyOutcome::Verified { .. }
+    ));
 }
 
 // ---------------------------------------------------------------------------

@@ -55,8 +55,7 @@ pub fn run(args: Args) -> Result<()> {
     let channels_root = match args.org.as_deref() {
         None => paths.personal_channels_root(),
         Some(s) => {
-            let alias = OrgAlias::parse(s)
-                .map_err(|e| anyhow!("invalid org alias `{s}`: {e}"))?;
+            let alias = OrgAlias::parse(s).map_err(|e| anyhow!("invalid org alias `{s}`: {e}"))?;
             if show_org(&paths.orgs_root, &alias)
                 .context("looking up org")?
                 .is_none()
@@ -87,8 +86,7 @@ pub fn run(args: Args) -> Result<()> {
     let (_first_plan, binding) =
         do_launch(&channels_root, &handle, &base_launcher).map_err(|e| anyhow!(e))?;
     let launcher = PrefsLauncher::from_prefs_with_binding(&prefs.cognition, &binding);
-    let (plan, _binding) =
-        do_launch(&channels_root, &handle, &launcher).map_err(|e| anyhow!(e))?;
+    let (plan, _binding) = do_launch(&channels_root, &handle, &launcher).map_err(|e| anyhow!(e))?;
 
     if args.print_plan {
         let json = serde_json::json!({

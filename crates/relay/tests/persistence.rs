@@ -104,7 +104,8 @@ async fn queued_envelope_survives_restart() {
     rafa_client.register().await.unwrap();
     marcelo_client.register().await.unwrap();
 
-    let envelope_bytes = b"---\n$envelope:\n  $type: tech.equanimi.secretariat.envelope\n---\nhello\n";
+    let envelope_bytes =
+        b"---\n$envelope:\n  $type: tech.equanimi.secretariat.envelope\n---\nhello\n";
     rafa_client
         .send(&marcelo_did, &dm(), envelope_bytes, "text/markdown")
         .await
@@ -113,8 +114,7 @@ async fn queued_envelope_survives_restart() {
 
     // Boot 2: marcelo polls. The envelope must still be in his queue.
     let server2 = RelayServer::spawn(path.clone()).await;
-    let marcelo_client2 =
-        RelayClient::new(server2.url.clone(), marcelo_did.clone(), &marcelo_key);
+    let marcelo_client2 = RelayClient::new(server2.url.clone(), marcelo_did.clone(), &marcelo_key);
     let (token, _) = marcelo_client2.authenticate().await.unwrap();
     let inbound = marcelo_client2
         .poll(&marcelo_did, &dm(), &token, 0)
@@ -140,11 +140,12 @@ async fn invite_token_survives_restart() {
     let url1 = server1.url.clone();
     let did1 = rafa_did.clone();
     let key1 = rafa_key.clone();
-    let invite =
-        tokio::task::spawn_blocking(move || create_invite(&url1, &did1, &key1, Some("hi"), Some(24), None))
-            .await
-            .unwrap()
-            .unwrap();
+    let invite = tokio::task::spawn_blocking(move || {
+        create_invite(&url1, &did1, &key1, Some("hi"), Some(24), None)
+    })
+    .await
+    .unwrap()
+    .unwrap();
     server1.shutdown().await;
 
     // Boot 2: viewing the invite by token should still work.

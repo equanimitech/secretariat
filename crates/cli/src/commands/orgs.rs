@@ -111,8 +111,8 @@ pub fn run(args: Args) -> Result<()> {
 }
 
 fn run_contract_get(orgs_root: &std::path::Path, args: ContractGetArgs) -> Result<()> {
-    let alias = OrgAlias::parse(&args.alias)
-        .map_err(|e| anyhow!("invalid alias `{}`: {e}", args.alias))?;
+    let alias =
+        OrgAlias::parse(&args.alias).map_err(|e| anyhow!("invalid alias `{}`: {e}", args.alias))?;
     let view = get_org_contract(orgs_root, &alias)
         .with_context(|| format!("reading contract for org `{}`", alias.as_str()))?;
     println!("org: {}", alias.as_str());
@@ -135,8 +135,8 @@ fn run_contract_get(orgs_root: &std::path::Path, args: ContractGetArgs) -> Resul
 }
 
 fn run_contract_set(orgs_root: &std::path::Path, args: ContractSetArgs) -> Result<()> {
-    let alias = OrgAlias::parse(&args.alias)
-        .map_err(|e| anyhow!("invalid alias `{}`: {e}", args.alias))?;
+    let alias =
+        OrgAlias::parse(&args.alias).map_err(|e| anyhow!("invalid alias `{}`: {e}", args.alias))?;
     let patch = build_patch(
         args.cadence_floor_minutes,
         args.clear_cadence,
@@ -173,8 +173,8 @@ fn run_create(
     args: CreateArgs,
     stub_override: Option<&std::path::Path>,
 ) -> Result<()> {
-    let alias = OrgAlias::parse(&args.alias)
-        .map_err(|e| anyhow!("invalid alias `{}`: {e}", args.alias))?;
+    let alias =
+        OrgAlias::parse(&args.alias).map_err(|e| anyhow!("invalid alias `{}`: {e}", args.alias))?;
     let did = match args.did.as_deref() {
         None => None,
         Some(s) => Some(Did::parse(s).map_err(|e| anyhow!("invalid did `{s}`: {e}"))?),
@@ -214,14 +214,19 @@ fn run_list(orgs_root: &std::path::Path) -> Result<()> {
             .as_ref()
             .map(|d| d.as_str().to_string())
             .unwrap_or_else(|| "(no did)".to_string());
-        println!("{alias}  {did}  {name}", alias = o.alias, did = did, name = o.name);
+        println!(
+            "{alias}  {did}  {name}",
+            alias = o.alias,
+            did = did,
+            name = o.name
+        );
     }
     Ok(())
 }
 
 fn run_show(orgs_root: &std::path::Path, args: ShowArgs) -> Result<()> {
-    let alias = OrgAlias::parse(&args.alias)
-        .map_err(|e| anyhow!("invalid alias `{}`: {e}", args.alias))?;
+    let alias =
+        OrgAlias::parse(&args.alias).map_err(|e| anyhow!("invalid alias `{}`: {e}", args.alias))?;
     match show_org(orgs_root, &alias).context("loading org")? {
         Some(o) => {
             println!("alias: {}", o.alias);
@@ -240,15 +245,18 @@ fn run_show(orgs_root: &std::path::Path, args: ShowArgs) -> Result<()> {
 }
 
 fn run_delete(orgs_root: &std::path::Path, args: DeleteArgs) -> Result<()> {
-    let alias = OrgAlias::parse(&args.alias)
-        .map_err(|e| anyhow!("invalid alias `{}`: {e}", args.alias))?;
+    let alias =
+        OrgAlias::parse(&args.alias).map_err(|e| anyhow!("invalid alias `{}`: {e}", args.alias))?;
     if !args.yes {
         return Err(anyhow!(
             "refusing to delete `{}` without --yes (destructive)",
             alias.as_str()
         ));
     }
-    if show_org(orgs_root, &alias).context("checking org")?.is_none() {
+    if show_org(orgs_root, &alias)
+        .context("checking org")?
+        .is_none()
+    {
         return Err(anyhow!("org `{}` not found", alias.as_str()));
     }
     delete_org(orgs_root, &alias).context("deleting org")?;

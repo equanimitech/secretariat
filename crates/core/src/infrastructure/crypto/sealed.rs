@@ -235,7 +235,10 @@ mod tests {
         let sk_wrong = signing_to_x25519(&k2);
 
         let sealed = seal(b"secret", &pk).unwrap();
-        assert!(matches!(open(&sealed, &sk_wrong), Err(OpenError::AuthFailure)));
+        assert!(matches!(
+            open(&sealed, &sk_wrong),
+            Err(OpenError::AuthFailure)
+        ));
     }
 
     #[test]

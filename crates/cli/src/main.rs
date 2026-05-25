@@ -6,7 +6,11 @@ use clap::{Parser, Subcommand};
 mod commands;
 
 #[derive(Parser, Debug)]
-#[command(name = "sec", version, about = "Secretariat — biometric-attested document stamping.")]
+#[command(
+    name = "sec",
+    version,
+    about = "Secretariat — biometric-attested document stamping."
+)]
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,

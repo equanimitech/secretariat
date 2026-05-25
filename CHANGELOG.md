@@ -4,11 +4,214 @@ All notable changes to Secretariat are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased](https://github.com/equanimitech/secretariat/compare/v0.10.2...HEAD)
+## [Unreleased](https://github.com/equanimitech/secretariat/compare/v0.11.0...HEAD)
+
+## [0.11.0](https://github.com/equanimitech/secretariat/compare/v0.10.2...v0.11.0) — 2026-05-26
+
+Substrate-for-Themia release. The biggest architectural slice since the
+initial substrate landed: agents become first-class principals-delegates,
+envelopes are signed at compose (not just stamped), drafts and sent are
+collapsed into one envelope state, DM/peer/contact primitives are removed
+in favor of channels-only correspondence, the vault gains a two-root
+channel tree (`channels/` for self, `orgs/<alias>/channels/` for orgs),
+and the verifier chain gains a manifest cache that binds agent signatures
+to authorizing principals across the federation.
 
 ### Added
 
-- Markdown editor "Reload from disk" — toolbar button (refresh icon) and `⌘R` / `Ctrl+R` shortcut in the markdown reader/editor window. Re-fetches the file, refreshes the SHA-256 conflict guard, and remounts the Crepe editor so the rehydrated body actually renders (Crepe only reads `defaultValue` at mount, so a controlled-prop update wouldn't have worked). When there are unsaved edits the debounced autosave hasn't flushed yet, a VS Code–style confirm dialog offers Save & reload / Discard & reload / Cancel; when clean, the reload is silent with a toast. The shortcut listener uses capture-phase so the editor can't swallow `⌘R`, and `preventDefault` blocks the webview's default reload.
+- **Agent VO + `authorized_agents` on `identity.md`** (Move 1A). Principals
+  explicitly delegate signing authority to one or more agents (today only
+  the `scribe` role; future roles — `auditor`, `scheduler`, `reader` —
+  reuse the same record shape). Each agent record: `{did, role, name,
+substrate, added_at}`. The identity record is signed by the principal's
+  active key on every save so any tamper of the delegation list is
+  cryptographically detectable. CLI: `sec agent add/list/remove/rotate`;
+  MCP exposes the same verbs. Per-agent signing keys live at
+  `<root>/identity/agents/<name>/key` (mode `0600`, mirror of the
+  principal-key pattern).
+
+- **Envelope `$signature` block, mandatory at compose** (Move 2). Every
+  envelope on the wire now carries a detached ed25519 author signature
+  — typically by a scribe's agent key, optionally by the principal for
+  manually-composed envelopes. Distinct cryptographic layer from
+  `$attestation` (the stamp): authorship vs. principal disposition,
+  three-layer trust per AGENTS.md hard rule #4. Lexicon:
+  `tech.equanimi.secretariat.signature` carries `{signer, signerRole,
+docHash, signedAt, signature}`.
+
+- **`agentManifest` lexicon + emit + ingest** (Move 1C). On-wire
+  publication of the principal-private `authorized_agents` snapshot.
+  Manifest envelopes carry two independent signatures (both by the
+  principal): inner over the manifest's canonical preimage (lets the
+  manifest stand alone in a cache), outer envelope-level `$signature`
+  over the body (uniform with every other envelope on the wire). Emit
+  triggers: `sec invite accept`, `sec agent add/rotate/remove`. Two
+  layers verified on ingest; tamper at either layer surfaces as
+  `TamperDetected` so receivers quarantine rather than silently fall
+  back to a stale view.
+
+- **Manifest cache + verifier hop 3.** Filesystem-backed cache at
+  `<root>/agents/manifests/<signer>/<target>.md` stores verified
+  manifest envelopes verbatim and is self-defending against on-disk
+  tamper (every lookup re-verifies through ingest). Daemon `file_inbound`
+  auto-ingests on every received envelope so the cache stays fresh
+  without operator action. `verify_document_layered` now consults the
+  cache for agent-signed envelopes and returns a new
+  `SignatureOutcome::VerifiedAgent { agent, principal, signed_at }`
+  variant when the binding resolves; `OkUnverifiedAgent` becomes a
+  transitional state, not a terminal one. CLI verify / read and MCP
+  verify all pass the cache root through.
+
+- **Channel-governance `requires_stamp` field** (Move 6 scaffold). New
+  optional field on `tech.equanimi.secretariat.channelDef` lets channel
+  owners declare that only stamped envelopes are policy-conformant for
+  that channel (concrete driver: Themia `assemblee_generale`). The
+  enforcement-side gate is receiver-side and not yet wired; the lexicon
+  field and Rust shape are present so authors can declare the policy now.
+
+- **Tauri cognition-provider selection screen** on first launch. The
+  principal picks their cognition substrate (Claude Code today;
+  Anthropic API / Ollama / etc. additively) before the first agent is
+  granted; the choice is materialized as `sec agent add --substrate
+<substrate>`. Closes the architectural gap where `sec init`
+  auto-granted an agent without an explicit cognition decision.
+
+- **Layered verify output, three-state per layer.** `sec verify`,
+  MCP `verify`, and `sec read`'s tamper warnings all report `{signature,
+stamp, counter_stamps}` independently. CLI exit code 2 if either
+  layer reports tamper / invalid / unresolvable; otherwise 0. Receivers
+  set policy per channel.
+
+- **Markdown editor "Reload from disk"** — toolbar button (refresh icon) and `⌘R` / `Ctrl+R` shortcut in the markdown reader/editor window. Re-fetches the file, refreshes the SHA-256 conflict guard, and remounts the Crepe editor so the rehydrated body actually renders (Crepe only reads `defaultValue` at mount, so a controlled-prop update wouldn't have worked). When there are unsaved edits the debounced autosave hasn't flushed yet, a VS Code–style confirm dialog offers Save & reload / Discard & reload / Cancel; when clean, the reload is silent with a toast. The shortcut listener uses capture-phase so the editor can't swallow `⌘R`, and `preventDefault` blocks the webview's default reload.
+
+- **Envelope archive / unarchive operation** with toggle controls on tabs, explorer context menu, and titlebar.
+
+- **Themia walkthrough integration test** (`crates/core/tests/themia_walkthrough.rs`).
+  Christophe-stand-in adds Claude as scribe → emits agentManifest into
+  the `themia.pro` org channel → composes a draft PV with the scribe's
+  key → Rafa-stand-in receives, ingests manifest, runs layered verify,
+  stamps. End-to-end exercise of Moves 1A/1B/1C/2/4/13 against the
+  org-channel path (not the self-channel shortcut).
+
+### Changed
+
+- **Two channel-tree roots** (Move 3c, vault restructure). The vault
+  layout is now:
+  - `<root>/identity.md` + `<root>/identity/` (no more `_self/` wrapper)
+  - `<root>/channels/<segs>/` for self-owned channels
+  - `<root>/orgs/<alias>/channels/<segs>/` for org-owned channels
+    `queue_dir()` is the sole branching point on `is_self(owner)`. The
+    asymmetry encodes locality at the root level — self channels are
+    topologically distinct from org channels, never silently merged. New
+    `sec migrate vault-v0-10-to-v0-11` command moves prior vaults in
+    place (tar snapshot → atomic rename → post-count gate); idempotent
+    on resume after crash.
+
+- **Handle namespace collapse** (Move 3a). The `channel:` / `inbox:` /
+  bare-DID handle prefixes are gone; handles are now bare
+  slash-separated slugs (`assemblee_generale`,
+  `dommage-corporel/paris-cohort`). The `inbox:default` synthesizer
+  that auto-routed DMs is removed. CLI `sec compose --handle` is now
+  required (was defaulting to `inbox:default`).
+
+- **DM / peer / contact primitive removed** (Move 3b). Bilateral 1:1
+  correspondence is now a channel-with-2-members — same primitive as
+  multi-party. `crates/core/src/infrastructure/contact_store.rs`
+  (−454 lines), `application/process_correspondence_claims.rs`
+  (−252 lines), and `application/send_envelope.rs` (−134 lines)
+  removed; the conceptual savings recur every time the substrate
+  grows (federation, governance, audit all only know one shape).
+
+- **One envelope state** (Move 4). `_drafts/` and `sent/` subdirectory
+  trees are gone; every envelope — draft, federated, received —
+  lives at `<queue>/envelopes/YYYY/MM/DD/<rkey>.md`. Draft state is
+  identified by the absence of the `delivered:` frontmatter field;
+  the daemon writes it on successful federation. Stamping embeds the
+  `$attestation` block in place — no rename, no path change.
+  `migrate outbox-to-drafts` updated to route everything into the
+  unified `envelopes/` tree even on a post-Move-4 vault.
+
+- **`save_identity` requires the principal key by signature**
+  (architecture review follow-up A). The sign-on-save invariant moves
+  from convention into the type system; migration callers use an
+  explicit `save_identity_unsigned_for_migration` escape hatch.
+
+### Fixed
+
+- Latent bug in `save_identity`: canonical preimage was computed
+  against the pre-substitution body, then `BUILTIN_BODY` was written
+  to disk when the body was empty — so the signed bytes diverged
+  from what landed on disk and every subsequent `load_identity_verified`
+  failed. Body substitution now happens before preimage computation.
+
+- Latent bug in `ingest_manifest_from_file`: only the YAML block was
+  parsed, never the body — so tamper after the closing `---` slipped
+  past the outer-signature check. Ingest now uses `parse_document` so
+  the body bytes are seen and a non-empty body (against the emit
+  contract) surfaces as `TamperDetected`.
+
+- `vault-v0-10-to-v0-11` migrator bailed on `dst.exists()` rather than
+  recognizing a resume-after-crash. The move loop now reads the
+  `(src_exists, dst_exists)` decision table: skip on resume, bail only
+  on genuine ambiguity. Idempotency-on-resume invariant restored.
+
+- `AgentSubstrate::InvalidChars` error message reported `[a-z0-9_-]+`
+  but the parser actually accepts `.` for `ollama-llama3.2`-style
+  identifiers. Message corrected to `[a-z0-9_.-]+`.
+
+- MCP `SERVER_INSTRUCTIONS` + `StampParams` docstring described the
+  pre-Move-3c vault path. Updated to the two-root layout so the
+  client doesn't try to locate composed envelopes at the old
+  `<root>/<alias-of-to>/channels/...` path.
+
+### Removed
+
+- `contact_store`, `process_correspondence_claims`, `send_envelope`
+  modules. Anything that referenced the DM primitive (`inbox:default`,
+  bilateral contracts as DMs, peer-aliased channel-tree roots) is
+  removed; channels are the substrate's only correspondence shape.
+
+### Lexicons (record-shape changes)
+
+All lexicon edits land in lockstep with the Rust changes per AGENTS.md
+hard rule #3.
+
+- `tech.equanimi.secretariat.identity` — adds `authorized_agents[]` +
+  `$signature`.
+- `tech.equanimi.secretariat.envelope` — `$signature` block becomes
+  mandatory on emission (parser tolerates absent for legacy back-compat).
+- `tech.equanimi.secretariat.signature` — new lexicon (Move 2).
+- `tech.equanimi.secretariat.agentManifest` — new lexicon (Move 1C),
+  documents the two-layer signing contract (inner + outer).
+- `tech.equanimi.secretariat.channelDef` — adds optional
+  `requires_stamp`.
+
+### Notes
+
+- Receivers running v0.10.2 reading v0.11.0 envelopes will see
+  signature blocks they don't understand (gracefully ignored as
+  unknown frontmatter). v0.11.0 receivers reading v0.10.2 envelopes
+  see `SignatureOutcome::None` — informational, not authoritative.
+  Upgrade in lockstep with correspondence partners for full layered-
+  verify coverage.
+
+- The first time a v0.11.0 vault sees a manifest from a v0.11.0 peer
+  it auto-caches; subsequent envelopes from that peer's scribes
+  return `VerifiedAgent`. Cold-start vaults (no manifests yet
+  ingested) return `OkUnverifiedAgent` until the relevant principals'
+  manifests arrive.
+
+## [0.10.2](https://github.com/equanimitech/secretariat/compare/v0.10.1...v0.10.2) — 2026-05-21
+
+### Fixed
+
+- External links in the markdown editor now open in the system browser instead of trapping the user inside the Tauri webview. A capture-phase document listener intercepts clicks on `<a>` tags whose protocol is `http(s)`, `mailto`, or `tel` and dispatches them to the Tauri opener plugin; in-app schemes (`secretariat:`, `file:`, fragment `#…`) are left to their existing handlers. Installed across the main window, markdown reader/editor window, and quick-pane; `opener:default` permission added to the quick-pane capability so the call resolves there too.
+
+- Explorer sidebar polish: opening an org now surfaces its channels directly under the org root instead of forcing the principal to expand a `channels/` middleman folder (lazy-loading auto-chains the `channels/` subdir after a private/org root expands). Leaf channels no longer render a chevron expander in channel-only mode — the caret was misleading because the underlying `channel.md` / `contract.local.md` / `template.md` siblings are filtered out of the projection. Show-all-files mode is unchanged.
+
+### Changed
+
+- Lint debt cleared so `pnpm check:all` passes again in the release pipeline. `eslint-plugin-react-hooks` v6 added `set-state-in-effect` to its recommended preset; refactored `useIsMobile` to lazy-init via `useState(() => ...)`, kept six legitimate one-shot Tauri IPC fetches behind `eslint-disable-next-line` comments with intent rationale. `react-compiler/static-components` refactor of `ExplorerTree`'s icon picker to a `<NodeIcon />` component (was returning a capitalized component reference per render). Prettier 3.7/3.8 default markdown emphasis flip (`*foo*` → `_foo_`) applied repo-wide; `docs/{ideas,pitches,decisions,audits,superpowers}/` ignored where prettier oscillates on nested-list indentation.
 
 ## [0.10.2](https://github.com/equanimitech/secretariat/compare/v0.10.1...v0.10.2) — 2026-05-21
 

@@ -10,7 +10,9 @@
 
 use std::path::Path;
 
-use crate::application::inbox_ops::{list_draft_files, list_inbox_files, InboxOpError, ListedEnvelope};
+use crate::application::inbox_ops::{
+    list_draft_files, list_inbox_files, InboxOpError, ListedEnvelope,
+};
 
 /// Return the undelivered drafts on disk — the review queue.
 ///
@@ -115,9 +117,7 @@ mod tests {
         // the Move-4 model — stamped ≠ delivered. The principal has
         // attested but the daemon hasn't pushed yet (offline, etc.).
         let dir = TempDir::new().unwrap();
-        let shard = dir
-            .path()
-            .join("channels/journal/envelopes/2026/05/21");
+        let shard = dir.path().join("channels/journal/envelopes/2026/05/21");
         write_envelope(&shard, "stamped-pending.md", true, None);
 
         let queue = list_drafts_queue(dir.path()).unwrap();
@@ -132,9 +132,7 @@ mod tests {
         // federate; the substrate writes `delivered: local` in place.
         // Such envelopes are not drafts.
         let dir = TempDir::new().unwrap();
-        let shard = dir
-            .path()
-            .join("channels/journal/envelopes/2026/05/21");
+        let shard = dir.path().join("channels/journal/envelopes/2026/05/21");
         write_envelope(&shard, "local.md", false, Some("local"));
 
         let queue = list_drafts_queue(dir.path()).unwrap();
@@ -181,9 +179,6 @@ mod tests {
         // Post-Move 4 the review queue is the full envelope set; the
         // caller disambiguates draft / federated via `delivered`.
         assert_eq!(unioned.len(), 3);
-        assert_eq!(
-            unioned.iter().filter(|e| e.delivered.is_none()).count(),
-            2
-        );
+        assert_eq!(unioned.iter().filter(|e| e.delivered.is_none()).count(), 2);
     }
 }

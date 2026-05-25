@@ -40,12 +40,7 @@ pub fn spawn_server(paths: KeyPaths, did: Did, key: SigningKey) -> JoinHandle<()
     })
 }
 
-async fn run(
-    path: PathBuf,
-    paths: KeyPaths,
-    did: Did,
-    key: SigningKey,
-) -> anyhow::Result<()> {
+async fn run(path: PathBuf, paths: KeyPaths, did: Did, key: SigningKey) -> anyhow::Result<()> {
     // Stale-socket cleanup. If a prior daemon crashed without removing
     // the file, bind will fail with EADDRINUSE — even though nothing is
     // listening. Try connecting first: if a connection succeeds, another
@@ -129,12 +124,7 @@ async fn handle_connection(
     Ok(())
 }
 
-async fn dispatch(
-    req: Request,
-    paths: &KeyPaths,
-    did: &Did,
-    key: &SigningKey,
-) -> Response {
+async fn dispatch(req: Request, paths: &KeyPaths, did: &Did, key: &SigningKey) -> Response {
     match req.method.as_str() {
         "version" => Response::ok(
             req.id,

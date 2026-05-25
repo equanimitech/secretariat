@@ -55,7 +55,6 @@ pub trait DidResolver {
     fn resolve(&self, did: &Did) -> Result<ResolvedDid, DidResolutionError>;
 }
 
-
 // -- Cognition ----------------------------------------------------------------
 //
 // Three sibling ports under one bounded responsibility. See the
@@ -63,7 +62,6 @@ pub trait DidResolver {
 
 pub mod cognition;
 pub use cognition::{
-    AgFields, CognitionAg, CognitionError, CognitionLaunching, CognitionRouting,
-    CognitionSession, LaunchPlan, LauncherError, RouteSuggestion, SessionError,
-    SessionEvent, SessionRef,
+    AgFields, CognitionAg, CognitionError, CognitionLaunching, CognitionRouting, CognitionSession,
+    LaunchPlan, LauncherError, RouteSuggestion, SessionError, SessionEvent, SessionRef,
 };

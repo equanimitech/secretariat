@@ -39,13 +39,9 @@ pub fn run(args: Args) -> Result<()> {
         .ok()
         .flatten()
         .map(|id| id.did);
-    let outcome = verify_document_layered(
-        &args.file,
-        &resolver,
-        local_did.as_ref(),
-        Some(&paths.root),
-    )
-    .with_context(|| format!("verifying {}", args.file.display()))?;
+    let outcome =
+        verify_document_layered(&args.file, &resolver, local_did.as_ref(), Some(&paths.root))
+            .with_context(|| format!("verifying {}", args.file.display()))?;
 
     if args.json {
         print_json(&outcome);
@@ -63,7 +59,10 @@ pub fn run(args: Args) -> Result<()> {
             | SignatureOutcome::OkUnverifiedAgent { .. }
             | SignatureOutcome::None
     );
-    let stamp_ok = matches!(outcome.stamp, VerifyOutcome::Verified { .. } | VerifyOutcome::Unsigned);
+    let stamp_ok = matches!(
+        outcome.stamp,
+        VerifyOutcome::Verified { .. } | VerifyOutcome::Unsigned
+    );
     if !(signature_ok && stamp_ok) {
         std::process::exit(2);
     }
@@ -88,9 +87,7 @@ fn print_human(out: &LayeredVerifyOutcome) {
             principal,
             signed_at,
         } => {
-            println!(
-                "✓ signature  agent {agent} on behalf of {principal} at {signed_at}"
-            );
+            println!("✓ signature  agent {agent} on behalf of {principal} at {signed_at}");
         }
         SignatureOutcome::OkUnverifiedAgent { signer, signed_at } => {
             println!(
@@ -101,9 +98,7 @@ fn print_human(out: &LayeredVerifyOutcome) {
             claimed_hash,
             computed_hash,
         } => {
-            println!(
-                "✗ signature  tampered (claimed {claimed_hash}, computed {computed_hash})"
-            );
+            println!("✗ signature  tampered (claimed {claimed_hash}, computed {computed_hash})");
         }
         SignatureOutcome::SignerUnresolvable { signer, cause } => {
             println!("✗ signature  cannot resolve {signer}: {cause}");
@@ -128,9 +123,7 @@ fn print_human(out: &LayeredVerifyOutcome) {
             claimed_hash,
             computed_hash,
         } => {
-            println!(
-                "✗ stamp      tampered (claimed {claimed_hash}, computed {computed_hash})"
-            );
+            println!("✗ stamp      tampered (claimed {claimed_hash}, computed {computed_hash})");
         }
         VerifyOutcome::SignerUnresolvable { signer, cause } => {
             println!("✗ stamp      cannot resolve {signer}: {cause}");

@@ -430,9 +430,12 @@ mod tests {
     fn migration_skips_missing_legacy_files() {
         let d = dir();
         let prefs_path = d.path().join("preferences.toml");
-        let prefs =
-            load_or_migrate(&prefs_path, &d.path().join("nope.json"), &d.path().join("nope.toml"))
-                .unwrap();
+        let prefs = load_or_migrate(
+            &prefs_path,
+            &d.path().join("nope.json"),
+            &d.path().join("nope.toml"),
+        )
+        .unwrap();
         assert_eq!(prefs, Preferences::default());
     }
 
@@ -444,8 +447,7 @@ mod tests {
         // Even if legacy files also present, existing prefs wins.
         let cog = d.path().join("cognition.json");
         std::fs::write(&cog, r#"{"api_key":"sk-other"}"#).unwrap();
-        let prefs =
-            load_or_migrate(&prefs_path, &cog, &d.path().join("cadence.toml")).unwrap();
+        let prefs = load_or_migrate(&prefs_path, &cog, &d.path().join("cadence.toml")).unwrap();
         assert_eq!(prefs.composition.closing_line, "hi");
         assert!(prefs.cognition.api_key.is_none());
         // Legacy file NOT deleted (we didn't migrate).

@@ -26,10 +26,7 @@ fn make_substrate_root() -> (tempfile::TempDir, PathBuf) {
 
 fn install_counter() -> (
     Arc<AtomicUsize>,
-    impl Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
-        + Send
-        + Sync
-        + 'static,
+    impl Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> + Send + Sync + 'static,
 ) {
     let counter = Arc::new(AtomicUsize::new(0));
     let cb_counter = Arc::clone(&counter);
@@ -64,8 +61,7 @@ async fn initial_drain_fires_on_startup() {
 #[tokio::test]
 async fn md_file_triggers_drain() {
     let (_tmp, root) = make_substrate_root();
-    let day_shard = root
-        .join("did_key_zsomething/channels/inbox/default/envelopes/2026/05/21");
+    let day_shard = root.join("did_key_zsomething/channels/inbox/default/envelopes/2026/05/21");
     std::fs::create_dir_all(&day_shard).unwrap();
 
     let (counter, cb) = install_counter();

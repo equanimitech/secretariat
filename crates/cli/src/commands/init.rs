@@ -12,9 +12,7 @@ use clap::Parser;
 use std::fs;
 
 use secretariat_core::domain::{DidMethod, DisplayName};
-use secretariat_core::infrastructure::identity_store::{
-    save_identity, PrincipalIdentity,
-};
+use secretariat_core::infrastructure::identity_store::{save_identity, PrincipalIdentity};
 use secretariat_core::infrastructure::keys::{
     generate_keypair, save_signing_key, write_did_document,
 };

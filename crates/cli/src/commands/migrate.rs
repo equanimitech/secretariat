@@ -89,18 +89,27 @@ fn run_outbox_to_drafts(args: OutboxToDraftsArgs) -> Result<()> {
     let paths = key_paths()?;
     let root = paths.root.clone();
     if !root.exists() {
-        eprintln!("[sec migrate] substrate root does not exist: {}", root.display());
+        eprintln!(
+            "[sec migrate] substrate root does not exist: {}",
+            root.display()
+        );
         return Ok(());
     }
 
     // 1. Discover every `outbox/` directory under the substrate root.
     let outboxes = discover_outboxes(&root)?;
     if outboxes.is_empty() {
-        eprintln!("[sec migrate] no outbox/ directories found under {} — nothing to do", root.display());
+        eprintln!(
+            "[sec migrate] no outbox/ directories found under {} — nothing to do",
+            root.display()
+        );
         return Ok(());
     }
 
-    eprintln!("[sec migrate] found {} outbox/ directorie(s):", outboxes.len());
+    eprintln!(
+        "[sec migrate] found {} outbox/ directorie(s):",
+        outboxes.len()
+    );
     for ob in &outboxes {
         eprintln!("  · {}", ob.display());
     }
@@ -116,7 +125,10 @@ fn run_outbox_to_drafts(args: OutboxToDraftsArgs) -> Result<()> {
                 let _ = remove_dir_if_empty_recursive(ob);
             }
         }
-        eprintln!("[sec migrate] removed {} empty outbox dir(s)", outboxes.len());
+        eprintln!(
+            "[sec migrate] removed {} empty outbox dir(s)",
+            outboxes.len()
+        );
         return Ok(());
     }
 
@@ -129,17 +141,23 @@ fn run_outbox_to_drafts(args: OutboxToDraftsArgs) -> Result<()> {
         for ob in &outboxes {
             snapshot_queue(&root, ob, &snapshot_root)?;
         }
-        eprintln!("[sec migrate] snapshots written under {}", snapshot_root.display());
+        eprintln!(
+            "[sec migrate] snapshots written under {}",
+            snapshot_root.display()
+        );
     } else {
-        eprintln!("[sec migrate] (dry-run) would tar each queue under {}", snapshot_root.display());
+        eprintln!(
+            "[sec migrate] (dry-run) would tar each queue under {}",
+            snapshot_root.display()
+        );
     }
 
     // 4. Move every file. Track destinations so we can post-count.
     let mut moved: Vec<PathBuf> = Vec::new();
     for ob in &outboxes {
-        let queue_dir = ob.parent().ok_or_else(|| {
-            anyhow!("outbox path has no parent: {}", ob.display())
-        })?;
+        let queue_dir = ob
+            .parent()
+            .ok_or_else(|| anyhow!("outbox path has no parent: {}", ob.display()))?;
         migrate_one_outbox(queue_dir, ob, args.dry_run, &mut moved)?;
     }
 
@@ -159,9 +177,15 @@ fn run_outbox_to_drafts(args: OutboxToDraftsArgs) -> Result<()> {
         for ob in &outboxes {
             let _ = remove_dir_if_empty_recursive(ob);
         }
-        eprintln!("[sec migrate] OK — removed {} empty outbox dir(s)", outboxes.len());
+        eprintln!(
+            "[sec migrate] OK — removed {} empty outbox dir(s)",
+            outboxes.len()
+        );
     } else {
-        eprintln!("[sec migrate] (dry-run) would have moved {} file(s)", moved.len());
+        eprintln!(
+            "[sec migrate] (dry-run) would have moved {} file(s)",
+            moved.len()
+        );
     }
 
     Ok(())
@@ -180,8 +204,7 @@ fn walk_for_outboxes(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
     if !dir.exists() {
         return Ok(());
     }
-    let entries = std::fs::read_dir(dir)
-        .with_context(|| format!("read_dir {}", dir.display()))?;
+    let entries = std::fs::read_dir(dir).with_context(|| format!("read_dir {}", dir.display()))?;
     for entry in entries {
         let entry = entry?;
         let path = entry.path();
@@ -196,7 +219,19 @@ fn walk_for_outboxes(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
             // Skip .archive/, .claude/, etc.
             continue;
         }
-        if matches!(name, "bin" | "logs" | "peers" | "_ciphertext" | "envelopes" | "_drafts" | "sent" | "deferred" | "archived" | "_unsorted") {
+        if matches!(
+            name,
+            "bin"
+                | "logs"
+                | "peers"
+                | "_ciphertext"
+                | "envelopes"
+                | "_drafts"
+                | "sent"
+                | "deferred"
+                | "archived"
+                | "_unsorted"
+        ) {
             continue;
         }
         if name == "outbox" {
@@ -257,11 +292,7 @@ fn snapshot_queue(root: &Path, outbox: &Path, snapshot_root: &Path) -> Result<()
         .status()
         .with_context(|| format!("invoking tar for {}", queue_dir.display()))?;
     if !status.success() {
-        bail!(
-            "tar failed for {} (status {})",
-            queue_dir.display(),
-            status
-        );
+        bail!("tar failed for {} (status {})", queue_dir.display(), status);
     }
     Ok(())
 }
@@ -290,7 +321,11 @@ fn migrate_one_outbox(
         let dest = destination_for_outbox_md(queue_dir, &p)?;
         ensure_parent(&dest, dry_run, &mut seen_dest_dirs)?;
         if dry_run {
-            eprintln!("[sec migrate] would move {} -> {}", p.display(), dest.display());
+            eprintln!(
+                "[sec migrate] would move {} -> {}",
+                p.display(),
+                dest.display()
+            );
         } else {
             std::fs::rename(&p, &dest)
                 .with_context(|| format!("rename {} -> {}", p.display(), dest.display()))?;
@@ -309,7 +344,11 @@ fn migrate_one_outbox(
             let dest = destination_for_sent_md(queue_dir, &p)?;
             ensure_parent(&dest, dry_run, &mut seen_dest_dirs)?;
             if dry_run {
-                eprintln!("[sec migrate] would move {} -> {}", p.display(), dest.display());
+                eprintln!(
+                    "[sec migrate] would move {} -> {}",
+                    p.display(),
+                    dest.display()
+                );
             } else {
                 std::fs::rename(&p, &dest)
                     .with_context(|| format!("rename {} -> {}", p.display(), dest.display()))?;
@@ -350,8 +389,8 @@ fn destination_for_sent_md(queue_dir: &Path, file: &Path) -> Result<PathBuf> {
 /// mtime, else `now`. Defensive against malformed frontmatter — never
 /// fails the migration on a parse error; falls back to "unstamped, mtime".
 fn inspect_envelope(file: &Path) -> Result<(bool, DateTime<Utc>)> {
-    let raw = std::fs::read_to_string(file)
-        .with_context(|| format!("reading {}", file.display()))?;
+    let raw =
+        std::fs::read_to_string(file).with_context(|| format!("reading {}", file.display()))?;
     let parsed = parse_document(&raw).ok();
     let stamped = parsed.as_ref().and_then(|p| p.stamp.as_ref()).is_some();
     let when = parsed
@@ -369,11 +408,7 @@ fn mtime_of(p: &Path) -> Option<DateTime<Utc>> {
     Some(DateTime::<Utc>::from(mtime))
 }
 
-fn ensure_parent(
-    dest: &Path,
-    dry_run: bool,
-    seen: &mut HashSet<PathBuf>,
-) -> Result<()> {
+fn ensure_parent(dest: &Path, dry_run: bool, seen: &mut HashSet<PathBuf>) -> Result<()> {
     let parent = match dest.parent() {
         Some(p) => p,
         None => return Ok(()),
@@ -385,8 +420,7 @@ fn ensure_parent(
     if dry_run {
         return Ok(());
     }
-    std::fs::create_dir_all(parent)
-        .with_context(|| format!("creating {}", parent.display()))
+    std::fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))
 }
 
 /// Recursively remove a directory only if it (and all its descendants)
@@ -422,13 +456,7 @@ fn remove_dir_if_empty_recursive(dir: &Path) -> Result<()> {
 /// into `orgs/`. Everything else at root level holding `channels/` gets
 /// folded under `orgs/<alias>/`.
 const ROOT_RESERVED_NAMES: &[&str] = &[
-    "orgs",
-    "channels",
-    "identity",
-    "peers",
-    "bin",
-    ".archive",
-    "_self",
+    "orgs", "channels", "identity", "peers", "bin", ".archive", "_self",
 ];
 
 #[derive(Parser, Debug)]
@@ -483,10 +511,7 @@ fn run_vault_v0_10_to_v0_11(args: VaultV010ToV011Args) -> Result<()> {
 
     // 2. tar snapshot per source.
     let timestamp = Utc::now().format("%Y%m%dT%H%M%SZ").to_string();
-    let snapshot_root = root
-        .join(".archive")
-        .join("migrations")
-        .join(&timestamp);
+    let snapshot_root = root.join(".archive").join("migrations").join(&timestamp);
     std::fs::create_dir_all(&snapshot_root)
         .with_context(|| format!("creating {}", snapshot_root.display()))?;
     for (src, _) in &plan {
@@ -600,9 +625,7 @@ fn plan_vault_v0_10_to_v0_11(root: &Path) -> Result<Vec<(PathBuf, PathBuf)>> {
     //    wrapped under `orgs/<alias>/`. Skip the names that already
     //    belong at root (`orgs`, `channels`, `identity`, `peers`,
     //    `bin`, `.archive`, `_self`) and dotfiles.
-    for entry in std::fs::read_dir(root)
-        .with_context(|| format!("read_dir {}", root.display()))?
-    {
+    for entry in std::fs::read_dir(root).with_context(|| format!("read_dir {}", root.display()))? {
         let entry = entry?;
         let p = entry.path();
         if !p.is_dir() {
@@ -772,10 +795,7 @@ mod tests {
         touch(&root.join("_self/contract-stub.md"));
 
         let plan = vec![
-            (
-                root.join("_self/identity.md"),
-                root.join("identity.md"),
-            ),
+            (root.join("_self/identity.md"), root.join("identity.md")),
             (
                 root.join("_self/contract-stub.md"),
                 root.join("contract-stub.md"),
@@ -783,7 +803,10 @@ mod tests {
         ];
         apply_vault_moves(&plan, &snapshot_root).unwrap();
         assert!(root.join("identity.md").exists(), "already-moved kept");
-        assert!(root.join("contract-stub.md").exists(), "second move completed");
+        assert!(
+            root.join("contract-stub.md").exists(),
+            "second move completed"
+        );
     }
 
     #[test]
@@ -797,13 +820,11 @@ mod tests {
         touch(&root.join("_self/identity.md"));
         touch(&root.join("identity.md"));
 
-        let plan = vec![(
-            root.join("_self/identity.md"),
-            root.join("identity.md"),
-        )];
+        let plan = vec![(root.join("_self/identity.md"), root.join("identity.md"))];
         let err = apply_vault_moves(&plan, &snapshot_root).unwrap_err();
         assert!(
-            err.to_string().contains("both source and destination exist"),
+            err.to_string()
+                .contains("both source and destination exist"),
             "expected ambiguity bail, got: {err}"
         );
     }
@@ -815,13 +836,9 @@ mod tests {
         // Set up a legacy vault with envelopes to count.
         touch(&root.join("_self/identity.md"));
         touch(&root.join("_self/identity/key"));
-        touch(&root.join(
-            "_self/channels/journal/envelopes/2026/05/24/note.md",
-        ));
+        touch(&root.join("_self/channels/journal/envelopes/2026/05/24/note.md"));
         touch(&root.join("themia.pro/contract.md"));
-        touch(&root.join(
-            "themia.pro/channels/finance/envelopes/2026/05/24/e.md",
-        ));
+        touch(&root.join("themia.pro/channels/finance/envelopes/2026/05/24/e.md"));
 
         let plan = plan_vault_v0_10_to_v0_11(root).unwrap();
         assert!(!plan.is_empty());

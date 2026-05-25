@@ -62,7 +62,11 @@ struct StampWire {
     act: StampAct,
     #[serde(rename = "docHash")]
     doc_hash: DocHash,
-    #[serde(rename = "docFilename", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "docFilename",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     doc_filename: Option<String>,
     #[serde(rename = "stampedAt")]
     stamped_at: DateTime<Utc>,

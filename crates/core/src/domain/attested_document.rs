@@ -24,10 +24,7 @@ pub struct AttestedDocument {
 #[derive(Debug, Error)]
 pub enum DocumentInvariantError {
     #[error("stamp doc_hash does not match canonical body hash (claimed: {claimed}, computed: {computed})")]
-    HashMismatch {
-        claimed: DocHash,
-        computed: DocHash,
-    },
+    HashMismatch { claimed: DocHash, computed: DocHash },
 }
 
 impl AttestedDocument {
@@ -127,10 +124,7 @@ mod tests {
 
     #[test]
     fn hash_distinguishes_different_content() {
-        assert_ne!(
-            canonical_body_hash("# A"),
-            canonical_body_hash("# B")
-        );
+        assert_ne!(canonical_body_hash("# A"), canonical_body_hash("# B"));
     }
 
     #[test]
@@ -147,6 +141,9 @@ mod tests {
         let wrong = DocHash::from_bytes([0xff; 32]);
         let s = stamp_for(wrong);
         let r = AttestedDocument::new(None, s, body);
-        assert!(matches!(r, Err(DocumentInvariantError::HashMismatch { .. })));
+        assert!(matches!(
+            r,
+            Err(DocumentInvariantError::HashMismatch { .. })
+        ));
     }
 }

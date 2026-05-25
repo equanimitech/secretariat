@@ -25,7 +25,8 @@ use crate::domain::QueueHandle;
 use crate::ports::{AgFields, CognitionAg, CognitionError, CognitionRouting, RouteSuggestion};
 
 use super::claude::{
-    ag_payload_to_fields, build_ag_system_prompt, build_system_prompt, routing_payload_to_suggestion,
+    ag_payload_to_fields, build_ag_system_prompt, build_system_prompt,
+    routing_payload_to_suggestion,
 };
 use super::config::CognitionConfig;
 

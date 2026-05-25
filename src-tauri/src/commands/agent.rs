@@ -45,12 +45,17 @@ pub async fn provision_scribe(name: String, substrate: String) -> Result<AgentDt
         .ensure_dirs()
         .map_err(|e| format!("creating directories: {e}"))?;
 
-    let agent_name =
-        AgentName::parse(name).map_err(|e| format!("invalid agent name: {e}"))?;
+    let agent_name = AgentName::parse(name).map_err(|e| format!("invalid agent name: {e}"))?;
     let substrate_vo =
         AgentSubstrate::parse(substrate).map_err(|e| format!("invalid substrate: {e}"))?;
 
-    match add_agent(&paths, agent_name, AgentRole::Scribe, substrate_vo, Utc::now()) {
+    match add_agent(
+        &paths,
+        agent_name,
+        AgentRole::Scribe,
+        substrate_vo,
+        Utc::now(),
+    ) {
         Ok(agent) => Ok(agent.into()),
         Err(AgentOpsError::NameTaken(n)) => {
             Err(format!("a scribe named `{n}` is already configured"))

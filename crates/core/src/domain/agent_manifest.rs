@@ -121,10 +121,7 @@ impl AgentManifest {
             "authorized_agents",
             serde_json::to_value(authorized_agents).unwrap_or(JsonValue::Array(vec![])),
         );
-        map.insert(
-            "declared_at",
-            JsonValue::String(declared_at.to_rfc3339()),
-        );
+        map.insert("declared_at", JsonValue::String(declared_at.to_rfc3339()));
 
         let mut out = CANONICAL_PREIMAGE_TAG.to_vec();
         out.extend(serde_json::to_vec(&map).unwrap_or_default());
@@ -141,8 +138,7 @@ impl AgentManifest {
         principal_key: &ed25519_dalek::SigningKey,
     ) -> Self {
         use ed25519_dalek::Signer as _;
-        let preimage =
-            Self::canonical_preimage(&signer, &target, &authorized_agents, &declared_at);
+        let preimage = Self::canonical_preimage(&signer, &target, &authorized_agents, &declared_at);
         let dalek_sig = principal_key.sign(&preimage);
         Self {
             signer,
@@ -246,8 +242,7 @@ impl TryFrom<AgentManifestFrontmatter> for AgentManifest {
         if fm.ty != AGENT_MANIFEST_TYPE {
             return Err(AgentManifestParseError::WrongType(fm.ty));
         }
-        let signer =
-            Did::parse(&fm.signer).map_err(AgentManifestParseError::InvalidSigner)?;
+        let signer = Did::parse(&fm.signer).map_err(AgentManifestParseError::InvalidSigner)?;
         let target = ManifestTarget::parse(&fm.target)?;
         let signature = Signature::parse(&fm.signature)?;
         let declared_at = DateTime::parse_from_rfc3339(&fm.declared_at)
@@ -338,8 +333,7 @@ mod tests {
         let target = ManifestTarget::Org(Did::from_ed25519_public_key(&[0x11; 32]));
         let agents = vec![sample_agent()];
         let when = Utc::now();
-        let mut manifest =
-            AgentManifest::sign(signer, target, agents, when, &key);
+        let mut manifest = AgentManifest::sign(signer, target, agents, when, &key);
         // Mutate the authorized_agents list without re-signing.
         manifest.authorized_agents.push(sample_agent());
         assert!(!manifest.verify(&key.verifying_key()));

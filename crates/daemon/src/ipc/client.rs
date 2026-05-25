@@ -82,11 +82,7 @@ pub async fn is_running(paths: &KeyPaths) -> bool {
 /// the cycle in-process when no daemon is reachable. The fallback is
 /// what preserves v0.2.16 behavior for users who haven't installed the
 /// LaunchAgent or whose daemon is stopped.
-pub async fn tick_via_ipc_or_inproc(
-    paths: &KeyPaths,
-    did: &Did,
-    key: &SigningKey,
-) -> Result<()> {
+pub async fn tick_via_ipc_or_inproc(paths: &KeyPaths, did: &Did, key: &SigningKey) -> Result<()> {
     if is_running(paths).await {
         let result = call(paths, "tick", None).await?;
         // The daemon already logged via tracing on its side; the

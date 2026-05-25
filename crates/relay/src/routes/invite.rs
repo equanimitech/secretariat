@@ -259,7 +259,10 @@ pub async fn view(
             .and_then(|v| v.to_str().ok())
             .unwrap_or("");
         let html = render_invite_html(&token, &invite, host);
-        return ([(axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8")], html)
+        return (
+            [(axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8")],
+            html,
+        )
             .into_response();
     }
 
@@ -410,7 +413,10 @@ pub async fn claim(
         None => return error(StatusCode::NOT_FOUND, "invite not found".into()),
     };
     if invite.claimed_by.is_some() {
-        return error(StatusCode::CONFLICT, "invite has already been claimed".into());
+        return error(
+            StatusCode::CONFLICT,
+            "invite has already been claimed".into(),
+        );
     }
     if invite.expires_at < Utc::now() {
         return error(StatusCode::GONE, "invite has expired".into());
@@ -418,7 +424,12 @@ pub async fn claim(
 
     let claimant = match Did::parse(&req.claimant_did) {
         Ok(d) => d,
-        Err(e) => return error(StatusCode::BAD_REQUEST, format!("invalid claimant_did: {e}")),
+        Err(e) => {
+            return error(
+                StatusCode::BAD_REQUEST,
+                format!("invalid claimant_did: {e}"),
+            )
+        }
     };
 
     let pubkey_bytes = match decode_ed25519_multibase(&req.claimant_pubkey_multibase) {

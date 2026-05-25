@@ -64,9 +64,7 @@ pub enum SessionEvent {
     /// Turn complete. `stop_reason` is substrate-defined ("end_turn",
     /// "max_tokens", "tool_use", etc.); renderers may render it
     /// verbatim or ignore.
-    Done {
-        stop_reason: String,
-    },
+    Done { stop_reason: String },
 }
 
 #[derive(Debug, Error)]

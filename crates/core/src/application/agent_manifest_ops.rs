@@ -45,9 +45,7 @@ pub enum AgentManifestOpsError {
     /// must be quarantined, not surfaced"), callers MUST quarantine
     /// rather than fall back to a cached or empty view of the
     /// signer's `authorized_agents`.
-    #[error(
-        "manifest at {path} failed verification — {reason}; quarantine and do not consume"
-    )]
+    #[error("manifest at {path} failed verification — {reason}; quarantine and do not consume")]
     TamperDetected { path: PathBuf, reason: &'static str },
 }
 
@@ -76,8 +74,13 @@ pub fn emit_manifest_into_channel(
     principal_key: &SigningKey,
     when: DateTime<Utc>,
 ) -> Result<PathBuf, AgentManifestOpsError> {
-    let manifest =
-        AgentManifest::sign(signer.clone(), target, authorized_agents, when, principal_key);
+    let manifest = AgentManifest::sign(
+        signer.clone(),
+        target,
+        authorized_agents,
+        when,
+        principal_key,
+    );
 
     // Outer envelope signature over the body (empty for manifests). The
     // principal signs in their own person — `SignerRole::Principal` —
@@ -106,10 +109,7 @@ pub fn emit_manifest_into_channel(
         source: e,
     })?;
 
-    let filename = format!(
-        "{}-manifest.md",
-        when.format("%Y%m%dT%H%M%SZ")
-    );
+    let filename = format!("{}-manifest.md", when.format("%Y%m%dT%H%M%SZ"));
     let path = day_shard.join(filename);
     fs::write(&path, body).map_err(|e| AgentManifestOpsError::Io {
         path: path.clone(),
@@ -174,12 +174,12 @@ pub fn ingest_manifest_from_file(
     // From here on the file claims to be a manifest — any further
     // failure is tamper-evidence, not benign drift.
     let envelope_signature = fm.envelope_signature.clone();
-    let manifest: AgentManifest = fm.try_into().map_err(|_| {
-        AgentManifestOpsError::TamperDetected {
-            path: path.to_path_buf(),
-            reason: "manifest fields malformed",
-        }
-    })?;
+    let manifest: AgentManifest =
+        fm.try_into()
+            .map_err(|_| AgentManifestOpsError::TamperDetected {
+                path: path.to_path_buf(),
+                reason: "manifest fields malformed",
+            })?;
     let pk = manifest.signer.embedded_ed25519_key().ok_or_else(|| {
         AgentManifestOpsError::TamperDetected {
             path: path.to_path_buf(),
@@ -203,11 +203,9 @@ pub fn ingest_manifest_from_file(
     // cover the body's canonical hash, with the signer matching the
     // manifest's signer (manifests are principal-self-emitted by
     // contract — no scribe in the chain).
-    let env_sig = envelope_signature.ok_or_else(|| {
-        AgentManifestOpsError::TamperDetected {
-            path: path.to_path_buf(),
-            reason: "manifest envelope is missing the outer $signature block",
-        }
+    let env_sig = envelope_signature.ok_or_else(|| AgentManifestOpsError::TamperDetected {
+        path: path.to_path_buf(),
+        reason: "manifest envelope is missing the outer $signature block",
     })?;
     if env_sig.signer != manifest.signer {
         return Err(AgentManifestOpsError::TamperDetected {
@@ -248,7 +246,12 @@ mod tests {
     #[test]
     fn emit_then_ingest_roundtrip() {
         let tmp = TempDir::new().unwrap();
-        let channel_dir = tmp.path().join("orgs").join("themia.pro").join("channels").join("assemblee_generale");
+        let channel_dir = tmp
+            .path()
+            .join("orgs")
+            .join("themia.pro")
+            .join("channels")
+            .join("assemblee_generale");
         std::fs::create_dir_all(&channel_dir).unwrap();
 
         let key = SigningKey::from_bytes(&[0x42; 32]);
@@ -268,9 +271,7 @@ mod tests {
         .unwrap();
 
         assert!(path.exists());
-        assert!(path
-            .to_string_lossy()
-            .contains("envelopes/"));
+        assert!(path.to_string_lossy().contains("envelopes/"));
         assert!(path
             .file_name()
             .unwrap()
@@ -339,8 +340,12 @@ mod tests {
 
         // Strip everything from `$signature:` to end-of-frontmatter.
         let raw = std::fs::read_to_string(&path).unwrap();
-        let start = raw.find("$signature:").expect("$signature: present in emit");
-        let end_delim = raw[start..].find("\n---").expect("closing delim after $signature");
+        let start = raw
+            .find("$signature:")
+            .expect("$signature: present in emit");
+        let end_delim = raw[start..]
+            .find("\n---")
+            .expect("closing delim after $signature");
         let mut without = String::with_capacity(raw.len());
         without.push_str(&raw[..start]);
         without.push_str(&raw[start + end_delim + 1..]);
@@ -381,8 +386,7 @@ mod tests {
         // $signature instead of the principal.
         use crate::domain::SignerRole;
         let raw = std::fs::read_to_string(&path).unwrap();
-        let attacker_did =
-            Did::from_ed25519_public_key(&attacker.verifying_key().to_bytes());
+        let attacker_did = Did::from_ed25519_public_key(&attacker.verifying_key().to_bytes());
         let bad_sig =
             EnvelopeSignature::sign_body(attacker_did, SignerRole::Principal, "", when, &attacker);
         let bad_block = serde_yaml::to_string(&serde_yaml::to_value(&bad_sig).unwrap()).unwrap();

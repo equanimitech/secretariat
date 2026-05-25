@@ -105,10 +105,7 @@ pub fn load_config(path: &Path) -> Result<Option<CognitionConfig>, CognitionConf
 
 /// Persist the config. Creates the parent directory on first save.
 /// Writes pretty-printed JSON so the principal can hand-edit comfortably.
-pub fn save_config(
-    path: &Path,
-    config: &CognitionConfig,
-) -> Result<(), CognitionConfigError> {
+pub fn save_config(path: &Path, config: &CognitionConfig) -> Result<(), CognitionConfigError> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| CognitionConfigError::Io {
             path: parent.to_path_buf(),
@@ -131,7 +128,9 @@ mod tests {
     #[test]
     fn missing_file_yields_none() {
         let dir = TempDir::new().unwrap();
-        assert!(load_config(&dir.path().join("nope.json")).unwrap().is_none());
+        assert!(load_config(&dir.path().join("nope.json"))
+            .unwrap()
+            .is_none());
     }
 
     #[test]
@@ -158,7 +157,10 @@ mod tests {
         save_config(&path, &original).unwrap();
         let loaded = load_config(&path).unwrap().unwrap();
         assert_eq!(loaded.provider, Provider::OpenAiCompat);
-        assert_eq!(loaded.api_base.as_deref(), Some("http://localhost:11434/v1"));
+        assert_eq!(
+            loaded.api_base.as_deref(),
+            Some("http://localhost:11434/v1")
+        );
         assert_eq!(loaded.model.as_deref(), Some("llama3.1:8b"));
         assert!((loaded.threshold_or_default() - 0.65).abs() < 0.001);
     }

@@ -493,17 +493,17 @@ These are properties of the _system_, not rules of _behavior_. See
 
 ## What's not built yet
 
-| Component                                                           | Trigger                                            |
-| ------------------------------------------------------------------- | -------------------------------------------------- |
-| Counter-stamp record + multi-party stamping ceremony                | Themia `assemblee_generale` annual AG              |
-| Attention routing daemon (cadence + `queue_handle` + `kind`)        | 2–3 weeks of real channel traffic                  |
-| SQLite read-cache for cross-channel queries                         | When query latency demands                         |
-| Multi-passport same-device sync (key migration UX)                  | Concrete driver                                    |
-| Channel ownership transfer (`rosterUpdate.op = transfer_ownership`) | Concrete driver                                    |
-| Lexicon publication                                                 | After self-use stabilizes the schema               |
-| Windows support                                                     | When Christophe's brief workflow needs it          |
-| `defer` / `vouch` / `dispute` / `redirect` stamp acts               | As cadence + multi-party land                      |
-| Webhook adapter for external sources                                | DID-keyed external services or agent-proxied       |
+| Component                                                           | Trigger                                      |
+| ------------------------------------------------------------------- | -------------------------------------------- |
+| Counter-stamp record + multi-party stamping ceremony                | Themia `assemblee_generale` annual AG        |
+| Attention routing daemon (cadence + `queue_handle` + `kind`)        | 2–3 weeks of real channel traffic            |
+| SQLite read-cache for cross-channel queries                         | When query latency demands                   |
+| Multi-passport same-device sync (key migration UX)                  | Concrete driver                              |
+| Channel ownership transfer (`rosterUpdate.op = transfer_ownership`) | Concrete driver                              |
+| Lexicon publication                                                 | After self-use stabilizes the schema         |
+| Windows support                                                     | When Christophe's brief workflow needs it    |
+| `defer` / `vouch` / `dispute` / `redirect` stamp acts               | As cadence + multi-party land                |
+| Webhook adapter for external sources                                | DID-keyed external services or agent-proxied |
 
 See [`../milestones/`](../milestones/) for the historical sequence and
 the substrate decision in [`../decisions/2026-05-12-substrate-layout-v03.md`](../decisions/2026-05-12-substrate-layout-v03.md).

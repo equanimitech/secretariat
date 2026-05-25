@@ -347,10 +347,7 @@ pub fn create_channel(
 /// Hard-delete a channel's tree (envelopes, def, nested sub-channels).
 /// Idempotent — succeeds even if the channel doesn't exist. Caller
 /// handles confirmation UX.
-pub fn delete_channel(
-    channels_root: &Path,
-    handle: &QueueHandle,
-) -> Result<(), ChannelOpError> {
+pub fn delete_channel(channels_root: &Path, handle: &QueueHandle) -> Result<(), ChannelOpError> {
     delete_channel_tree(channels_root, handle)?;
     Ok(())
 }
@@ -534,11 +531,17 @@ mod tests {
         create_channel(&channels, h.clone(), "Dev — Secretariat", "", when, None).unwrap();
         let contract_path =
             crate::infrastructure::contract_store::channel_contract_path(&channels, &h);
-        assert!(contract_path.is_file(), "stub contract.local.md should be written");
+        assert!(
+            contract_path.is_file(),
+            "stub contract.local.md should be written"
+        );
         let (loaded, body) = crate::infrastructure::contract_store::load_contract(&contract_path)
             .unwrap()
             .unwrap();
-        assert!(loaded.is_empty(), "stub frontmatter should contribute nothing");
+        assert!(
+            loaded.is_empty(),
+            "stub frontmatter should contribute nothing"
+        );
         assert!(body.contains("# importance"));
     }
 
@@ -574,8 +577,15 @@ mod tests {
         let channels = self_channels(&dir);
         let h = QueueHandle::parse("product:data:baux-commerciaux").unwrap();
         let when = Utc.with_ymd_and_hms(2026, 5, 12, 0, 0, 0).unwrap();
-        let def = create_channel(&channels, h, "Baux commerciaux", "Cohort tracking", when, None)
-            .unwrap();
+        let def = create_channel(
+            &channels,
+            h,
+            "Baux commerciaux",
+            "Cohort tracking",
+            when,
+            None,
+        )
+        .unwrap();
         assert_eq!(def.name, "Baux commerciaux");
         // Empty channel shows in list (no envelopes, name carried through).
         let out = list_channels(&channels).unwrap();

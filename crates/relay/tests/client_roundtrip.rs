@@ -66,7 +66,10 @@ async fn rafa_sends_marcelo_receives() {
     assert_eq!(inbound.len(), 1);
     let env = &inbound[0];
     assert_eq!(env.body, envelope_bytes);
-    assert_eq!(env.sender_did.as_ref().map(|d| d.as_str()), Some(rafa_did.as_str()));
+    assert_eq!(
+        env.sender_did.as_ref().map(|d| d.as_str()),
+        Some(rafa_did.as_str())
+    );
 }
 
 #[tokio::test]

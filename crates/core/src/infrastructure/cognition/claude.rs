@@ -130,7 +130,9 @@ struct AnthropicResponse {
 #[derive(Deserialize, Debug)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum AnthropicContentBlock {
-    Text { text: String },
+    Text {
+        text: String,
+    },
     /// Catch-all so the deserializer doesn't fail on tool-use /
     /// thinking blocks if the model emits them.
     #[serde(other)]
@@ -173,8 +175,9 @@ pub(crate) fn routing_payload_to_suggestion(
     prompt_version: &str,
 ) -> Result<RouteSuggestion, CognitionError> {
     let trimmed = text.trim();
-    let payload: RoutingPayload = serde_json::from_str(trimmed)
-        .map_err(|e| CognitionError::InvalidResponse(format!("payload parse: {e} from `{trimmed}`")))?;
+    let payload: RoutingPayload = serde_json::from_str(trimmed).map_err(|e| {
+        CognitionError::InvalidResponse(format!("payload parse: {e} from `{trimmed}`"))
+    })?;
 
     let queue = QueueHandle::parse(&payload.queue).map_err(|e| {
         CognitionError::InvalidResponse(format!(

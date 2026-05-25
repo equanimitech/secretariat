@@ -166,10 +166,7 @@ mod tests {
         )
     }
 
-    fn cache_a_manifest(
-        root: &Path,
-        target: ManifestTarget,
-    ) -> (Did, Did) {
+    fn cache_a_manifest(root: &Path, target: ManifestTarget) -> (Did, Did) {
         // Emit a manifest into a scratch channel, then copy the
         // verbatim envelope bytes into the cache. Returns (signer,
         // agent_did) for assertions.
@@ -192,13 +189,7 @@ mod tests {
 
         // Reconstruct the manifest for store_envelope_bytes (it needs
         // signer + target to compute the key).
-        let manifest = AgentManifest::sign(
-            signer.clone(),
-            target,
-            vec![agent.clone()],
-            when,
-            &key,
-        );
+        let manifest = AgentManifest::sign(signer.clone(), target, vec![agent.clone()], when, &key);
         store_envelope_bytes(root, &manifest, &bytes).unwrap();
         (signer, agent.did)
     }

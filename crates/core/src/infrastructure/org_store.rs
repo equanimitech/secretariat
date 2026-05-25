@@ -91,12 +91,11 @@ pub fn load_org(orgs_root: &Path, alias: &OrgAlias) -> Result<Option<Org>, OrgSt
         path: path.clone(),
         source: e,
     })?;
-    let (yaml, _body) = split_frontmatter(&raw).ok_or_else(|| {
-        OrgStoreError::MalformedFrontmatter {
+    let (yaml, _body) =
+        split_frontmatter(&raw).ok_or_else(|| OrgStoreError::MalformedFrontmatter {
             path: path.clone(),
             message: "missing `---` frontmatter delimiters".into(),
-        }
-    })?;
+        })?;
     let fm: OrgFrontmatter =
         serde_yaml::from_str(yaml).map_err(|e| OrgStoreError::MalformedFrontmatter {
             path: path.clone(),
@@ -126,10 +125,12 @@ fn finalize(
         source: e,
     })?;
     let did = match did_str {
-        Some(s) if !s.is_empty() => Some(Did::parse(&s).map_err(|e| OrgStoreError::InvalidDid {
-            did: s,
-            reason: e.to_string(),
-        })?),
+        Some(s) if !s.is_empty() => {
+            Some(Did::parse(&s).map_err(|e| OrgStoreError::InvalidDid {
+                did: s,
+                reason: e.to_string(),
+            })?)
+        }
         _ => None,
     };
     let created_at = DateTime::parse_from_rfc3339(&created_at)

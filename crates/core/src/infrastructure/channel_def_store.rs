@@ -131,8 +131,7 @@ pub fn channel_def_exists(channels_root: &Path, handle: &QueueHandle) -> bool {
 /// resolved (e.g. tree walks where parsing the handle would be wasted
 /// work).
 pub fn channel_def_exists_in_dir(dir: &Path) -> bool {
-    dir.join(CHANNEL_DEF_FILENAME).is_file()
-        || dir.join(LEGACY_CHANNEL_DEF_FILENAME).is_file()
+    dir.join(CHANNEL_DEF_FILENAME).is_file() || dir.join(LEGACY_CHANNEL_DEF_FILENAME).is_file()
 }
 
 /// Lightweight (name, description) lookup, transparent to the new
@@ -182,12 +181,11 @@ fn load_from_markdown(path: &Path) -> Result<ChannelDef, ChannelDefStoreError> {
         path: path.to_path_buf(),
         source: e,
     })?;
-    let (yaml, _body) = split_frontmatter(&raw).ok_or_else(|| {
-        ChannelDefStoreError::MalformedFrontmatter {
+    let (yaml, _body) =
+        split_frontmatter(&raw).ok_or_else(|| ChannelDefStoreError::MalformedFrontmatter {
             path: path.to_path_buf(),
             message: "missing `---` frontmatter delimiters".into(),
-        }
-    })?;
+        })?;
     let fm: ChannelDefFrontmatter =
         serde_yaml::from_str(yaml).map_err(|e| ChannelDefStoreError::MalformedFrontmatter {
             path: path.to_path_buf(),
@@ -242,8 +240,10 @@ fn finalize(
             path: path.to_path_buf(),
         })?
         .with_timezone(&Utc);
-    Ok(ChannelDef::new(parsed_handle, name, description, created_at)
-        .with_requires_stamp(requires_stamp))
+    Ok(
+        ChannelDef::new(parsed_handle, name, description, created_at)
+            .with_requires_stamp(requires_stamp),
+    )
 }
 
 pub fn save_channel_def(
@@ -277,14 +277,20 @@ pub fn save_channel_def(
         created_at: def.created_at.to_rfc3339(),
         requires_stamp: def.requires_stamp,
     };
-    let yaml = serde_yaml::to_string(&fm).map_err(|e| {
-        ChannelDefStoreError::MalformedFrontmatter {
+    let yaml =
+        serde_yaml::to_string(&fm).map_err(|e| ChannelDefStoreError::MalformedFrontmatter {
             path: path.clone(),
             message: e.to_string(),
-        }
-    })?;
+        })?;
     let body = DEFAULT_STUB_BODY
-        .replace("{NAME}", if def.name.is_empty() { def.handle.as_str() } else { &def.name })
+        .replace(
+            "{NAME}",
+            if def.name.is_empty() {
+                def.handle.as_str()
+            } else {
+                &def.name
+            },
+        )
         .replace("{DESCRIPTION}", &def.description);
     let rendered = format!("---\n{yaml}---\n{body}");
 
@@ -379,7 +385,10 @@ mod tests {
         assert!(envelopes.is_dir());
         // New shape on disk.
         assert!(channel_def_path(&root, &d.handle).is_file());
-        assert_eq!(channel_def_path(&root, &d.handle).extension().unwrap(), "md");
+        assert_eq!(
+            channel_def_path(&root, &d.handle).extension().unwrap(),
+            "md"
+        );
     }
 
     #[test]

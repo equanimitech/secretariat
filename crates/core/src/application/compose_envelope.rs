@@ -216,7 +216,15 @@ pub async fn compose_envelope_with_ag(
 ) -> Result<PathBuf, ComposeError> {
     let (request, ag_source) =
         enrich_with_ag(request, template_path, root, aliases, cognition_prefs).await?;
-    compose_envelope_inner(request, signer, template_path, root, aliases, now, ag_source)
+    compose_envelope_inner(
+        request,
+        signer,
+        template_path,
+        root,
+        aliases,
+        now,
+        ag_source,
+    )
 }
 
 async fn enrich_with_ag(
@@ -346,10 +354,7 @@ mod tests {
 
         let req = ComposeRequest {
             from: rafa_did(),
-            recipient: Recipient::new(
-                marcelo_did(),
-                QueueHandle::parse("inbox:default").unwrap(),
-            ),
+            recipient: Recipient::new(marcelo_did(), QueueHandle::parse("inbox:default").unwrap()),
             depth: EnvelopeDepth::Subtle,
             urgency: EnvelopeUrgency::Soon,
             source: "test".into(),
@@ -384,7 +389,10 @@ mod tests {
         // Substrate-for-themia Move 2: author signature mandatory at
         // compose. Verify it survives round-trip + still verifies under
         // the signing key.
-        let sig = parsed.signature.as_ref().expect("$signature must be present");
+        let sig = parsed
+            .signature
+            .as_ref()
+            .expect("$signature must be present");
         assert_eq!(sig.signer_role, SignerRole::Principal);
         assert!(sig.verify_body(&parsed.body, &key.verifying_key()));
         // Absence of `delivered:` is the draft signal — never set at compose.
@@ -405,10 +413,7 @@ mod tests {
 
         let req = ComposeRequest {
             from: rafa_did(),
-            recipient: Recipient::new(
-                rafa_did(),
-                QueueHandle::parse("journal").unwrap(),
-            ),
+            recipient: Recipient::new(rafa_did(), QueueHandle::parse("journal").unwrap()),
             depth: EnvelopeDepth::Gross,
             urgency: EnvelopeUrgency::Whenever,
             source: "agent-test".into(),
@@ -450,10 +455,7 @@ mod tests {
 
         let req = ComposeRequest {
             from: rafa_did(),
-            recipient: Recipient::new(
-                rafa_did(),
-                QueueHandle::parse("inbox:default").unwrap(),
-            ),
+            recipient: Recipient::new(rafa_did(), QueueHandle::parse("inbox:default").unwrap()),
             depth: EnvelopeDepth::Gross,
             urgency: EnvelopeUrgency::Whenever,
             source: "test".into(),
@@ -473,9 +475,7 @@ mod tests {
             root.join("channels/inbox/default/envelopes/2026/04/30"),
         );
         // No `_drafts/` dir should be created anywhere under the queue.
-        assert!(!root
-            .join("channels/inbox/default/_drafts")
-            .exists());
+        assert!(!root.join("channels/inbox/default/_drafts").exists());
     }
 
     #[test]
@@ -497,10 +497,7 @@ mod tests {
 
         let req = ComposeRequest {
             from: rafa_did(),
-            recipient: Recipient::new(
-                rafa_did(),
-                QueueHandle::parse("secretariat:dev").unwrap(),
-            ),
+            recipient: Recipient::new(rafa_did(), QueueHandle::parse("secretariat:dev").unwrap()),
             depth: EnvelopeDepth::Subtle,
             urgency: EnvelopeUrgency::Whenever,
             source: "test".into(),
@@ -524,20 +521,13 @@ mod tests {
     fn strips_existing_frontmatter_from_template() {
         let dir = TempDir::new().unwrap();
         let template = dir.path().join("template.md");
-        fs::write(
-            &template,
-            "---\nfoo: bar\n---\n# After\nbody\n",
-        )
-        .unwrap();
+        fs::write(&template, "---\nfoo: bar\n---\n# After\nbody\n").unwrap();
         let root = dir.path();
         let aliases = AliasMap::new(rafa_did());
 
         let req = ComposeRequest {
             from: rafa_did(),
-            recipient: Recipient::new(
-                rafa_did(),
-                QueueHandle::parse("inbox:scratch").unwrap(),
-            ),
+            recipient: Recipient::new(rafa_did(), QueueHandle::parse("inbox:scratch").unwrap()),
             depth: EnvelopeDepth::Gross,
             urgency: EnvelopeUrgency::Whenever,
             source: "test".into(),

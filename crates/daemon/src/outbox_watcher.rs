@@ -62,11 +62,7 @@ pub const DEFAULT_DEBOUNCE: Duration = Duration::from_millis(200);
 /// `delivered:` frontmatter field to decide whether federation
 /// applies. The callback is sync over a `Future` so callers can run
 /// any async drain logic.
-pub fn spawn_watcher<F, Fut>(
-    root_dir: PathBuf,
-    debounce: Duration,
-    on_drain: F,
-) -> JoinHandle<()>
+pub fn spawn_watcher<F, Fut>(root_dir: PathBuf, debounce: Duration, on_drain: F) -> JoinHandle<()>
 where
     F: Fn() -> Fut + Send + Sync + 'static,
     Fut: Future<Output = ()> + Send + 'static,

@@ -314,17 +314,14 @@ export function MarkdownWindow({
           />
         </SidebarContent>
       </Sidebar>
-      <AlertDialog
-        open={reloadDialogOpen}
-        onOpenChange={setReloadDialogOpen}
-      >
+      <AlertDialog open={reloadDialogOpen} onOpenChange={setReloadDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Reload from disk?</AlertDialogTitle>
             <AlertDialogDescription>
               This file has unsaved edits that haven&apos;t been written yet.
-              Discarding will replace the editor contents with the version
-              on disk.
+              Discarding will replace the editor contents with the version on
+              disk.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -34,8 +34,8 @@ use crate::domain::{Envelope, QueueHandle, Recipient};
 use crate::infrastructure::cognition::{
     append_entry, AnyCognitionAdapter, LedgerEntry, LedgerError,
 };
-use crate::infrastructure::preferences::CognitionPrefs;
 use crate::infrastructure::markdown::{embed_stamp, parse_document, MarkdownError};
+use crate::infrastructure::preferences::CognitionPrefs;
 use crate::ports::{CognitionError, CognitionRouting, RouteSuggestion};
 
 /// Whose queue handle is the wedge — only captures filed here are
@@ -86,11 +86,16 @@ pub struct ContextifyOutcome {
 #[derive(Debug, Clone)]
 pub enum ContextifySkipReason {
     /// Capture was not in `inbox:triage`. Filed explicitly; bypass.
-    NotRoutable { current_queue: String },
+    NotRoutable {
+        current_queue: String,
+    },
     AdapterNotConfigured,
     AdapterAbstained,
     AdapterError(String),
-    BelowThreshold { confidence: f32, threshold: f32 },
+    BelowThreshold {
+        confidence: f32,
+        threshold: f32,
+    },
     SameQueueAsCurrent,
 }
 
@@ -154,12 +159,7 @@ pub async fn contextify_capture<P: CognitionRouting>(
     match route_result {
         Ok(suggestion) => {
             if suggestion.confidence < threshold {
-                let entry = ledger_skip(
-                    capture_path,
-                    &original_queue,
-                    Some(&suggestion),
-                    now,
-                );
+                let entry = ledger_skip(capture_path, &original_queue, Some(&suggestion), now);
                 append_entry(ledger_path, &entry)?;
                 return Ok(ContextifyOutcome {
                     final_path: capture_path.to_path_buf(),
@@ -172,12 +172,7 @@ pub async fn contextify_capture<P: CognitionRouting>(
                 });
             }
             if suggestion.queue == original_queue {
-                let entry = ledger_skip(
-                    capture_path,
-                    &original_queue,
-                    Some(&suggestion),
-                    now,
-                );
+                let entry = ledger_skip(capture_path, &original_queue, Some(&suggestion), now);
                 append_entry(ledger_path, &entry)?;
                 return Ok(ContextifyOutcome {
                     final_path: capture_path.to_path_buf(),
@@ -188,8 +183,13 @@ pub async fn contextify_capture<P: CognitionRouting>(
             }
 
             // Apply the move.
-            let final_path =
-                relocate(capture_path, queues_root, &suggestion.queue, &envelope, &parsed.body)?;
+            let final_path = relocate(
+                capture_path,
+                queues_root,
+                &suggestion.queue,
+                &envelope,
+                &parsed.body,
+            )?;
             let entry = LedgerEntry {
                 src_path: capture_path.display().to_string(),
                 original_queue: original_queue_str,
@@ -262,9 +262,15 @@ pub async fn try_contextify_after_capture(
         return Ok(None);
     };
     let threshold = adapter.threshold();
-    let outcome =
-        contextify_capture(capture_path, queues_root, ledger_path, &adapter, threshold, now)
-            .await?;
+    let outcome = contextify_capture(
+        capture_path,
+        queues_root,
+        ledger_path,
+        &adapter,
+        threshold,
+        now,
+    )
+    .await?;
     Ok(Some(outcome))
 }
 
@@ -296,10 +302,11 @@ fn discover_queues(queues_root: &Path) -> Result<Vec<QueueHandle>, ContextifyErr
         if ns.starts_with('.') {
             continue;
         }
-        let slug_iter = std::fs::read_dir(&ns_path).map_err(|e| ContextifyError::QueueDiscovery {
-            path: ns_path.clone(),
-            source: e,
-        })?;
+        let slug_iter =
+            std::fs::read_dir(&ns_path).map_err(|e| ContextifyError::QueueDiscovery {
+                path: ns_path.clone(),
+                source: e,
+            })?;
         for slug_entry in slug_iter {
             let slug_entry = slug_entry.map_err(|e| ContextifyError::QueueDiscovery {
                 path: ns_path.clone(),
@@ -457,7 +464,8 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let queues = dir.path().join("queues");
         let ledger = queues.join(".contextification.log");
-        let capture_path = write_inbox_triage_capture(&queues, "this is a complaint about onboarding\n");
+        let capture_path =
+            write_inbox_triage_capture(&queues, "this is a complaint about onboarding\n");
         // Pre-create a `pains` queue so discovery finds it.
         std::fs::create_dir_all(queues.join("inbox/pain")).unwrap();
 
@@ -471,10 +479,9 @@ mod tests {
             }),
         };
         let now = Utc::now();
-        let outcome =
-            contextify_capture(&capture_path, &queues, &ledger, &adapter, 0.7, now)
-                .await
-                .unwrap();
+        let outcome = contextify_capture(&capture_path, &queues, &ledger, &adapter, 0.7, now)
+            .await
+            .unwrap();
         assert!(outcome.applied);
         assert_ne!(outcome.final_path, capture_path);
         assert!(outcome.final_path.starts_with(queues.join("inbox/pain")));
@@ -501,9 +508,10 @@ mod tests {
                 prompt_version: "v1".into(),
             }),
         };
-        let outcome = contextify_capture(&capture_path, &queues, &ledger, &adapter, 0.7, Utc::now())
-            .await
-            .unwrap();
+        let outcome =
+            contextify_capture(&capture_path, &queues, &ledger, &adapter, 0.7, Utc::now())
+                .await
+                .unwrap();
         assert!(!outcome.applied);
         assert!(matches!(
             outcome.skip_reason,
@@ -526,9 +534,10 @@ mod tests {
         let adapter = ScriptedAdapter {
             answer: Err(CognitionError::NotConfigured),
         };
-        let outcome = contextify_capture(&capture_path, &queues, &ledger, &adapter, 0.7, Utc::now())
-            .await
-            .unwrap();
+        let outcome =
+            contextify_capture(&capture_path, &queues, &ledger, &adapter, 0.7, Utc::now())
+                .await
+                .unwrap();
         assert!(!outcome.applied);
         assert!(matches!(
             outcome.skip_reason,
@@ -575,9 +584,10 @@ mod tests {
                 prompt_version: "v1".into(),
             }),
         };
-        let outcome = contextify_capture(&capture_path, &queues, &ledger, &adapter, 0.7, Utc::now())
-            .await
-            .unwrap();
+        let outcome =
+            contextify_capture(&capture_path, &queues, &ledger, &adapter, 0.7, Utc::now())
+                .await
+                .unwrap();
         assert!(!outcome.applied);
         assert!(matches!(
             outcome.skip_reason,
@@ -602,9 +612,10 @@ mod tests {
                 prompt_version: "v1".into(),
             }),
         };
-        let outcome = contextify_capture(&capture_path, &queues, &ledger, &adapter, 0.7, Utc::now())
-            .await
-            .unwrap();
+        let outcome =
+            contextify_capture(&capture_path, &queues, &ledger, &adapter, 0.7, Utc::now())
+                .await
+                .unwrap();
         assert!(outcome.applied);
         let raw = std::fs::read_to_string(&outcome.final_path).unwrap();
         let parsed = parse_document(&raw).unwrap();
@@ -628,9 +639,6 @@ mod tests {
             .map(|h| h.as_str().to_string())
             .collect();
         found.sort();
-        assert_eq!(
-            found,
-            vec!["area:health", "inbox:pain", "inbox:triage"]
-        );
+        assert_eq!(found, vec!["area:health", "inbox:pain", "inbox:triage"]);
     }
 }

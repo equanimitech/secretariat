@@ -52,8 +52,8 @@ impl TryFrom<PersistedTenant> for RegisteredTenant {
     fn try_from(p: PersistedTenant) -> Result<Self, Self::Error> {
         let bytes = decode_ed25519_multibase(&p.pubkey_multibase)
             .map_err(|e| format!("malformed pubkey_multibase: {e}"))?;
-        let pubkey = VerifyingKey::from_bytes(&bytes)
-            .map_err(|e| format!("invalid ed25519 pubkey: {e}"))?;
+        let pubkey =
+            VerifyingKey::from_bytes(&bytes).map_err(|e| format!("invalid ed25519 pubkey: {e}"))?;
         Ok(Self {
             did: p.did,
             pubkey,
@@ -221,12 +221,7 @@ impl AppState {
         self.registry.read().unwrap().contains_key(did)
     }
 
-    pub fn register(
-        &self,
-        did: Did,
-        pubkey: VerifyingKey,
-        now: DateTime<Utc>,
-    ) -> RegisteredTenant {
+    pub fn register(&self, did: Did, pubkey: VerifyingKey, now: DateTime<Utc>) -> RegisteredTenant {
         let tenant = RegisteredTenant {
             did: did.clone(),
             pubkey,
@@ -351,12 +346,7 @@ impl AppState {
 
     /// Mark an invite as claimed. Returns the now-claimed invite, or `None`
     /// if the token is unknown or already claimed.
-    pub fn claim_invite(
-        &self,
-        token: &str,
-        claimant: Did,
-        now: DateTime<Utc>,
-    ) -> Option<Invite> {
+    pub fn claim_invite(&self, token: &str, claimant: Did, now: DateTime<Utc>) -> Option<Invite> {
         let result = {
             let mut invites = self.invites.write().unwrap();
             let invite = invites.get_mut(token)?;
@@ -439,9 +429,30 @@ mod queue_index_tests {
         let dev = handle("dev:secretariat");
         let dc = handle("dommage-corporel:paris-cohort");
 
-        state.enqueue(rafa.clone(), dev.clone(), b"a".to_vec(), "t".into(), None, Utc::now());
-        state.enqueue(themia.clone(), dc.clone(), b"b".to_vec(), "t".into(), None, Utc::now());
-        state.enqueue(rafa.clone(), dc.clone(), b"c".to_vec(), "t".into(), None, Utc::now());
+        state.enqueue(
+            rafa.clone(),
+            dev.clone(),
+            b"a".to_vec(),
+            "t".into(),
+            None,
+            Utc::now(),
+        );
+        state.enqueue(
+            themia.clone(),
+            dc.clone(),
+            b"b".to_vec(),
+            "t".into(),
+            None,
+            Utc::now(),
+        );
+        state.enqueue(
+            rafa.clone(),
+            dc.clone(),
+            b"c".to_vec(),
+            "t".into(),
+            None,
+            Utc::now(),
+        );
 
         // Per-(owner, handle) seq starts at 1 in each queue.
         assert_eq!(state.since(&rafa, &dev, 0).len(), 1);
@@ -457,9 +468,30 @@ mod queue_index_tests {
         let owner = fresh_did(1);
         let h = handle("dev:secretariat");
 
-        let _ = state.enqueue(owner.clone(), h.clone(), b"a".to_vec(), "t".into(), None, Utc::now());
-        let _ = state.enqueue(owner.clone(), h.clone(), b"b".to_vec(), "t".into(), None, Utc::now());
-        let id3 = state.enqueue(owner.clone(), h.clone(), b"c".to_vec(), "t".into(), None, Utc::now());
+        let _ = state.enqueue(
+            owner.clone(),
+            h.clone(),
+            b"a".to_vec(),
+            "t".into(),
+            None,
+            Utc::now(),
+        );
+        let _ = state.enqueue(
+            owner.clone(),
+            h.clone(),
+            b"b".to_vec(),
+            "t".into(),
+            None,
+            Utc::now(),
+        );
+        let id3 = state.enqueue(
+            owner.clone(),
+            h.clone(),
+            b"c".to_vec(),
+            "t".into(),
+            None,
+            Utc::now(),
+        );
 
         let from_one = state.since(&owner, &h, 1);
         assert_eq!(from_one.len(), 2);
@@ -508,9 +540,30 @@ mod queue_index_tests {
         let owner = fresh_did(1);
         let h1 = handle("dev:secretariat");
         let h2 = handle("triage");
-        state.enqueue(owner.clone(), h1.clone(), b"a".to_vec(), "t".into(), None, Utc::now());
-        state.enqueue(owner.clone(), h1.clone(), b"b".to_vec(), "t".into(), None, Utc::now());
-        state.enqueue(owner.clone(), h2.clone(), b"c".to_vec(), "t".into(), None, Utc::now());
+        state.enqueue(
+            owner.clone(),
+            h1.clone(),
+            b"a".to_vec(),
+            "t".into(),
+            None,
+            Utc::now(),
+        );
+        state.enqueue(
+            owner.clone(),
+            h1.clone(),
+            b"b".to_vec(),
+            "t".into(),
+            None,
+            Utc::now(),
+        );
+        state.enqueue(
+            owner.clone(),
+            h2.clone(),
+            b"c".to_vec(),
+            "t".into(),
+            None,
+            Utc::now(),
+        );
 
         let lengths = state.queue_lengths();
         assert_eq!(lengths.len(), 2);

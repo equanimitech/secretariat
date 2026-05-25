@@ -34,9 +34,7 @@ pub use attested_document::{canonical_body_hash, AttestedDocument, DocumentInvar
 pub use channel_binding::ChannelBinding;
 pub use channel_contract::{ChannelContract, TrustGate};
 pub use channel_def::ChannelDef;
-pub use contact::{
-    DisplayName, DisplayNameParseError, RelayEndpoint, RelayEndpointParseError,
-};
+pub use contact::{DisplayName, DisplayNameParseError, RelayEndpoint, RelayEndpointParseError};
 pub use envelope::{AgSource, EncryptionScheme, Envelope, EnvelopeBuilder};
 pub use identity::{Did, DidMethod, DidParseError, DocHash, Signature, SignatureParseError};
 pub use org::Org;

@@ -113,10 +113,7 @@ pub async fn try_extract_ag(
 
 /// Lower-level variant for tests + callers that have already built an
 /// adapter (or want to inject a scripted one). Same outcome shape.
-pub async fn try_extract_with_adapter<A: CognitionAg>(
-    body: &str,
-    adapter: &A,
-) -> AgExtractOutcome {
+pub async fn try_extract_with_adapter<A: CognitionAg>(body: &str, adapter: &A) -> AgExtractOutcome {
     match adapter.extract_ag(body).await {
         Ok(fields) => AgExtractOutcome::Generated(fields),
         Err(CognitionError::NotConfigured) => AgExtractOutcome::AdapterNotConfigured,

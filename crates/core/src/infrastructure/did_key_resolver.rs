@@ -16,7 +16,9 @@ impl DidResolver for DidKeyResolver {
                 did.as_str()
             )));
         }
-        let key = did.embedded_ed25519_key().ok_or(DidResolutionError::NoEd25519Key)?;
+        let key = did
+            .embedded_ed25519_key()
+            .ok_or(DidResolutionError::NoEd25519Key)?;
         Ok(ResolvedDid {
             did: did.clone(),
             stamp_public_keys: vec![key],

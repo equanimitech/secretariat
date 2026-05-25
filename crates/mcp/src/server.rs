@@ -45,35 +45,30 @@ use rmcp::{
     },
     prompt, prompt_handler, prompt_router,
     service::RequestContext,
-    tool, tool_handler, tool_router,
-    RoleServer, ServerHandler,
+    tool, tool_handler, tool_router, RoleServer, ServerHandler,
 };
 use schemars::JsonSchema;
 use secretariat_core::application::{
-    add_agent as app_add_agent, archive_envelope, capture_to_queue_with_ag,
-    channels_root_for, claim_invite, compose_envelope_with_ag,
-    create_channel as app_create_channel, create_invite, create_org as app_create_org,
-    delete_channel as app_delete_channel, delete_org as app_delete_org,
-    list_agents as app_list_agents, remove_agent as app_remove_agent,
-    rotate_agent as app_rotate_agent,
-    get_channel_contract as app_get_channel_contract,
-    get_org_contract as app_get_org_contract, list_channels,
+    add_agent as app_add_agent, archive_envelope, capture_to_queue_with_ag, channels_root_for,
+    claim_invite, compose_envelope_with_ag, create_channel as app_create_channel, create_invite,
+    create_org as app_create_org, delete_channel as app_delete_channel,
+    delete_org as app_delete_org, get_channel_contract as app_get_channel_contract,
+    get_org_contract as app_get_org_contract, list_agents as app_list_agents, list_channels,
     list_draft_files, list_orgs as app_list_orgs, read_channel, read_envelope,
-    resolve_channel_contract as app_resolve_channel_contract,
-    set_channel_contract as app_set_channel_contract, set_org_contract as app_set_org_contract,
-    show_org as app_show_org, stamp_document, try_contextify_after_capture,
-    unarchive_envelope, verify_document_layered, view_invite, CaptureRequest, ComposeRequest,
-    LayeredVerifyOutcome,
-    ContractLevel, ContractPatch, ContractView, PatchField, ResolvedContract, StampError,
-    VerifyOutcome,
+    remove_agent as app_remove_agent, resolve_channel_contract as app_resolve_channel_contract,
+    rotate_agent as app_rotate_agent, set_channel_contract as app_set_channel_contract,
+    set_org_contract as app_set_org_contract, show_org as app_show_org, stamp_document,
+    try_contextify_after_capture, unarchive_envelope, verify_document_layered, view_invite,
+    CaptureRequest, ComposeRequest, ContractLevel, ContractPatch, ContractView,
+    LayeredVerifyOutcome, PatchField, ResolvedContract, StampError, VerifyOutcome,
 };
 use secretariat_core::domain::{OrgAlias, QueueHandle, Recipient, Root, StampAct, TrustGate};
-use secretariat_core::infrastructure::org_store::org_channels_root;
-use secretariat_core::infrastructure::preferences::load_or_migrate as load_or_migrate_preferences;
 use secretariat_core::infrastructure::biometric::build_signer;
 use secretariat_core::infrastructure::composite_did_resolver::CompositeDidResolver;
 use secretariat_core::infrastructure::did_web_resolver::DidWebResolver;
 use secretariat_core::infrastructure::keys::{load_signing_key, KeyPaths};
+use secretariat_core::infrastructure::org_store::org_channels_root;
+use secretariat_core::infrastructure::preferences::load_or_migrate as load_or_migrate_preferences;
 use secretariat_core::infrastructure::transport::RelayState;
 use secretariat_core::ports::SignerError;
 use secretariat_core::{Did, EnvelopeDepth, EnvelopeUrgency};
@@ -873,9 +868,8 @@ impl SecretariatServer {
         };
 
         let handle_str = params.handle.as_deref().unwrap_or("inbox");
-        let handle = QueueHandle::parse(handle_str).map_err(|e| {
-            invalid_request(format!("invalid `handle` `{handle_str}`: {e}"))
-        })?;
+        let handle = QueueHandle::parse(handle_str)
+            .map_err(|e| invalid_request(format!("invalid `handle` `{handle_str}`: {e}")))?;
 
         let req = ComposeRequest {
             from,
@@ -905,8 +899,7 @@ impl SecretariatServer {
 
         // Substrate-for-themia Move 2: resolve the signing context
         // (agent by default, principal fallback).
-        let signing_ctx =
-            resolve_compose_signer(&self.paths, &self_did, params.agent.as_deref())?;
+        let signing_ctx = resolve_compose_signer(&self.paths, &self_did, params.agent.as_deref())?;
         let signed_by = signing_ctx.signer_did.as_str().to_string();
         let signer_role_str = signing_ctx.signer_role.as_str().to_string();
         let signer = secretariat_core::application::ComposeSigner::new(
@@ -977,9 +970,8 @@ impl SecretariatServer {
         Parameters(params): Parameters<CaptureParams>,
     ) -> Result<Json<CaptureOutput>, ErrorData> {
         let from = load_principal_did(&self.paths)?;
-        let queue = QueueHandle::parse(&params.queue).map_err(|e| {
-            invalid_request(format!("invalid `queue` `{}`: {e}", params.queue))
-        })?;
+        let queue = QueueHandle::parse(&params.queue)
+            .map_err(|e| invalid_request(format!("invalid `queue` `{}`: {e}", params.queue)))?;
 
         let req = CaptureRequest {
             from,
@@ -998,15 +990,10 @@ impl SecretariatServer {
             &self.paths.legacy_cadence,
         )
         .unwrap_or_default();
-        let path = capture_to_queue_with_ag(
-            req,
-            &self.paths.root,
-            &root,
-            &prefs.cognition,
-            Utc::now(),
-        )
-        .await
-        .map_err(|e| invalid_request(format!("capture failed: {e}")))?;
+        let path =
+            capture_to_queue_with_ag(req, &self.paths.root, &root, &prefs.cognition, Utc::now())
+                .await
+                .map_err(|e| invalid_request(format!("capture failed: {e}")))?;
 
         info!(file = %path.display(), queue = %queue.as_str(), "captured to local queue via MCP");
 
@@ -1120,9 +1107,8 @@ impl SecretariatServer {
         &self,
         Parameters(params): Parameters<ReadChannelParams>,
     ) -> Result<Json<ReadChannelOutput>, ErrorData> {
-        let handle = QueueHandle::parse(&params.handle).map_err(|e| {
-            invalid_request(format!("invalid `handle` `{}`: {e}", params.handle))
-        })?;
+        let handle = QueueHandle::parse(&params.handle)
+            .map_err(|e| invalid_request(format!("invalid `handle` `{}`: {e}", params.handle)))?;
         let limit = params.limit.unwrap_or(10);
         let root = self.resolve_channels_root(params.org.as_deref())?;
         let envelopes = read_channel(&root, &handle, limit)
@@ -1195,8 +1181,8 @@ impl SecretariatServer {
             .map_err(|e| invalid_request(format!("biometric gate setup failed: {e}")))?;
 
         let now = Utc::now();
-        let outcome = stamp_document(&path, &signer, StampAct::Attest, params.force, now)
-            .map_err(|e| match e {
+        let outcome = stamp_document(&path, &signer, StampAct::Attest, params.force, now).map_err(
+            |e| match e {
                 StampError::AlreadyStamped => invalid_request(
                     "file already has a stamp; pass `force: true` to re-stamp".into(),
                 ),
@@ -1204,7 +1190,8 @@ impl SecretariatServer {
                     invalid_request("biometric refused or cancelled".into())
                 }
                 other => invalid_request(format!("stamp failed: {other}")),
-            })?;
+            },
+        )?;
 
         // Stamp embeds the `$attestation` block in place; the file
         // path is unchanged. Federation runs in the daemon — it picks
@@ -1251,8 +1238,8 @@ impl SecretariatServer {
         Parameters(params): Parameters<InboxActionParams>,
     ) -> Result<Json<InboxActionOutput>, ErrorData> {
         let path = PathBuf::from(&params.file_path);
-        let moved = archive_envelope(&path)
-            .map_err(|e| invalid_request(format!("archive failed: {e}")))?;
+        let moved =
+            archive_envelope(&path).map_err(|e| invalid_request(format!("archive failed: {e}")))?;
         info!(file = %path.display(), to = %moved.display(), "archived envelope via MCP");
         Ok(Json(InboxActionOutput {
             moved_to: moved.display().to_string(),
@@ -1332,13 +1319,9 @@ impl SecretariatServer {
             .ok()
             .flatten()
             .map(|id| id.did);
-        let outcome = verify_document_layered(
-            &path,
-            &resolver,
-            local_did.as_ref(),
-            Some(&self.paths.root),
-        )
-        .map_err(|e| invalid_request(format!("verify failed: {e}")))?;
+        let outcome =
+            verify_document_layered(&path, &resolver, local_did.as_ref(), Some(&self.paths.root))
+                .map_err(|e| invalid_request(format!("verify failed: {e}")))?;
         Ok(Json(layered_outcome_to_view(outcome)))
     }
 
@@ -1483,13 +1466,10 @@ impl SecretariatServer {
         let did = match params.did.as_deref() {
             None => None,
             Some(s) => Some(
-                Did::parse(s)
-                    .map_err(|e| invalid_request(format!("invalid did `{s}`: {e}")))?,
+                Did::parse(s).map_err(|e| invalid_request(format!("invalid did `{s}`: {e}")))?,
             ),
         };
-        let name = params
-            .name
-            .unwrap_or_else(|| alias.as_str().to_string());
+        let name = params.name.unwrap_or_else(|| alias.as_str().to_string());
         let description = params.description.unwrap_or_default();
         let org = app_create_org(
             &self.paths.orgs_root,
@@ -1617,9 +1597,14 @@ impl SecretariatServer {
             .map_err(|e| invalid_request(format!("invalid agent name `{}`: {e}", params.name)))?;
         let role = AgentRole::parse(params.role.as_deref().unwrap_or("scribe"))
             .map_err(|e| invalid_request(format!("invalid role: {e}")))?;
-        let substrate =
-            AgentSubstrate::parse(params.substrate.as_deref().unwrap_or("claude-code").to_string())
-                .map_err(|e| invalid_request(format!("invalid substrate: {e}")))?;
+        let substrate = AgentSubstrate::parse(
+            params
+                .substrate
+                .as_deref()
+                .unwrap_or("claude-code")
+                .to_string(),
+        )
+        .map_err(|e| invalid_request(format!("invalid substrate: {e}")))?;
         let agent = app_add_agent(&self.paths, name, role, substrate, Utc::now())
             .map_err(|e| invalid_request(format!("agent_add failed: {e}")))?;
         info!(name = %agent.name, did = %agent.did, "agent added via MCP");
@@ -1722,9 +1707,8 @@ impl SecretariatServer {
         &self,
         Parameters(params): Parameters<CreateChannelParams>,
     ) -> Result<Json<ChannelDefDto>, ErrorData> {
-        let handle = QueueHandle::parse(&params.handle).map_err(|e| {
-            invalid_request(format!("invalid handle `{}`: {e}", params.handle))
-        })?;
+        let handle = QueueHandle::parse(&params.handle)
+            .map_err(|e| invalid_request(format!("invalid handle `{}`: {e}", params.handle)))?;
         let root = self.resolve_channels_root(params.org.as_deref())?;
         // Default channel name = the bare slug itself (last segment for
         // nested handles, the whole handle for single-segment ones).
@@ -1768,9 +1752,8 @@ impl SecretariatServer {
         &self,
         Parameters(params): Parameters<DeleteChannelParams>,
     ) -> Result<Json<DeleteChannelOutput>, ErrorData> {
-        let handle = QueueHandle::parse(&params.handle).map_err(|e| {
-            invalid_request(format!("invalid handle `{}`: {e}", params.handle))
-        })?;
+        let handle = QueueHandle::parse(&params.handle)
+            .map_err(|e| invalid_request(format!("invalid handle `{}`: {e}", params.handle)))?;
         let org_str = params.org.clone();
         if !params.confirm {
             return Ok(Json(DeleteChannelOutput {
@@ -1813,9 +1796,8 @@ impl SecretariatServer {
         &self,
         Parameters(params): Parameters<GetChannelContractParams>,
     ) -> Result<Json<ContractDto>, ErrorData> {
-        let handle = QueueHandle::parse(&params.handle).map_err(|e| {
-            invalid_request(format!("invalid handle `{}`: {e}", params.handle))
-        })?;
+        let handle = QueueHandle::parse(&params.handle)
+            .map_err(|e| invalid_request(format!("invalid handle `{}`: {e}", params.handle)))?;
         let root = self.resolve_channels_root(params.org.as_deref())?;
         let view = app_get_channel_contract(&root, &handle)
             .map_err(|e| invalid_request(format!("get_channel_contract failed: {e}")))?;
@@ -1846,9 +1828,8 @@ impl SecretariatServer {
         &self,
         Parameters(params): Parameters<SetChannelContractParams>,
     ) -> Result<Json<ContractDto>, ErrorData> {
-        let handle = QueueHandle::parse(&params.handle).map_err(|e| {
-            invalid_request(format!("invalid handle `{}`: {e}", params.handle))
-        })?;
+        let handle = QueueHandle::parse(&params.handle)
+            .map_err(|e| invalid_request(format!("invalid handle `{}`: {e}", params.handle)))?;
         let root = self.resolve_channels_root(params.org.as_deref())?;
         let patch = build_contract_patch(
             params.cadence_floor_minutes,
@@ -1890,9 +1871,8 @@ impl SecretariatServer {
         &self,
         Parameters(params): Parameters<ResolveChannelContractParams>,
     ) -> Result<Json<ResolvedContractDto>, ErrorData> {
-        let handle = QueueHandle::parse(&params.handle).map_err(|e| {
-            invalid_request(format!("invalid handle `{}`: {e}", params.handle))
-        })?;
+        let handle = QueueHandle::parse(&params.handle)
+            .map_err(|e| invalid_request(format!("invalid handle `{}`: {e}", params.handle)))?;
         let alias = match params.org.as_deref() {
             None => None,
             Some(s) => Some(
@@ -2043,7 +2023,6 @@ impl SecretariatServer {
             relays,
         }))
     }
-
 }
 
 // ---------------------------------------------------------------------------
@@ -2194,8 +2173,7 @@ fn internal_error(msg: String) -> ErrorData {
 }
 
 fn render_orgs(orgs_root: &std::path::Path) -> Result<String, ErrorData> {
-    let orgs = app_list_orgs(orgs_root)
-        .map_err(|e| internal_error(format!("list_orgs: {e}")))?;
+    let orgs = app_list_orgs(orgs_root).map_err(|e| internal_error(format!("list_orgs: {e}")))?;
     if orgs.is_empty() {
         return Ok("# Orgs\n\nNo orgs yet. Use `create_org` to set one up.\n".to_string());
     }
@@ -2211,13 +2189,15 @@ fn render_orgs(orgs_root: &std::path::Path) -> Result<String, ErrorData> {
             .as_ref()
             .map(|d| format!(" · `{}`", d.as_str()))
             .unwrap_or_default();
-        out.push_str(&format!("## {}{}{}\n\n", org.alias.as_str(), name_part, did_part));
+        out.push_str(&format!(
+            "## {}{}{}\n\n",
+            org.alias.as_str(),
+            name_part,
+            did_part
+        ));
 
-        let org_channels_root = orgs_root
-            .join(org.alias.as_str())
-            .join("channels");
-        let channels = list_channels(&org_channels_root)
-            .unwrap_or_default();
+        let org_channels_root = orgs_root.join(org.alias.as_str()).join("channels");
+        let channels = list_channels(&org_channels_root).unwrap_or_default();
         if channels.is_empty() {
             out.push_str("_No channels yet._\n\n");
         } else {
@@ -2228,8 +2208,10 @@ fn render_orgs(orgs_root: &std::path::Path) -> Result<String, ErrorData> {
                     format!("{} ({})", ch.handle, ch.name)
                 };
                 let count = ch.envelope_count;
-                out.push_str(&format!("- `{label}` · {count} envelope{}\n",
-                    if count == 1 { "" } else { "s" }));
+                out.push_str(&format!(
+                    "- `{label}` · {count} envelope{}\n",
+                    if count == 1 { "" } else { "s" }
+                ));
             }
             out.push('\n');
         }
@@ -2238,13 +2220,15 @@ fn render_orgs(orgs_root: &std::path::Path) -> Result<String, ErrorData> {
 }
 
 fn render_compositions(root: &std::path::Path) -> Result<String, ErrorData> {
-    let drafts = list_draft_files(root)
-        .map_err(|e| internal_error(format!("list_drafts: {e}")))?;
+    let drafts = list_draft_files(root).map_err(|e| internal_error(format!("list_drafts: {e}")))?;
     if drafts.is_empty() {
         return Ok("# Compositions\n\n_No pending drafts._\n".to_string());
     }
-    let mut out = format!("# Compositions\n\n{} pending draft{}:\n\n",
-        drafts.len(), if drafts.len() == 1 { "" } else { "s" });
+    let mut out = format!(
+        "# Compositions\n\n{} pending draft{}:\n\n",
+        drafts.len(),
+        if drafts.len() == 1 { "" } else { "s" }
+    );
     for d in &drafts {
         out.push_str(&format!("- `{}`", d.file_path));
         if let Some(handle) = &d.queue {
@@ -2298,13 +2282,11 @@ fn build_contract_patch(
         (Some(_), true) => unreachable!("guarded above"),
     };
     let trust = match (min_trust, clear_min_trust) {
-        (Some(s), false) => PatchField::Set(
-            TrustGate::parse(s).ok_or_else(|| {
-                invalid_request(format!(
-                    "invalid min_trust `{s}` (want signed-only or stamp-required)"
-                ))
-            })?,
-        ),
+        (Some(s), false) => PatchField::Set(TrustGate::parse(s).ok_or_else(|| {
+            invalid_request(format!(
+                "invalid min_trust `{s}` (want signed-only or stamp-required)"
+            ))
+        })?),
         (None, true) => PatchField::Clear,
         (None, false) => PatchField::Leave,
         (Some(_), true) => unreachable!("guarded above"),
@@ -2437,8 +2419,8 @@ fn resolve_compose_signer(
 }
 
 fn first_registered_relay(path: &std::path::Path) -> Result<String, ErrorData> {
-    let state = RelayState::load(path)
-        .map_err(|e| invalid_request(format!("loading relay-state: {e}")))?;
+    let state =
+        RelayState::load(path).map_err(|e| invalid_request(format!("loading relay-state: {e}")))?;
     let endpoint = state
         .iter()
         .find(|r| r.registered)

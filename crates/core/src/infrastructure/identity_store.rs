@@ -70,8 +70,10 @@ pub enum IdentityStoreError {
     InvalidName(DisplayNameParseError),
     #[error("invalid created_at `{value}` at {path}")]
     InvalidTimestamp { value: String, path: PathBuf },
-    #[error("identity record at {path} has an invalid signature \
-            (tampered or wrong key)")]
+    #[error(
+        "identity record at {path} has an invalid signature \
+            (tampered or wrong key)"
+    )]
     SignatureInvalid { path: PathBuf },
     #[error("did `{0}` is not a did:key — cannot derive verifying key without DID document")]
     NotDidKey(String),
@@ -178,12 +180,11 @@ pub fn load_identity(path: &Path) -> Result<Option<PrincipalIdentity>, IdentityS
         path: path.to_path_buf(),
         source: e,
     })?;
-    let (yaml, body) = split_frontmatter(&raw).ok_or_else(|| {
-        IdentityStoreError::MalformedFrontmatter {
+    let (yaml, body) =
+        split_frontmatter(&raw).ok_or_else(|| IdentityStoreError::MalformedFrontmatter {
             path: path.to_path_buf(),
             message: "missing `---` frontmatter delimiters".into(),
-        }
-    })?;
+        })?;
     let fm: IdentityFrontmatter =
         serde_yaml::from_str(yaml).map_err(|e| IdentityStoreError::MalformedFrontmatter {
             path: path.to_path_buf(),
@@ -213,10 +214,9 @@ pub fn load_identity_verified(
                     .did
                     .embedded_ed25519_key()
                     .ok_or_else(|| IdentityStoreError::NotDidKey(identity.did.to_string()))?;
-                VerifyingKey::from_bytes(&pk)
-                    .map_err(|_| IdentityStoreError::SignatureInvalid {
-                        path: path.to_path_buf(),
-                    })?
+                VerifyingKey::from_bytes(&pk).map_err(|_| IdentityStoreError::SignatureInvalid {
+                    path: path.to_path_buf(),
+                })?
             }
         };
         let preimage = canonical_preimage(&identity);
@@ -300,10 +300,11 @@ fn save_identity_inner(
         created_at: to_write.created_at.to_rfc3339(),
         signature: to_write.signature.clone(),
     };
-    let yaml = serde_yaml::to_string(&fm).map_err(|e| IdentityStoreError::MalformedFrontmatter {
-        path: path.to_path_buf(),
-        message: e.to_string(),
-    })?;
+    let yaml =
+        serde_yaml::to_string(&fm).map_err(|e| IdentityStoreError::MalformedFrontmatter {
+            path: path.to_path_buf(),
+            message: e.to_string(),
+        })?;
     let body = if to_write.body.is_empty() {
         BUILTIN_BODY.to_string()
     } else {
@@ -332,10 +333,7 @@ fn save_identity_inner(
 fn canonical_preimage(identity: &PrincipalIdentity) -> Vec<u8> {
     let mut map: BTreeMap<&str, JsonValue> = BTreeMap::new();
     map.insert("did", JsonValue::String(identity.did.as_str().to_string()));
-    map.insert(
-        "did_method",
-        JsonValue::String(identity.did_method.clone()),
-    );
+    map.insert("did_method", JsonValue::String(identity.did_method.clone()));
     map.insert(
         "display_name",
         JsonValue::String(identity.display_name.to_string()),
@@ -619,6 +617,9 @@ mod tests {
         let loaded = load_identity(&path).unwrap().unwrap();
         assert_eq!(loaded.authorized_agents.len(), 1);
         assert_eq!(loaded.authorized_agents[0].name.as_str(), "claude");
-        assert_eq!(loaded.authorized_agents[0].substrate.as_str(), "claude-code");
+        assert_eq!(
+            loaded.authorized_agents[0].substrate.as_str(),
+            "claude-code"
+        );
     }
 }

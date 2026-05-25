@@ -73,7 +73,11 @@ pub fn run(args: Args) -> Result<()> {
     }
 }
 
-fn run_create(purpose: Option<&str>, ttl_hours: Option<i64>, endpoint_override: Option<&str>) -> Result<()> {
+fn run_create(
+    purpose: Option<&str>,
+    ttl_hours: Option<i64>,
+    endpoint_override: Option<&str>,
+) -> Result<()> {
     let paths = key_paths()?;
     let did = load_did(&paths)?;
     let key = load_signing_key(&paths.signing_key)
@@ -130,7 +134,10 @@ fn run_claim(url: &str, _name_override: Option<&str>) -> Result<()> {
     eprintln!("[sec] claim accepted by relay");
     eprintln!("[sec]   inviter:        {}", claimed.inviter_did);
     eprintln!("[sec]   you (claimant): {}", claimed.claimant_did);
-    eprintln!("[sec]   claimed at:     {}", claimed.claimed_at.to_rfc3339());
+    eprintln!(
+        "[sec]   claimed at:     {}",
+        claimed.claimed_at.to_rfc3339()
+    );
     if claimed.registered {
         eprintln!("[sec]   relay also registered your DID (single-shot setup).");
     }

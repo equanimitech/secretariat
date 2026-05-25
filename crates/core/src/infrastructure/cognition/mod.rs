@@ -21,9 +21,7 @@ pub mod ledger;
 pub mod openai_compat;
 
 pub use claude::{ClaudeCognitionAdapter, KNOWN_ANTHROPIC_MODELS};
-pub use config::{
-    load_config, save_config, CognitionConfig, CognitionConfigError, Provider,
-};
+pub use config::{load_config, save_config, CognitionConfig, CognitionConfigError, Provider};
 pub use launcher::PrefsLauncher;
 pub use ledger::{append_entry, read_entries, LedgerEntry, LedgerError};
 pub use openai_compat::OpenAICompatibleAdapter;
@@ -110,9 +108,10 @@ impl AnyCognitionAdapter {
     /// endpoint); OpenAI-compat hits `/models` on the configured base.
     pub async fn list_models(&self) -> Result<Vec<String>, CognitionError> {
         match self {
-            Self::Anthropic(_) => {
-                Ok(KNOWN_ANTHROPIC_MODELS.iter().map(|s| s.to_string()).collect())
-            }
+            Self::Anthropic(_) => Ok(KNOWN_ANTHROPIC_MODELS
+                .iter()
+                .map(|s| s.to_string())
+                .collect()),
             Self::OpenAiCompat(a) => a.list_models().await,
         }
     }

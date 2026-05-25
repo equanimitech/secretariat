@@ -85,11 +85,11 @@ fn add(
 ) -> Result<()> {
     let name = AgentName::parse(name).map_err(|e| anyhow!("invalid agent name: {e}"))?;
     let role = AgentRole::parse(&role).map_err(|e| anyhow!("invalid role: {e}"))?;
-    let substrate = AgentSubstrate::parse(substrate)
-        .map_err(|e| anyhow!("invalid substrate: {e}"))?;
+    let substrate =
+        AgentSubstrate::parse(substrate).map_err(|e| anyhow!("invalid substrate: {e}"))?;
 
-    let agent = agent_ops::add_agent(paths, name, role, substrate, Utc::now())
-        .context("adding agent")?;
+    let agent =
+        agent_ops::add_agent(paths, name, role, substrate, Utc::now()).context("adding agent")?;
     eprintln!(
         "[sec] agent added: {} ({}, {}) → {}",
         agent.name, agent.role, agent.substrate, agent.did
@@ -130,10 +130,7 @@ fn list(
     Ok(())
 }
 
-fn remove(
-    paths: &secretariat_core::infrastructure::keys::KeyPaths,
-    name: String,
-) -> Result<()> {
+fn remove(paths: &secretariat_core::infrastructure::keys::KeyPaths, name: String) -> Result<()> {
     let name = AgentName::parse(name).map_err(|e| anyhow!("invalid agent name: {e}"))?;
     let removed = agent_ops::remove_agent(paths, &name, Utc::now()).context("removing agent")?;
     eprintln!(
@@ -143,10 +140,7 @@ fn remove(
     Ok(())
 }
 
-fn rotate(
-    paths: &secretariat_core::infrastructure::keys::KeyPaths,
-    name: String,
-) -> Result<()> {
+fn rotate(paths: &secretariat_core::infrastructure::keys::KeyPaths, name: String) -> Result<()> {
     let name = AgentName::parse(name).map_err(|e| anyhow!("invalid agent name: {e}"))?;
     let rotated = agent_ops::rotate_agent(paths, &name, Utc::now()).context("rotating agent")?;
     eprintln!(

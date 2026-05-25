@@ -15,9 +15,7 @@ use std::path::PathBuf;
 use anyhow::{anyhow, Context, Result};
 use clap::Parser;
 use ed25519_dalek::SigningKey;
-use secretariat_core::application::{
-    verify_document_layered, SignatureOutcome, VerifyOutcome,
-};
+use secretariat_core::application::{verify_document_layered, SignatureOutcome, VerifyOutcome};
 use secretariat_core::infrastructure::crypto::sealed::{open, signing_to_x25519, SealedBox};
 use secretariat_core::infrastructure::identity_store::load_identity;
 use secretariat_core::infrastructure::keys::load_signing_key;
@@ -99,7 +97,6 @@ fn decrypt_with_local_key(body: &str) -> Result<Vec<u8>> {
 
     let sealed = SealedBox::parse_wire_string(body.trim())
         .map_err(|e| anyhow!("body is not a valid sealed-box wire string: {e}"))?;
-    let plaintext = open(&sealed, &x25519_secret)
-        .map_err(|e| anyhow!("decryption failed: {e}"))?;
+    let plaintext = open(&sealed, &x25519_secret).map_err(|e| anyhow!("decryption failed: {e}"))?;
     Ok(plaintext)
 }

@@ -150,9 +150,15 @@ mod tests {
         let cfg = CadenceConfig::default();
         let last = t(10, 0);
         // exactly at interval boundary
-        assert_eq!(decide_poll(&cfg, t(10, 15), Some(last)), PollDecision::PollNow);
+        assert_eq!(
+            decide_poll(&cfg, t(10, 15), Some(last)),
+            PollDecision::PollNow
+        );
         // and after
-        assert_eq!(decide_poll(&cfg, t(10, 16), Some(last)), PollDecision::PollNow);
+        assert_eq!(
+            decide_poll(&cfg, t(10, 16), Some(last)),
+            PollDecision::PollNow
+        );
     }
 
     #[test]
@@ -178,6 +184,9 @@ mod tests {
         let path = dir.path().join("cadence.toml");
         std::fs::write(&path, "poll_interval_minutes = 5\n").unwrap();
         let r = CadenceConfig::load_or_default(&path);
-        assert!(matches!(r, Err(CadenceConfigError::BelowMinimum { got: 5 })));
+        assert!(matches!(
+            r,
+            Err(CadenceConfigError::BelowMinimum { got: 5 })
+        ));
     }
 }

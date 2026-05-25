@@ -86,11 +86,7 @@ pub fn stamp_document<S: Signer>(
     );
 
     // Validate invariant — should always pass since we just hashed.
-    let _ = AttestedDocument::new(
-        parsed.envelope.clone(),
-        stamp.clone(),
-        parsed.body.clone(),
-    )?;
+    let _ = AttestedDocument::new(parsed.envelope.clone(), stamp.clone(), parsed.body.clone())?;
 
     // Preserve any existing author `$signature` (Move 2): stamping
     // attests to an already-signed envelope; it does not replace the
@@ -139,11 +135,7 @@ fn canonical_short_hash(hash: &crate::domain::DocHash) -> String {
     hex::encode(&hash.as_bytes()[..4])
 }
 
-fn build_stamp_reason(
-    basename: Option<&str>,
-    headline: Option<&str>,
-    short_hash: &str,
-) -> String {
+fn build_stamp_reason(basename: Option<&str>, headline: Option<&str>, short_hash: &str) -> String {
     // macOS Touch ID dialogs render a single-line reason; keep it tight.
     // Format: `<headline> [<short_hash>] — <basename>`
     let head = headline.unwrap_or("Secretariat envelope");
@@ -287,7 +279,10 @@ mod tests {
 
         let parsed = parse_document(&fs::read_to_string(&path).unwrap()).unwrap();
         assert!(parsed.stamp.is_some());
-        assert_eq!(parsed.envelope.unwrap().recipient.handle.as_str(), "inbox:triage");
+        assert_eq!(
+            parsed.envelope.unwrap().recipient.handle.as_str(),
+            "inbox:triage"
+        );
         assert_eq!(&outcome.stamp.signer, signer.signer_did());
     }
 

@@ -99,10 +99,7 @@ fn install(binary: Option<PathBuf>, skip_desktop: bool, skip_code: bool) -> Resu
 fn resolve_binary(explicit: Option<PathBuf>) -> Result<PathBuf> {
     if let Some(p) = explicit {
         if !p.exists() {
-            return Err(anyhow!(
-                "--binary path does not exist: {}",
-                p.display()
-            ));
+            return Err(anyhow!("--binary path does not exist: {}", p.display()));
         }
         return Ok(p);
     }
@@ -261,7 +258,9 @@ fn wire_claude_code(binary: &std::path::Path) -> Result<()> {
             "-s",
             "user",
             "--",
-            binary.to_str().ok_or_else(|| anyhow!("binary path is not utf-8"))?,
+            binary
+                .to_str()
+                .ok_or_else(|| anyhow!("binary path is not utf-8"))?,
         ])
         .status()
         .with_context(|| format!("running `{} mcp add ...`", claude.display()))?;
@@ -305,8 +304,7 @@ fn write_atomic(path: &std::path::Path, value: &Value) -> Result<()> {
     let parent = path
         .parent()
         .ok_or_else(|| anyhow!("path has no parent: {}", path.display()))?;
-    std::fs::create_dir_all(parent)
-        .with_context(|| format!("creating {}", parent.display()))?;
+    std::fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
 
     let pretty = serde_json::to_string_pretty(value)?;
     let mut tmp = NamedTempFile::new_in(parent)

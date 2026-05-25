@@ -122,7 +122,11 @@ impl Did {
         Some(if segments.len() == 1 {
             format!("https://{}/.well-known/did.json", segments[0])
         } else {
-            format!("https://{}/{}/did.json", segments[0], segments[1..].join("/"))
+            format!(
+                "https://{}/{}/did.json",
+                segments[0],
+                segments[1..].join("/")
+            )
         })
     }
 

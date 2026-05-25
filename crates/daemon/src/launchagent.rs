@@ -75,8 +75,7 @@ pub async fn install_launchagent(paths: &KeyPaths) -> Result<()> {
 
     paths.ensure_dirs()?;
     let log_dir = paths.root.join("logs");
-    std::fs::create_dir_all(&log_dir)
-        .with_context(|| format!("creating {}", log_dir.display()))?;
+    std::fs::create_dir_all(&log_dir).with_context(|| format!("creating {}", log_dir.display()))?;
 
     // Resolve the actual `sec` binary path so the LaunchAgent doesn't depend
     // on inheriting the user's PATH.
@@ -111,10 +110,7 @@ pub async fn install_launchagent(paths: &KeyPaths) -> Result<()> {
         ));
     }
 
-    eprintln!(
-        "[sec] LaunchAgent installed at {}",
-        plist_path.display()
-    );
+    eprintln!("[sec] LaunchAgent installed at {}", plist_path.display());
     eprintln!("[sec]   binary:  {}", sec_binary.display());
     eprintln!("[sec]   stdout:  {}/daemon.stdout.log", log_dir.display());
     eprintln!("[sec]   stderr:  {}/daemon.stderr.log", log_dir.display());
@@ -153,7 +149,10 @@ pub async fn report_status(paths: &KeyPaths) -> Result<()> {
     let loaded = matches!(&loaded_output, Ok(o) if o.status.success());
 
     println!("LaunchAgent label:    {LAUNCHAGENT_LABEL}");
-    println!("plist installed:      {installed} ({})", plist_path.display());
+    println!(
+        "plist installed:      {installed} ({})",
+        plist_path.display()
+    );
     println!("loaded (launchctl):   {loaded}");
     if loaded {
         let output = loaded_output.unwrap();
@@ -170,12 +169,7 @@ pub async fn report_status(paths: &KeyPaths) -> Result<()> {
         println!("registered relays:    {count}");
         for r in state.iter() {
             let queue_count = r.queue_cursors.len();
-            let max_cursor = r
-                .queue_cursors
-                .iter()
-                .map(|q| q.cursor)
-                .max()
-                .unwrap_or(0);
+            let max_cursor = r.queue_cursors.iter().map(|q| q.cursor).max().unwrap_or(0);
             println!(
                 "  {} (queues={queue_count}, max_cursor={max_cursor})",
                 r.endpoint

@@ -21,7 +21,11 @@ use tracing::{info, warn};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 #[derive(Parser, Debug)]
-#[command(name = "sec-relay", version, about = "Secretariat relay — federation node, not a central server.")]
+#[command(
+    name = "sec-relay",
+    version,
+    about = "Secretariat relay — federation node, not a central server."
+)]
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,

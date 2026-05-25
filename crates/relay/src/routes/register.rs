@@ -76,11 +76,21 @@ pub async fn handler(
     // Decode the supplied pubkey.
     let pubkey_bytes = match codec::decode_ed25519_multibase(&req.pubkey_multibase) {
         Ok(b) => b,
-        Err(e) => return error(StatusCode::BAD_REQUEST, format!("invalid pubkey_multibase: {e}")),
+        Err(e) => {
+            return error(
+                StatusCode::BAD_REQUEST,
+                format!("invalid pubkey_multibase: {e}"),
+            )
+        }
     };
     let pubkey = match VerifyingKey::from_bytes(&pubkey_bytes) {
         Ok(p) => p,
-        Err(e) => return error(StatusCode::BAD_REQUEST, format!("invalid ed25519 pubkey: {e}")),
+        Err(e) => {
+            return error(
+                StatusCode::BAD_REQUEST,
+                format!("invalid ed25519 pubkey: {e}"),
+            )
+        }
     };
 
     // For did:key, ensure the supplied pubkey actually matches what's embedded.
@@ -93,7 +103,12 @@ pub async fn handler(
                     "did:key embedded pubkey does not match supplied pubkey".into(),
                 )
             }
-            None => return error(StatusCode::BAD_REQUEST, "could not extract did:key pubkey".into()),
+            None => {
+                return error(
+                    StatusCode::BAD_REQUEST,
+                    "could not extract did:key pubkey".into(),
+                )
+            }
         }
     }
 
@@ -109,7 +124,10 @@ pub async fn handler(
     to_verify.extend_from_slice(&pubkey_bytes);
 
     if pubkey.verify(&to_verify, &dalek_sig).is_err() {
-        return error(StatusCode::UNAUTHORIZED, "registration signature invalid".into());
+        return error(
+            StatusCode::UNAUTHORIZED,
+            "registration signature invalid".into(),
+        );
     }
 
     // Reject duplicate registration. v0 doesn't support key rotation here.
@@ -139,9 +157,9 @@ fn parse_ed25519_signature(s: &str) -> Result<[u8; 64], String> {
     let bytes = B64
         .decode(body)
         .map_err(|e| format!("signature base64 invalid: {e}"))?;
-    bytes.try_into().map_err(|v: Vec<u8>| {
-        format!("signature must decode to 64 bytes, got {}", v.len())
-    })
+    bytes
+        .try_into()
+        .map_err(|v: Vec<u8>| format!("signature must decode to 64 bytes, got {}", v.len()))
 }
 
 /// What a client must sign to register. Public so client adapters / tests can
