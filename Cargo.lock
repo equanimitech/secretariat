@@ -5074,6 +5074,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "dirs 5.0.1",
+ "ed25519-dalek",
  "rmcp",
  "schemars 1.2.1",
  "secretariat-core",

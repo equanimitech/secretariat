@@ -15,9 +15,17 @@
 //! # Body
 //! ```
 //!
-//! The frontmatter block is delimited by `^---\n` ... `\n---\n`. Either or both
-//! of `$envelope` / `$attestation` may be absent. The body starts immediately
-//! after the closing `---\n`.
+//! The frontmatter block is delimited by `^---\n` ... `\n---\n`. Any of
+//! `$envelope` / `$signature` / `$attestation` may be absent. The body
+//! starts immediately after the closing `---\n`.
+//!
+//! Three-layer trust per AGENTS.md hard rule #4 (substrate-for-themia
+//! Move 2, 2026-05-21):
+//!   - `$signature` — author signature (typically scribe agent;
+//!     optionally principal for manually-composed envelopes). Mandatory
+//!     on post-Move-2 envelopes; optional in the parser for legacy
+//!     back-compat.
+//!   - `$attestation` — principal's Touch-ID-gated stamp. Selective.
 //!
 //! ## Encrypted-body convention
 //!
@@ -34,7 +42,7 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::domain::{Envelope, Stamp};
+use crate::domain::{Envelope, EnvelopeSignature, Stamp};
 
 #[derive(Debug, Error)]
 pub enum MarkdownError {
@@ -48,11 +56,14 @@ pub enum MarkdownError {
 
 /// Parsed view of a markdown document, separated into frontmatter records
 /// and body. The `raw_frontmatter` field preserves the original block bytes
-/// for round-trip diagnostics — round-tripping through `embed_stamp`
+/// for round-trip diagnostics — round-tripping through `embed_frontmatter`
 /// re-emits canonical YAML, not the original.
 #[derive(Debug, Clone)]
 pub struct ParsedDocument {
     pub envelope: Option<Envelope>,
+    /// Author signature (substrate-for-themia Move 2). Distinct from the
+    /// principal's `stamp`; see module docs.
+    pub signature: Option<EnvelopeSignature>,
     pub stamp: Option<Stamp>,
     pub body: String,
     pub raw_frontmatter: Option<String>,
@@ -62,6 +73,8 @@ pub struct ParsedDocument {
 struct FrontmatterShape {
     #[serde(rename = "$envelope", default, skip_serializing_if = "Option::is_none")]
     envelope: Option<Envelope>,
+    #[serde(rename = "$signature", default, skip_serializing_if = "Option::is_none")]
+    signature: Option<EnvelopeSignature>,
     #[serde(rename = "$attestation", default, skip_serializing_if = "Option::is_none")]
     attestation: Option<Stamp>,
 }
@@ -80,6 +93,7 @@ pub fn parse_document(content: &str) -> Result<ParsedDocument, MarkdownError> {
     if !starts_with_delim(stripped) {
         return Ok(ParsedDocument {
             envelope: None,
+            signature: None,
             stamp: None,
             body: stripped.to_string(),
             raw_frontmatter: None,
@@ -104,26 +118,36 @@ pub fn parse_document(content: &str) -> Result<ParsedDocument, MarkdownError> {
 
     Ok(ParsedDocument {
         envelope: parsed.envelope,
+        signature: parsed.signature,
         stamp: parsed.attestation,
         body: after_close.to_string(),
         raw_frontmatter: Some(yaml_block.to_string()),
     })
 }
 
-/// Rebuild a markdown document with the given envelope and stamp embedded
-/// in frontmatter. The body is preserved byte-for-byte. If both records
-/// are `None`, returns the body unchanged (no frontmatter block written).
-pub fn embed_stamp(
+/// Rebuild a markdown document with the given envelope, author signature,
+/// and stamp embedded in frontmatter. The body is preserved byte-for-byte.
+/// If all three records are `None`, returns the body unchanged (no
+/// frontmatter block written).
+///
+/// Field emission order in the YAML: `$envelope`, `$signature`,
+/// `$attestation`. The two cryptographic blocks are independent — a
+/// signed-only envelope omits `$attestation`; a stamped envelope carries
+/// both (the principal stamps an already-signed envelope, never replaces
+/// the author's signature).
+pub fn embed_frontmatter(
     body: &str,
     envelope: Option<&Envelope>,
+    signature: Option<&EnvelopeSignature>,
     stamp: Option<&Stamp>,
 ) -> Result<String, MarkdownError> {
-    if envelope.is_none() && stamp.is_none() {
+    if envelope.is_none() && signature.is_none() && stamp.is_none() {
         return Ok(body.to_string());
     }
 
     let shape = FrontmatterShape {
         envelope: envelope.cloned(),
+        signature: signature.cloned(),
         attestation: stamp.cloned(),
     };
     let yaml = serde_yaml::to_string(&shape).map_err(|e| MarkdownError::YamlEmit(e.to_string()))?;
@@ -136,6 +160,18 @@ pub fn embed_stamp(
     // whitespace here. If the user wants a blank line between frontmatter and
     // body, they include it as a leading `\n` in the body itself.
     Ok(format!("{DELIM}\n{yaml}\n{DELIM}\n{body}"))
+}
+
+/// Back-compat shim for callers that only carry envelope + stamp. Equivalent
+/// to `embed_frontmatter(body, envelope, None, stamp)`. New call sites
+/// composing on the substrate-for-themia path SHOULD use
+/// [`embed_frontmatter`] directly so the `$signature` layer is explicit.
+pub fn embed_stamp(
+    body: &str,
+    envelope: Option<&Envelope>,
+    stamp: Option<&Stamp>,
+) -> Result<String, MarkdownError> {
+    embed_frontmatter(body, envelope, None, stamp)
 }
 
 // -- helpers ------------------------------------------------------------------
@@ -228,6 +264,7 @@ mod tests {
         let env = fixture_envelope();
         let yaml = serde_yaml::to_string(&FrontmatterShape {
             envelope: Some(env.clone()),
+            signature: None,
             attestation: None,
         })
         .unwrap();
