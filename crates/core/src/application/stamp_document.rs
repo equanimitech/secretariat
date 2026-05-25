@@ -16,7 +16,7 @@ use thiserror::Error;
 use crate::domain::{
     canonical_body_hash, AttestedDocument, DocumentInvariantError, Stamp, StampAct,
 };
-use crate::infrastructure::markdown::{embed_stamp, parse_document, MarkdownError};
+use crate::infrastructure::markdown::{embed_frontmatter, parse_document, MarkdownError};
 use crate::ports::{Signer, SignerError};
 
 #[derive(Debug, Error)]
@@ -92,7 +92,15 @@ pub fn stamp_document<S: Signer>(
         parsed.body.clone(),
     )?;
 
-    let new_content = embed_stamp(&parsed.body, parsed.envelope.as_ref(), Some(&stamp))?;
+    // Preserve any existing author `$signature` (Move 2): stamping
+    // attests to an already-signed envelope; it does not replace the
+    // author's signature.
+    let new_content = embed_frontmatter(
+        &parsed.body,
+        parsed.envelope.as_ref(),
+        parsed.signature.as_ref(),
+        Some(&stamp),
+    )?;
     fs::write(file_path, new_content).map_err(|e| StampError::Io {
         path: file_path.to_path_buf(),
         source: e,

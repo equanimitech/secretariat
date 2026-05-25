@@ -21,17 +21,43 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
+use ed25519_dalek::SigningKey;
 use rand::Rng;
 use thiserror::Error;
 
 use crate::domain::{
-    AgSource, Did, Envelope, EnvelopeBuilder, EnvelopeDepth, EnvelopeUrgency, Recipient,
+    AgSource, Did, Envelope, EnvelopeBuilder, EnvelopeDepth, EnvelopeSignature, EnvelopeUrgency,
+    Recipient, SignerRole,
 };
-use crate::infrastructure::markdown::{embed_stamp, MarkdownError};
+use crate::infrastructure::markdown::{embed_frontmatter, MarkdownError};
 use crate::infrastructure::preferences::CognitionPrefs;
 use crate::infrastructure::queue_dir::AliasMap;
 
 use super::ag_extract::{try_extract_ag, AgExtractOutcome, AuthorAgFields};
+
+/// Author's signing identity passed to [`compose_envelope`].
+/// Substrate-for-themia Move 2: every composed envelope carries an
+/// author signature; the principal stamps separately and selectively.
+///
+/// `signer_did` MUST be the DID derived from the public half of
+/// `signing_key`. The application layer enforces this at construction
+/// of the signer struct (callers loading from `KeyPaths` do); the
+/// domain layer trusts the pair.
+pub struct ComposeSigner<'a> {
+    pub signer_did: Did,
+    pub signer_role: SignerRole,
+    pub signing_key: &'a SigningKey,
+}
+
+impl<'a> ComposeSigner<'a> {
+    pub fn new(signer_did: Did, signer_role: SignerRole, signing_key: &'a SigningKey) -> Self {
+        Self {
+            signer_did,
+            signer_role,
+            signing_key,
+        }
+    }
+}
 
 #[derive(Debug, Error)]
 pub enum ComposeError {
@@ -67,12 +93,13 @@ pub struct ComposeRequest {
 
 pub fn compose_envelope(
     request: ComposeRequest,
+    signer: &ComposeSigner<'_>,
     template_path: &Path,
     root: &Path,
     aliases: &AliasMap,
     now: DateTime<Utc>,
 ) -> Result<PathBuf, ComposeError> {
-    compose_envelope_inner(request, template_path, root, aliases, now, None)
+    compose_envelope_inner(request, signer, template_path, root, aliases, now, None)
 }
 
 /// Inner write — same shape as `compose_envelope`, threads an explicit
@@ -80,6 +107,7 @@ pub fn compose_envelope(
 /// triplets without duplicating the file-IO body.
 fn compose_envelope_inner(
     request: ComposeRequest,
+    signer: &ComposeSigner<'_>,
     template_path: &Path,
     root: &Path,
     aliases: &AliasMap,
@@ -124,7 +152,20 @@ fn compose_envelope_inner(
             strip_existing_frontmatter(&body_owned)
         }
     };
-    let content = embed_stamp(body, Some(&envelope), None)?;
+
+    // Substrate-for-themia Move 2: sign the body at compose. The author
+    // signature is mandatory on every envelope on the wire; the
+    // principal's stamp comes later (selective). Both layers share the
+    // same canonical body hash, so a tamper invalidates both.
+    let signature = EnvelopeSignature::sign_body(
+        signer.signer_did.clone(),
+        signer.signer_role,
+        body,
+        now,
+        signer.signing_key,
+    );
+
+    let content = embed_frontmatter(body, Some(&envelope), Some(&signature), None)?;
 
     fs::write(&target_path, content).map_err(|e| ComposeError::Io {
         path: target_path.clone(),
@@ -166,6 +207,7 @@ fn build_envelope(req: &ComposeRequest) -> Envelope {
 /// correspondence path is not blocked by the cognition substrate.
 pub async fn compose_envelope_with_ag(
     request: ComposeRequest,
+    signer: &ComposeSigner<'_>,
     template_path: &Path,
     root: &Path,
     aliases: &AliasMap,
@@ -174,7 +216,7 @@ pub async fn compose_envelope_with_ag(
 ) -> Result<PathBuf, ComposeError> {
     let (request, ag_source) =
         enrich_with_ag(request, template_path, root, aliases, cognition_prefs).await?;
-    compose_envelope_inner(request, template_path, root, aliases, now, ag_source)
+    compose_envelope_inner(request, signer, template_path, root, aliases, now, ag_source)
 }
 
 async fn enrich_with_ag(
@@ -281,6 +323,18 @@ mod tests {
         Did::parse("did:web:marcelo.ballestiero.com").unwrap()
     }
 
+    fn fixture_signing_key() -> SigningKey {
+        SigningKey::from_bytes(&[0x42; 32])
+    }
+
+    /// Convenience for tests: a principal-role signer whose DID matches
+    /// the bytes of the key. Real callers should plumb the principal /
+    /// agent DID from the identity record + `KeyPaths`.
+    fn signer<'a>(key: &'a SigningKey) -> ComposeSigner<'a> {
+        let did = Did::from_ed25519_public_key(&key.verifying_key().to_bytes());
+        ComposeSigner::new(did, SignerRole::Principal, key)
+    }
+
     #[test]
     fn composes_to_peer_queue_envelopes_day_shard() {
         let dir = TempDir::new().unwrap();
@@ -307,7 +361,9 @@ mod tests {
         };
 
         let now = Utc.with_ymd_and_hms(2026, 4, 30, 14, 25, 0).unwrap();
-        let path = compose_envelope(req, &template, root, &aliases, now).unwrap();
+        let key = fixture_signing_key();
+        let sgn = signer(&key);
+        let path = compose_envelope(req, &sgn, &template, root, &aliases, now).unwrap();
 
         // Lives under <root>/marcelo/channels/inbox/default/envelopes/YYYY/MM/DD/.
         // No `_drafts/` intermediate — substrate-for-themia Move 4.
@@ -324,9 +380,59 @@ mod tests {
         let parsed = parse_document(&fs::read_to_string(&path).unwrap()).unwrap();
         assert!(parsed.envelope.is_some());
         assert!(parsed.stamp.is_none());
+        // Substrate-for-themia Move 2: author signature mandatory at
+        // compose. Verify it survives round-trip + still verifies under
+        // the signing key.
+        let sig = parsed.signature.as_ref().expect("$signature must be present");
+        assert_eq!(sig.signer_role, SignerRole::Principal);
+        assert!(sig.verify_body(&parsed.body, &key.verifying_key()));
         // Absence of `delivered:` is the draft signal — never set at compose.
         assert!(parsed.envelope.as_ref().unwrap().delivered.is_none());
         assert!(parsed.body.contains("Body."));
+    }
+
+    #[test]
+    fn compose_with_agent_role_signs_with_agent_did() {
+        // The principal's scribe (agent role) signs at compose. The
+        // resulting envelope's `$signature` carries the agent's DID, not
+        // the principal's, so receivers can distinguish.
+        let dir = TempDir::new().unwrap();
+        let template = dir.path().join("template.md");
+        fs::write(&template, "# Agent\n\nDraft.\n").unwrap();
+        let root = dir.path();
+        let aliases = AliasMap::new(rafa_did());
+
+        let req = ComposeRequest {
+            from: rafa_did(),
+            recipient: Recipient::new(
+                rafa_did(),
+                QueueHandle::parse("journal").unwrap(),
+            ),
+            depth: EnvelopeDepth::Gross,
+            urgency: EnvelopeUrgency::Whenever,
+            source: "agent-test".into(),
+            cadence_hint: None,
+            body: None,
+            title: None,
+            lede: None,
+            summary: None,
+        };
+
+        // Agent key, distinct from principal's DID — a real scribe.
+        let agent_key = SigningKey::from_bytes(&[0xAB; 32]);
+        let agent_did = Did::from_ed25519_public_key(&agent_key.verifying_key().to_bytes());
+        let sgn = ComposeSigner::new(agent_did.clone(), SignerRole::Agent, &agent_key);
+
+        let now = Utc.with_ymd_and_hms(2026, 5, 25, 14, 30, 0).unwrap();
+        let path = compose_envelope(req, &sgn, &template, root, &aliases, now).unwrap();
+
+        let parsed = parse_document(&fs::read_to_string(&path).unwrap()).unwrap();
+        let sig = parsed.signature.as_ref().expect("agent signature present");
+        assert_eq!(sig.signer, agent_did);
+        assert_eq!(sig.signer_role, SignerRole::Agent);
+        assert!(sig.verify_body(&parsed.body, &agent_key.verifying_key()));
+        // Principal's stamp: none (selective; comes later).
+        assert!(parsed.stamp.is_none());
     }
 
     #[test]
@@ -357,7 +463,9 @@ mod tests {
         };
 
         let now = Utc.with_ymd_and_hms(2026, 4, 30, 9, 0, 0).unwrap();
-        let path = compose_envelope(req, &template, root, &aliases, now).unwrap();
+        let key = fixture_signing_key();
+        let sgn = signer(&key);
+        let path = compose_envelope(req, &sgn, &template, root, &aliases, now).unwrap();
         assert_eq!(
             path.parent().unwrap(),
             root.join("_self/channels/inbox/default/envelopes/2026/04/30"),
@@ -402,7 +510,9 @@ mod tests {
         };
 
         let now = Utc.with_ymd_and_hms(2026, 5, 18, 12, 0, 0).unwrap();
-        let path = compose_envelope(req, &global_template, root, &aliases, now).unwrap();
+        let key = fixture_signing_key();
+        let sgn = signer(&key);
+        let path = compose_envelope(req, &sgn, &global_template, root, &aliases, now).unwrap();
         let parsed = parse_document(&fs::read_to_string(&path).unwrap()).unwrap();
         assert!(parsed.body.contains("Channel-specific body"));
         assert!(!parsed.body.contains("Global body"));
@@ -437,7 +547,9 @@ mod tests {
         };
 
         let now = Utc.with_ymd_and_hms(2026, 4, 30, 9, 0, 0).unwrap();
-        let path = compose_envelope(req, &template, root, &aliases, now).unwrap();
+        let key = fixture_signing_key();
+        let sgn = signer(&key);
+        let path = compose_envelope(req, &sgn, &template, root, &aliases, now).unwrap();
 
         let content = fs::read_to_string(&path).unwrap();
         assert!(!content.contains("foo: bar"));

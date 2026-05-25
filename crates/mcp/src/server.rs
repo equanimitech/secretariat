@@ -278,12 +278,27 @@ pub struct ComposeParams {
     /// Optional multi-sentence summary (AG deepening pathway). See `title`.
     #[serde(default)]
     pub summary: Option<String>,
+    /// Optional explicit authorized agent (by `name` from
+    /// `authorized_agents`). When omitted, the first scribe in the
+    /// principal's `authorized_agents` signs. When the principal has no
+    /// scribe configured, the principal's own key signs and
+    /// `signer_role: principal` is recorded on the envelope's
+    /// `$signature`. Substrate-for-themia Move 2.
+    #[serde(default)]
+    pub agent: Option<String>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct ComposeOutput {
     pub file_path: String,
     pub note: String,
+    /// DID of the key that signed this envelope's `$signature` block.
+    /// Receivers verify this against the relevant `authorized_agents`
+    /// list (for agents) or directly resolve the DID (for principals).
+    pub signed_by: String,
+    /// `agent` or `principal`. Hint for receiver-side UI; the
+    /// cryptographic check still relies on `signed_by`.
+    pub signer_role: String,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -789,9 +804,21 @@ impl SecretariatServer {
         description = "Compose a draft envelope to a recipient and write it directly \
         into the recipient queue's `envelopes/YYYY/MM/DD/` day-shard. The envelope's \
         frontmatter omits `delivered:` — absence is the substrate's draft signal. \
-        The principal stamps it separately (biometric-gated, never via this tool); \
-        the daemon's envelope watcher then federates it and writes \
-        `delivered: <relay-seq-id>` in place on success. \
+        \
+        **Substrate-for-themia Move 2: the envelope is signed at compose.** The \
+        author signature (`$signature` frontmatter block) is mandatory; by default \
+        the first scribe in the principal's `authorized_agents` signs (the scribe's \
+        own DID + key, not the principal's). Pass `agent: <name>` to disambiguate \
+        among multiple scribes. If no scribe is configured, the principal's own \
+        key signs and `signer_role: principal` is recorded — substrate works without \
+        an agent, ceremony is just heavier. \
+        \
+        The principal STAMPS later, selectively (biometric-gated, separate `stamp` \
+        tool, never via this tool). Stamping adds `$attestation` alongside the \
+        author signature; they are independent layers and a stamped envelope \
+        carries both. The daemon's envelope watcher then federates the envelope \
+        and writes `delivered: <relay-seq-id>` in place on success. \
+        \
         `to` must be a DID (`did:web:...` / `did:key:...`). \
         \
         AG fields (`title` / `lede` / `summary`) are author-attributed when you \
@@ -834,7 +861,8 @@ impl SecretariatServer {
 
         let self_did = load_principal_did(&self.paths)?;
         let aliases = secretariat_core::infrastructure::queue_dir::AliasMap::load(
-            self_did, &self.paths,
+            self_did.clone(),
+            &self.paths,
         )
         .map_err(|e| invalid_request(format!("loading alias map: {e}")))?;
         let prefs = load_or_migrate_preferences(
@@ -843,8 +871,22 @@ impl SecretariatServer {
             &self.paths.legacy_cadence,
         )
         .unwrap_or_default();
+
+        // Substrate-for-themia Move 2: resolve the signing context
+        // (agent by default, principal fallback).
+        let signing_ctx =
+            resolve_compose_signer(&self.paths, &self_did, params.agent.as_deref())?;
+        let signed_by = signing_ctx.signer_did.as_str().to_string();
+        let signer_role_str = signing_ctx.signer_role.as_str().to_string();
+        let signer = secretariat_core::application::ComposeSigner::new(
+            signing_ctx.signer_did,
+            signing_ctx.signer_role,
+            &signing_ctx.signing_key,
+        );
+
         let path = compose_envelope_with_ag(
             req,
+            &signer,
             &self.paths.template,
             &self.paths.root,
             &aliases,
@@ -854,17 +896,25 @@ impl SecretariatServer {
         .await
         .map_err(|e| invalid_request(format!("compose failed: {e}")))?;
 
-        info!(file = %path.display(), "composed envelope via MCP");
+        info!(
+            file = %path.display(),
+            signed_by = %signed_by,
+            signer_role = %signer_role_str,
+            "composed envelope via MCP",
+        );
 
         Ok(Json(ComposeOutput {
             file_path: path.display().to_string(),
             note: "Draft written into the queue's `envelopes/YYYY/MM/DD/` tree. \
-                   The envelope frontmatter omits `delivered:` (draft signal). \
-                   Show the body to the principal, get explicit confirmation, \
-                   then stamp via the `stamp` tool (biometric-gated). The daemon \
-                   picks up the file, federates it, and writes `delivered:` \
-                   in-place on success."
+                   The envelope frontmatter carries `$signature` (author, mandatory) \
+                   and omits `delivered:` (draft signal) and `$attestation` (stamp \
+                   is selective). Show the body to the principal, get explicit \
+                   confirmation, then stamp via the `stamp` tool (biometric-gated). \
+                   The daemon picks up the file, federates it, and writes \
+                   `delivered:` in-place on success."
                 .to_string(),
+            signed_by,
+            signer_role: signer_role_str,
         }))
     }
 
@@ -2262,6 +2312,80 @@ fn load_principal_did(paths: &KeyPaths) -> Result<Did, ErrorData> {
             paths.identity_md.display()
         ))
     })
+}
+
+/// Substrate-for-themia Move 2: resolve the calling agent's key for
+/// compose signing. Prefers an agent named by `agent_name`; falls back
+/// to the first scribe in `authorized_agents`; ultimate fallback is the
+/// principal's own key + `signer_role: principal`.
+struct ResolvedComposeSigner {
+    signer_did: Did,
+    signer_role: secretariat_core::domain::SignerRole,
+    signing_key: ed25519_dalek::SigningKey,
+}
+
+fn resolve_compose_signer(
+    paths: &KeyPaths,
+    self_did: &Did,
+    agent_name: Option<&str>,
+) -> Result<ResolvedComposeSigner, ErrorData> {
+    use secretariat_core::domain::{AgentRole, SignerRole};
+    use secretariat_core::infrastructure::identity_store::load_identity;
+
+    let identity = load_identity(&paths.identity_md)
+        .map_err(|e| invalid_request(format!("loading identity: {e}")))?
+        .ok_or_else(|| {
+            invalid_request(format!(
+                "no identity at {} — run `sec init` first",
+                paths.identity_md.display()
+            ))
+        })?;
+
+    let chosen = match agent_name {
+        Some(name) => Some(
+            identity
+                .authorized_agents
+                .iter()
+                .find(|a| a.name.as_str() == name)
+                .ok_or_else(|| {
+                    invalid_request(format!(
+                        "no authorized agent named `{name}` — \
+                         check `sec agent list`"
+                    ))
+                })?,
+        ),
+        None => identity
+            .authorized_agents
+            .iter()
+            .find(|a| a.role == AgentRole::Scribe),
+    };
+
+    match chosen {
+        Some(agent) => {
+            let key_path = paths.agent_signing_key_path(agent.name.as_str());
+            let key = load_signing_key(&key_path).map_err(|e| {
+                invalid_request(format!(
+                    "loading agent signing key at {}: {e}",
+                    key_path.display()
+                ))
+            })?;
+            Ok(ResolvedComposeSigner {
+                signer_did: agent.did.clone(),
+                signer_role: SignerRole::Agent,
+                signing_key: key,
+            })
+        }
+        None => {
+            let key = load_signing_key(&paths.signing_key).map_err(|e| {
+                invalid_request(format!("loading principal signing key: {e}"))
+            })?;
+            Ok(ResolvedComposeSigner {
+                signer_did: self_did.clone(),
+                signer_role: SignerRole::Principal,
+                signing_key: key,
+            })
+        }
+    }
 }
 
 fn first_registered_relay(path: &std::path::Path) -> Result<String, ErrorData> {

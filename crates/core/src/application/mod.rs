@@ -28,7 +28,7 @@ pub use channels_ops::{
 pub use agent_ops::{add_agent, list_agents, remove_agent, rotate_agent, AgentOpsError};
 pub use org_ops::{create_org, delete_org, list_orgs, show_org, OrgOpsError};
 pub use compose_envelope::{
-    compose_envelope, compose_envelope_with_ag, ComposeError, ComposeRequest,
+    compose_envelope, compose_envelope_with_ag, ComposeError, ComposeRequest, ComposeSigner,
 };
 pub use contract_ops::{
     get_channel_contract, get_org_contract, resolve_channel_contract, set_channel_contract,
@@ -58,4 +58,7 @@ pub use launch_channel::{launch_channel, launch_channel_with_binding, LaunchChan
 pub use review_queue::{list_drafts_queue, list_local_queues, list_review_queue};
 pub use sync::{sync_now, RelaySyncReport, SyncError, SyncOutcome};
 pub use stamp_document::{stamp_document, StampError, StampOutcome};
-pub use verify_document::{verify_document, VerifyError, VerifyOutcome};
+pub use verify_document::{
+    verify_document, verify_document_layered, LayeredVerifyOutcome, SignatureOutcome,
+    VerifyError, VerifyOutcome,
+};

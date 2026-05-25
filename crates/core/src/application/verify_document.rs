@@ -1,8 +1,25 @@
-//! Use case: verify a stamped markdown document.
+//! Use case: verify a markdown document carrying any combination of the
+//! three trust-layer blocks (substrate-for-themia Move 2, 2026-05-21):
 //!
-//! Reads the file, parses frontmatter, checks the hash invariant via the
-//! aggregate, resolves the signer's DID, and verifies the ed25519 signature.
-//! Returns a [`VerifyOutcome`] describing the result.
+//!   - `$signature` — author's ed25519 signature over the canonical body.
+//!     Mandatory on post-Move-2 envelopes; legacy back-compat permitted.
+//!   - `$attestation` — principal's Touch-ID-gated stamp. Selective.
+//!   - (Future) counter-stamps for multi-party process-verbaux.
+//!
+//! Reads the file, parses frontmatter, layer-checks the hash invariant
+//! via [`AttestedDocument`] (for the stamp) and direct hash comparison
+//! (for the author signature), resolves DIDs, and verifies ed25519
+//! signatures. Returns a [`VerifyOutcome`] describing the stamp result,
+//! and a sibling [`SignatureOutcome`] describing the author signature.
+//!
+//! **Agent-authored signatures.** When `$signature.signer_role == agent`
+//! and the signer DID is NOT the local principal's DID, the layered
+//! verifier returns [`SignatureOutcome::OkUnverifiedAgent`] — the
+//! cryptographic check against the embedded `did:key` succeeds but the
+//! agent-manifest cache lookup (verifier chain Phase C of the pitch)
+//! is not wired in this slice. A separate slice consults the receiver-
+//! cached `agentManifest` envelopes to confirm the principal authorized
+//! the agent.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -12,7 +29,8 @@ use ed25519_dalek::{Signature as DalekSignature, Verifier, VerifyingKey};
 use thiserror::Error;
 
 use crate::domain::{
-    AttestedDocument, Did, DocHash, DocumentInvariantError, StampAct,
+    AttestedDocument, Did, DocHash, DocumentInvariantError, EnvelopeSignature, SignerRole,
+    StampAct,
 };
 use crate::infrastructure::markdown::{parse_document, MarkdownError};
 use crate::ports::{DidResolutionError, DidResolver};
@@ -48,6 +66,52 @@ pub enum VerifyOutcome {
     SignatureInvalid {
         signer: Did,
     },
+}
+
+/// Per-layer outcome for the author signature (`$signature`).
+/// Substrate-for-themia Move 2.
+#[derive(Debug, Clone)]
+pub enum SignatureOutcome {
+    /// `$signature` block absent. Legacy back-compat; post-Move-2 wires
+    /// SHOULD reject this for channels that demand author provenance.
+    None,
+    /// Body hash differs from the signed-over hash — body modified after
+    /// signing (or `$signature.docHash` was tampered).
+    Tampered {
+        claimed_hash: DocHash,
+        computed_hash: DocHash,
+    },
+    /// Signer DID does not resolve to a verifying key.
+    SignerUnresolvable {
+        signer: Did,
+        cause: DidResolutionError,
+    },
+    /// Signature did not verify under any known key for the signer DID.
+    Invalid { signer: Did },
+    /// Cryptographic check OK; signer is the recipient's own DID (or a
+    /// known principal). Receiver may trust under their policy.
+    Ok {
+        signer: Did,
+        signer_role: SignerRole,
+        signed_at: DateTime<Utc>,
+    },
+    /// Cryptographic check OK against the signer's embedded `did:key`,
+    /// BUT the signer claims `agent` role and the receiver has not yet
+    /// confirmed the principal authorized this agent (no `agentManifest`
+    /// cache lookup wired this slice). Phase C wires this off.
+    OkUnverifiedAgent {
+        signer: Did,
+        signed_at: DateTime<Utc>,
+    },
+}
+
+/// Layered verify result: author signature + principal stamp, each
+/// reported independently. Substrate-for-themia Move 2 — see module
+/// docs for the trust model.
+#[derive(Debug, Clone)]
+pub struct LayeredVerifyOutcome {
+    pub signature: SignatureOutcome,
+    pub stamp: VerifyOutcome,
 }
 
 pub fn verify_document<R: DidResolver>(
@@ -106,6 +170,161 @@ pub fn verify_document<R: DidResolver>(
     Ok(VerifyOutcome::SignatureInvalid {
         signer: stamp.signer.clone(),
     })
+}
+
+/// Layered verifier — checks both the author `$signature` and the
+/// principal `$attestation` independently. Use this in receiver-side
+/// code (UI badges, daemon inbox-write) where the substrate-for-themia
+/// trust model needs per-layer reporting.
+pub fn verify_document_layered<R: DidResolver>(
+    file_path: &Path,
+    resolver: &R,
+    local_principal_did: Option<&Did>,
+) -> Result<LayeredVerifyOutcome, VerifyError> {
+    let raw = fs::read_to_string(file_path).map_err(|e| VerifyError::Io {
+        path: file_path.to_path_buf(),
+        source: e,
+    })?;
+    let parsed = parse_document(&raw)?;
+    let body = parsed.body.clone();
+
+    let signature_outcome = verify_signature_layer(
+        parsed.signature.as_ref(),
+        &body,
+        resolver,
+        local_principal_did,
+    );
+
+    // Stamp layer — reuse the legacy path by writing a minimal
+    // ParsedDocument-like view. The aggregate enforces the body-hash
+    // invariant for the stamp; we don't want to re-read the file.
+    let stamp_outcome = match parsed.stamp {
+        None => VerifyOutcome::Unsigned,
+        Some(stamp) => {
+            match AttestedDocument::new(parsed.envelope, stamp.clone(), body) {
+                Err(DocumentInvariantError::HashMismatch { claimed, computed }) => {
+                    VerifyOutcome::Tampered {
+                        claimed_hash: claimed,
+                        computed_hash: computed,
+                    }
+                }
+                Ok(aggregate) => match resolver.resolve(&stamp.signer) {
+                    Err(e) => VerifyOutcome::SignerUnresolvable {
+                        signer: stamp.signer.clone(),
+                        cause: e,
+                    },
+                    Ok(resolved) => {
+                        let dalek_sig =
+                            DalekSignature::from_bytes(stamp.signature.as_bytes());
+                        let payload = aggregate.signed_payload();
+                        let mut verified = false;
+                        for key_bytes in &resolved.stamp_public_keys {
+                            let Ok(vk) = VerifyingKey::from_bytes(key_bytes) else {
+                                continue;
+                            };
+                            if vk.verify(payload, &dalek_sig).is_ok() {
+                                verified = true;
+                                break;
+                            }
+                        }
+                        if verified {
+                            VerifyOutcome::Verified {
+                                signer: stamp.signer.clone(),
+                                stamped_at: stamp.stamped_at,
+                                act: stamp.act,
+                            }
+                        } else {
+                            VerifyOutcome::SignatureInvalid {
+                                signer: stamp.signer.clone(),
+                            }
+                        }
+                    }
+                },
+            }
+        }
+    };
+
+    Ok(LayeredVerifyOutcome {
+        signature: signature_outcome,
+        stamp: stamp_outcome,
+    })
+}
+
+fn verify_signature_layer<R: DidResolver>(
+    sig: Option<&EnvelopeSignature>,
+    body: &str,
+    resolver: &R,
+    local_principal_did: Option<&Did>,
+) -> SignatureOutcome {
+    let sig = match sig {
+        None => return SignatureOutcome::None,
+        Some(s) => s,
+    };
+
+    // Body-hash invariant first (cheap, no IO needed).
+    let computed = crate::domain::canonical_body_hash(body);
+    if computed != sig.doc_hash {
+        return SignatureOutcome::Tampered {
+            claimed_hash: sig.doc_hash.clone(),
+            computed_hash: computed,
+        };
+    }
+
+    let resolved = match resolver.resolve(&sig.signer) {
+        Ok(r) => r,
+        Err(e) => {
+            return SignatureOutcome::SignerUnresolvable {
+                signer: sig.signer.clone(),
+                cause: e,
+            };
+        }
+    };
+
+    let dalek_sig = DalekSignature::from_bytes(sig.signature.as_bytes());
+    let payload = sig.doc_hash.as_bytes();
+    let mut verified = false;
+    for key_bytes in &resolved.stamp_public_keys {
+        let Ok(vk) = VerifyingKey::from_bytes(key_bytes) else {
+            continue;
+        };
+        if vk.verify(payload, &dalek_sig).is_ok() {
+            verified = true;
+            break;
+        }
+    }
+    if !verified {
+        return SignatureOutcome::Invalid {
+            signer: sig.signer.clone(),
+        };
+    }
+
+    // Agent-role + non-self signer: defer to the agent-manifest chain
+    // (Phase C — separate slice). Until then, surface the gap explicitly
+    // rather than silently trusting.
+    match sig.signer_role {
+        SignerRole::Agent => {
+            if local_principal_did
+                .map(|p| p == &sig.signer)
+                .unwrap_or(false)
+            {
+                SignatureOutcome::Ok {
+                    signer: sig.signer.clone(),
+                    signer_role: sig.signer_role,
+                    signed_at: sig.signed_at,
+                }
+            } else {
+                SignatureOutcome::OkUnverifiedAgent {
+                    signer: sig.signer.clone(),
+                    signed_at: sig.signed_at,
+                }
+            }
+        }
+        SignerRole::Principal => SignatureOutcome::Ok {
+            signer: sig.signer.clone(),
+            signer_role: sig.signer_role,
+            signed_at: sig.signed_at,
+        },
+    }
 }
 
 #[cfg(test)]
