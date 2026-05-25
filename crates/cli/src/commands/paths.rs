@@ -15,7 +15,7 @@ pub fn key_paths() -> Result<KeyPaths> {
     KeyPaths::discover().context("resolving ~/.secretariat")
 }
 
-/// Read the principal's DID from `<self_root>/identity.md`.
+/// Read the principal's DID from `<root>/identity.md`.
 pub fn load_did(paths: &KeyPaths) -> Result<Did> {
     let identity = load_identity(&paths.identity_md)
         .map_err(|e| anyhow!("loading identity: {e}"))?

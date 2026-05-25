@@ -34,7 +34,7 @@ pub struct Args {
     pub handle: String,
 
     /// Org alias scoping the channel. Omit for personal channels under
-    /// `~/.secretariat/_self/channels/`.
+    /// `~/.secretariat/channels/`.
     #[arg(long)]
     pub org: Option<String>,
 

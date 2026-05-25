@@ -57,7 +57,7 @@ pub const CONTRACT_FILENAME: &str = "contract.local.md";
 /// v0.3 does not yet drive runtime validation against the schema.
 const CONTRACT_TYPE: &str = "tech.equanimi.secretariat.channelContract";
 
-/// Built-in fallback when `~/.secretariat/_self/contract-stub.md`
+/// Built-in fallback when `~/.secretariat/contract-stub.md`
 /// is absent. The principal can override this by writing their own
 /// stub there; `save_stub_if_absent` reads it.
 ///
@@ -128,7 +128,7 @@ pub fn save_contract(
 /// Write the stub `contract.local.md` that ships with a freshly-created
 /// channel: empty frontmatter (no overrides) + a short body. Body is
 /// the principal's own `contract-stub.md` (typically at
-/// `<self_root>/contract-stub.md`) when `override_stub` points at an
+/// `<root>/contract-stub.md`) when `override_stub` points at an
 /// existing file; otherwise falls back to [`BUILTIN_STUB_BODY`].
 ///
 /// No-op if the contract file already exists — auto-scaffold is

@@ -5,7 +5,7 @@
 //! channel lives inside that org's tree at
 //! `~/.secretariat/orgs/<alias>/channels/<segs>/`. Without `--org` it
 //! lives in the principal's personal tree at
-//! `~/.secretariat/_self/channels/<segs>/`.
+//! `~/.secretariat/channels/<segs>/`.
 
 use std::path::PathBuf;
 

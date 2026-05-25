@@ -271,10 +271,10 @@ mod tests {
     #[test]
     fn list_inbox_walks_alias_namespace_segments_tree() {
         let root = TempDir::new().unwrap();
-        // New layout: <root>/_self/inbox/default/envelopes/2026/05/12/a.md
+        // New layout: <root>/channels/inbox/default/envelopes/2026/05/12/a.md
         let nested = root
             .path()
-            .join("_self/inbox/default/envelopes/2026/05/12");
+            .join("channels/inbox/default/envelopes/2026/05/12");
         std::fs::create_dir_all(&nested).unwrap();
         let env =
             EnvelopeBuilder::new(rafa_did(), self_recipient()).build();
@@ -298,9 +298,9 @@ mod tests {
         let body = "active\n";
         let active_dir = root
             .path()
-            .join("_self/inbox/default/envelopes/2026/05/12");
-        let deferred_dir = root.path().join("_self/inbox/default/deferred");
-        let archived_dir = root.path().join("_self/inbox/default/archived");
+            .join("channels/inbox/default/envelopes/2026/05/12");
+        let deferred_dir = root.path().join("channels/inbox/default/deferred");
+        let archived_dir = root.path().join("channels/inbox/default/archived");
         for dir in [&active_dir, &deferred_dir, &archived_dir] {
             std::fs::create_dir_all(dir).unwrap();
         }

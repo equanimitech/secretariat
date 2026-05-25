@@ -1,55 +1,50 @@
 //! Resolver for `(Recipient) → on-disk queue directory`.
 //!
 //! Every envelope is addressed to a queue identified by `(to, handle)`.
-//! This module decides where that queue lives on disk. The layout is
-//! uniform across queue-owner kinds (self, org):
+//! This module decides where that queue lives on disk. Substrate-for-
+//! themia Move 3c (`docs/pitches/2026-05-21-substrate-for-themia.md`,
+//! element §2) collapses the previous three-segment layout
+//! (`<alias>/channels/<segs>/`) into two channel-tree roots:
 //!
 //! ```text
 //! ~/.secretariat/
-//!   <alias-of-to>/channels/<segments>/
-//!     envelopes/YYYY/MM/DD/*.md      (every envelope — draft, stamped, received, delivered)
-//!     _ciphertext/                    (encrypted-at-rest blobs)
+//!   channels/<segments>/                     self-owned (recipient.owner == self_did)
+//!     envelopes/YYYY/MM/DD/*.md
+//!     _ciphertext/
+//!   orgs/<alias>/channels/<segments>/        org-scoped (recipient.owner == org_did)
+//!     envelopes/YYYY/MM/DD/*.md
+//!     _ciphertext/
 //! ```
 //!
-//! Substrate-for-themia Move 4 (2026-05-21, per
-//! `docs/pitches/2026-05-21-substrate-for-themia.md`): the `_drafts/`
-//! and `sent/` substrate-staging subdirs are gone. There is one
-//! envelope state and one filesystem location: every envelope —
-//! draft, stamped, received, federated — lives at
-//! `<queue>/envelopes/YYYY/MM/DD/<rkey>.md`. Delivery state is now
-//! the envelope frontmatter's `delivered:` field: absent = draft /
-//! undelivered, `<relay-seq-id>` = federated, `local` = self-owned
-//! channel that never federates. The daemon's envelope watcher
-//! reacts to new files lacking `delivered:` and writes the field
-//! post-federation.
+//! There is no `_self/` wrapper anymore; the principal's own channels
+//! live straight under `<root>/channels/`. Org channels are wrapped by
+//! `orgs/<alias>/`.
 //!
-//! (Earlier collapses: v0.9 drop-outbox replaced the v0.8 `outbox/`
-//! tree with a `.draft.md` filename suffix sibling in `envelopes/`;
-//! this Move 4 supersedes both — the filename-suffix scheme is gone,
-//! the frontmatter is the source of truth.)
+//! Per Move 4: there is one envelope state and one filesystem location.
+//! Every envelope — draft, stamped, received, federated — lives at
+//! `<queue>/envelopes/YYYY/MM/DD/<rkey>.md`. Delivery state is the
+//! envelope frontmatter's `delivered:` field.
 //!
 //! Examples:
 //!
-//! - Local triage capture (`to == self_did`, `handle == triage`)
-//!   → `_self/channels/triage/`
+//! - Local journal capture (`to == self_did`, `handle == journal`)
+//!   → `<root>/channels/journal/`
 //! - Themia channel (`to == themia_did`, `handle == dommage-corporel:paris-cohort`)
-//!   → `themia.pro/channels/dommage-corporel/paris-cohort/`
+//!   → `<root>/orgs/themia.pro/channels/dommage-corporel/paris-cohort/`
 //!
 //! # Aliases
 //!
-//! Aliases are filesystem ergonomics — short, human-readable directory
-//! names that map to canonical DIDs. The canonical address is always
-//! the DID; the alias is just a friendlier directory name on disk.
+//! Aliases are filesystem ergonomics for non-self DIDs — short,
+//! human-readable directory names that map to canonical org DIDs.
+//! The canonical address is always the DID; the alias is just a
+//! friendlier directory name on disk.
 //!
-//! - `_self` for the principal's own DID (always reserved).
 //! - Org aliases: `OrgAlias` (DNS-label-shaped, e.g. `themia.pro`).
-//! - Peer aliases: contact display-name slug (`marcelo`,
-//!   `christophe`) for known peers; sanitized DID fallback for
-//!   unknown peers (`did_key_z6mk…`).
+//! - Unknown DIDs: sanitized DID fallback under `orgs/` (still wrapped).
 //!
 //! The mapping is principal-local; never published. Aliases can change
-//! (rename a contact) without invalidating envelopes — the wire
-//! address stays `(to-DID, handle)`.
+//! without invalidating envelopes — the wire address stays
+//! `(to-DID, handle)`.
 
 use crate::domain::{Did, Recipient};
 use crate::infrastructure::keys::KeyPaths;
@@ -57,9 +52,6 @@ use crate::infrastructure::org_store::{list_org_dirs, OrgStoreError};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
-
-/// Reserved alias for the principal's own DID.
-pub const SELF_ALIAS: &str = "_self";
 
 /// Principal-local mapping from DID → alias-on-disk. Build with
 /// [`AliasMap::new`] then `insert` for each known peer/org, or use
@@ -108,15 +100,19 @@ impl AliasMap {
         Ok(map)
     }
 
-    /// Resolve a DID to its on-disk alias. Self always returns
-    /// `_self`; known peers/orgs return their registered alias;
-    /// unknown DIDs get a sanitized fallback that's safe across
-    /// filesystems but ugly (matches the `did:key:z6Mk…` form with
-    /// `:` and `/` replaced).
+    /// True when the given DID is the principal's own. Used by
+    /// [`queue_dir`] to decide which root to anchor against (self
+    /// channels live at `<root>/channels/`; org channels at
+    /// `<root>/orgs/<alias>/channels/`).
+    pub fn is_self(&self, did: &Did) -> bool {
+        did == &self.self_did
+    }
+
+    /// Resolve a non-self DID to its registered alias, or fall back
+    /// to a sanitized DID. The result is always intended for use
+    /// under `<root>/orgs/`; callers must NOT pass the principal's
+    /// own DID — use [`AliasMap::is_self`] to branch upstream.
     pub fn alias_for(&self, did: &Did) -> String {
-        if did == &self.self_did {
-            return SELF_ALIAS.to_string();
-        }
         if let Some(alias) = self.by_did.get(did.as_str()) {
             return alias.clone();
         }
@@ -138,18 +134,22 @@ pub enum AliasMapError {
 /// principal's substrate root. The result is the directory that
 /// *contains* `envelopes/` and `_ciphertext/` for this queue.
 ///
-/// Path shape: `<root>/<alias>/channels/<segs>/`. Two kinds of
-/// `<alias>` — `_self` and `<org-alias>` — sit at the same depth with
-/// `channels/` between alias and handle segments.
+/// Two channel-tree roots (Move 3c — substrate-for-themia, element §2):
+///
+/// - `recipient.owner == self_did` → `<root>/channels/<segs>/`
+/// - else (org) → `<root>/orgs/<alias>/channels/<segs>/`
 ///
 /// Pure compute — no IO. Path is not guaranteed to exist on disk;
 /// callers that need it materialized should `create_dir_all` against
 /// the result (or against [`envelopes_dir`] / [`ciphertext_dir`]
 /// which compose on top).
 pub fn queue_dir(aliases: &AliasMap, recipient: &Recipient, root: &Path) -> PathBuf {
-    let alias = aliases.alias_for(&recipient.owner);
-    let mut dir = root.join(alias);
-    dir.push("channels");
+    let mut dir = if aliases.is_self(&recipient.owner) {
+        root.join("channels")
+    } else {
+        let alias = aliases.alias_for(&recipient.owner);
+        root.join("orgs").join(alias).join("channels")
+    };
     for seg in recipient.handle.segments() {
         dir.push(seg);
     }
@@ -193,51 +193,50 @@ mod tests {
     }
 
     #[test]
-    fn self_resolves_to_self_alias() {
+    fn self_channel_lives_directly_under_root_channels() {
         let aliases = AliasMap::new(alice());
-        let recipient = Recipient::new(alice(), QueueHandle::parse("triage").unwrap());
+        let recipient = Recipient::new(alice(), QueueHandle::parse("journal").unwrap());
         assert_eq!(
             queue_dir(&aliases, &recipient, root()),
-            PathBuf::from("/var/secretariat/_self/channels/triage"),
+            PathBuf::from("/var/secretariat/channels/journal"),
         );
     }
 
     #[test]
-    fn known_peer_resolves_to_registered_alias() {
+    fn known_org_resolves_under_orgs_root() {
         let mut aliases = AliasMap::new(alice());
-        aliases.insert(bob(), "marcelo");
-        let recipient = Recipient::new(bob(), QueueHandle::parse("inbox").unwrap());
+        aliases.insert(themia(), "themia.pro");
+        let recipient = Recipient::new(themia(), QueueHandle::parse("assemblee_generale").unwrap());
         assert_eq!(
             queue_dir(&aliases, &recipient, root()),
-            PathBuf::from("/var/secretariat/marcelo/channels/inbox"),
+            PathBuf::from("/var/secretariat/orgs/themia.pro/channels/assemblee_generale"),
         );
     }
 
     #[test]
-    fn unknown_peer_falls_back_to_sanitized_did() {
+    fn unknown_org_falls_back_to_sanitized_did_under_orgs() {
         let aliases = AliasMap::new(alice());
         let recipient = Recipient::new(bob(), QueueHandle::parse("inbox").unwrap());
         let path = queue_dir(&aliases, &recipient, root());
-        // The fallback uses the DID with `:` and `/` replaced by `_`.
-        // Don't assert the exact string — depends on bob's
-        // `did:key:z6Mk…` form. Just confirm it's a single segment
-        // under the root and contains no path separators.
-        let first = path
-            .strip_prefix(root())
-            .unwrap()
-            .components()
+        // Should sit under `<root>/orgs/<sanitized-did>/channels/inbox`.
+        let stripped = path.strip_prefix(root()).unwrap();
+        let mut comps = stripped.components();
+        assert_eq!(comps.next().unwrap().as_os_str(), "orgs");
+        let alias_seg = comps
             .next()
             .unwrap()
             .as_os_str()
             .to_string_lossy()
             .into_owned();
-        assert!(first.starts_with("did_key_"), "got: {first}");
-        assert!(!first.contains(':'));
-        assert!(!first.contains('/'));
+        assert!(alias_seg.starts_with("did_key_"), "got: {alias_seg}");
+        assert!(!alias_seg.contains(':'));
+        assert!(!alias_seg.contains('/'));
+        assert_eq!(comps.next().unwrap().as_os_str(), "channels");
+        assert_eq!(comps.next().unwrap().as_os_str(), "inbox");
     }
 
     #[test]
-    fn nested_channel_handle_becomes_nested_dirs() {
+    fn nested_org_channel_handle_becomes_nested_dirs() {
         let mut aliases = AliasMap::new(alice());
         aliases.insert(themia(), "themia.pro");
         let recipient = Recipient::new(
@@ -246,22 +245,35 @@ mod tests {
         );
         assert_eq!(
             queue_dir(&aliases, &recipient, root()),
-            PathBuf::from("/var/secretariat/themia.pro/channels/dommage-corporel/paris-cohort"),
+            PathBuf::from("/var/secretariat/orgs/themia.pro/channels/dommage-corporel/paris-cohort"),
         );
     }
 
     #[test]
-    fn sub_paths_compose_correctly() {
+    fn self_sub_paths_compose_correctly() {
         let aliases = AliasMap::new(alice());
         let recipient = Recipient::new(alice(), QueueHandle::parse("writing").unwrap());
         let base = root();
         assert_eq!(
             envelopes_dir(&aliases, &recipient, base),
-            PathBuf::from("/var/secretariat/_self/channels/writing/envelopes"),
+            PathBuf::from("/var/secretariat/channels/writing/envelopes"),
         );
         assert_eq!(
             ciphertext_dir(&aliases, &recipient, base),
-            PathBuf::from("/var/secretariat/_self/channels/writing/_ciphertext"),
+            PathBuf::from("/var/secretariat/channels/writing/_ciphertext"),
+        );
+    }
+
+    #[test]
+    fn nested_self_channel_handle_becomes_nested_dirs() {
+        let aliases = AliasMap::new(alice());
+        let recipient = Recipient::new(
+            alice(),
+            QueueHandle::parse("articles:equanimitech").unwrap(),
+        );
+        assert_eq!(
+            queue_dir(&aliases, &recipient, root()),
+            PathBuf::from("/var/secretariat/channels/articles/equanimitech"),
         );
     }
 }

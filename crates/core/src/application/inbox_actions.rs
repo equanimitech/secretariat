@@ -145,7 +145,7 @@ mod tests {
     #[test]
     fn defer_moves_file_to_queue_deferred_subdir() {
         let dir = TempDir::new().unwrap();
-        let queue = dir.path().join("_self/inbox/default");
+        let queue = dir.path().join("channels/inbox/default");
         let active = queue.join("envelopes/2026/05/12");
         fs::create_dir_all(&active).unwrap();
         let envelope = write_envelope(&active, "test.md");
@@ -159,7 +159,7 @@ mod tests {
     #[test]
     fn archive_moves_file_to_queue_archived_subdir() {
         let dir = TempDir::new().unwrap();
-        let queue = dir.path().join("_self/inbox/default");
+        let queue = dir.path().join("channels/inbox/default");
         let active = queue.join("envelopes/2026/05/12");
         fs::create_dir_all(&active).unwrap();
         let envelope = write_envelope(&active, "test.md");
@@ -173,7 +173,7 @@ mod tests {
     #[test]
     fn unarchive_moves_file_back_to_envelopes_dir() {
         let dir = TempDir::new().unwrap();
-        let queue = dir.path().join("_self/inbox/default");
+        let queue = dir.path().join("channels/inbox/default");
         let archived = queue.join("archived");
         fs::create_dir_all(&archived).unwrap();
         let envelope = write_envelope(&archived, "test.md");
@@ -187,7 +187,7 @@ mod tests {
     #[test]
     fn unarchive_rejects_files_not_under_archived_dir() {
         let dir = TempDir::new().unwrap();
-        let queue = dir.path().join("_self/inbox/default");
+        let queue = dir.path().join("channels/inbox/default");
         let active = queue.join("envelopes/2026/05/12");
         fs::create_dir_all(&active).unwrap();
         let envelope = write_envelope(&active, "test.md");
@@ -212,7 +212,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let phantom = dir
             .path()
-            .join("_self/inbox/default/envelopes/2026/05/12/phantom.md");
+            .join("channels/inbox/default/envelopes/2026/05/12/phantom.md");
 
         let err = archive_envelope(&phantom).unwrap_err();
         assert!(matches!(err, InboxActionError::NotFound { .. }));

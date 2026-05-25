@@ -80,7 +80,7 @@ pub fn run(args: Args) -> Result<()> {
     // 6. Seed AG template.
     seed_file(&paths.template, TEMPLATE_DEFAULT, args.force_seed)?;
 
-    // 7. Persist identity record at `_self/identity.md` (the canonical
+    // 7. Persist identity record at `<root>/identity.md` (the canonical
     // location for the principal's DID + profile + key metadata).
     let now = Utc::now();
     let display_name = DisplayName::parse("Principal")

@@ -1,12 +1,12 @@
-//! Principal identity record at `<self_root>/identity.md`.
+//! Principal identity record at `<root>/identity.md`.
 //!
 //! Consolidates what slice 2 + earlier shipped as four separate files at
 //! the vault root (`did`, `key`, `did.json`, `profile.json`) into one
-//! frontmatter+body markdown file inside `_self/`. The key itself
-//! stays raw binary at `<self_root>/identity/key` (referenced by
-//! `key_path` in the frontmatter); the DID document stays JSON at
-//! `<self_root>/identity/did.json` (the file principals upload to their
-//! `did:web` host).
+//! frontmatter+body markdown file. The key itself stays raw binary at
+//! `<root>/identity/key` (referenced by `key_path` in the frontmatter);
+//! the DID document stays JSON at `<root>/identity/did.json` (the file
+//! principals upload to their `did:web` host). Pre-Move-3c vaults
+//! wrapped this state inside `_self/`; the migrate command moves it.
 //!
 //! Shape (per `tech.equanimi.secretariat.identity` lexicon):
 //!
