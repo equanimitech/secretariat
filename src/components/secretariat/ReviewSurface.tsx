@@ -17,7 +17,6 @@ import { toast } from 'sonner'
 import {
   commands,
   type AppPreferences,
-  type ContactListing,
   type EnvelopeListing,
   type IdentityState,
   type Profile,
@@ -41,7 +40,6 @@ export function ReviewSurface() {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [inboxItems, setInboxItems] = useState<EnvelopeListing[]>([])
   const [queueItems, setQueueItems] = useState<EnvelopeListing[]>([])
-  const [contacts, setContacts] = useState<ContactListing[]>([])
   const [preferences, setPreferences] = useState<AppPreferences | null>(null)
   const [mode, setMode] = useState<Mode>('review')
   const [syncing, setSyncing] = useState(false)
@@ -49,12 +47,11 @@ export function ReviewSurface() {
 
   const refresh = useCallback(async () => {
     setError(null)
-    const [ident, prof, inbox, queue, cts, prefs] = await Promise.all([
+    const [ident, prof, inbox, queue, prefs] = await Promise.all([
       commands.currentIdentity(),
       commands.getProfile(),
       commands.listInbox(),
       commands.listReviewQueue(),
-      commands.listContacts(),
       commands.loadPreferences(),
     ])
     if (ident.status === 'ok') setIdentity(ident.data)
@@ -63,7 +60,6 @@ export function ReviewSurface() {
     else setError(inbox.error)
     if (queue.status === 'ok') setQueueItems(queue.data)
     else setError(queue.error)
-    if (cts.status === 'ok') setContacts(cts.data)
     if (prefs.status === 'ok') setPreferences(prefs.data)
   }, [])
 
@@ -136,19 +132,20 @@ export function ReviewSurface() {
   const signBuckets = useMemo<Bucket[]>(() => {
     if (!identity) return []
     const selfDid = identity.did
-    const contactByDid = new Map(contacts.map(c => [c.did, c.display_name]))
     const peers = new Map<string, Bucket>()
     for (const item of queueItems) {
       if (!item.to || item.to === selfDid) continue
       if (item.stamped) continue
       const id = `peer:${item.to}`
-      const label = contactByDid.get(item.to) ?? truncateDid(item.to)
+      // Contact display-name lookup removed in Move 3b — peer labels are
+      // DID-prefix only. Future: resolve via channel-roster cache.
+      const label = truncateDid(item.to)
       const existing = peers.get(id)
       if (existing) existing.count += 1
       else peers.set(id, { id, label, count: 1 })
     }
     return [...peers.values()]
-  }, [identity, queueItems, contacts])
+  }, [identity, queueItems])
 
   if (!identity) return null
   const displayName = profile?.display_name ?? null

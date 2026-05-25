@@ -172,6 +172,36 @@ async currentIdentity() : Promise<Result<IdentityState | null, string>> {
 }
 },
 /**
+ * Provision a scribe (cognition-provider selection on Tauri onboarding).
+ * 
+ * Mirrors `sec agent add <name> --role scribe --substrate <substrate>`.
+ * For `claude-code` substrate, the MCP wiring is already done at app
+ * launch (per the bundled `sec mcp install` on boot — see AGENTS.md
+ * "Tauri shell"); this command just provisions the agent identity.
+ */
+async provisionScribe(name: string, substrate: string) : Promise<Result<AgentDto, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("provision_scribe", { name, substrate }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * List the principal's authorized scribes (and future agent roles).
+ * Used by the onboarding screen to detect whether a scribe has already
+ * been provisioned (returning to onboarding after a partial run should
+ * show the existing scribe rather than offer to add another).
+ */
+async listScribes() : Promise<Result<AgentDto[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_scribes") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Diagnostic — returns the absolute path to `~/.secretariat/`. Useful for
  * "open in Finder" buttons and for surfacing where keys live.
  */
@@ -216,13 +246,13 @@ async listInbox() : Promise<Result<EnvelopeListing[], string>> {
 }
 },
 /**
- * List the principal's review queue — unstamped drafts plus every
- * envelope on disk. v0.9 substrate (drop-outbox) unions per-queue
- * `_drafts/*.md` (drafts awaiting a stamp) with per-queue
- * `envelopes/YYYY/MM/DD/*.md` (received letters + local captures +
- * stamped-but-pending-send) under one substrate root. Both `to` and
- * `queue` are populated on every entry — discriminate local vs peer
- * by comparing `to` to the principal's own DID.
+ * List the principal's review queue — every envelope on disk under
+ * any queue's `envelopes/YYYY/MM/DD/` tree. Post-Move 4 (substrate-
+ * for-themia) drafts and federated envelopes share that tree; the
+ * envelope frontmatter's `delivered:` field (absent = draft) is the
+ * disambiguator. Both `to` and `queue` are populated on every
+ * entry — discriminate local vs peer by comparing `to` to the
+ * principal's own DID.
  */
 async listReviewQueue() : Promise<Result<EnvelopeListing[], string>> {
     try {
@@ -247,9 +277,8 @@ async readEnvelope(filePath: string) : Promise<Result<EnvelopeRead, string>> {
 },
 /**
  * Run one sync cycle against every registered relay. Pulls inbound
- * envelopes, auto-adds contacts from claim events, drains stamped
- * self-authored envelopes pending send. Principal-initiated per the
- * review-session model — no background push.
+ * envelopes on the principal's subscribed org channels. Principal-
+ * initiated per the review-session model — no background push.
  * 
  * Idempotent and safe to call repeatedly. Returns a report the UI can
  * surface (counts + non-fatal warnings).
@@ -341,19 +370,6 @@ async archiveInboxEnvelope(filePath: string) : Promise<Result<string, string>> {
 async unarchiveInboxEnvelope(filePath: string) : Promise<Result<string, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("unarchive_inbox_envelope", { filePath }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * List the principal's known contacts. The Sign-mode home surface
- * resolves recipient DIDs to display names through this; falls back to
- * truncated DID when a peer isn't yet in the contact book.
- */
-async listContacts() : Promise<Result<ContactListing[], string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("list_contacts") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -740,6 +756,7 @@ async installUpdate() : Promise<Result<null, string>> {
 
 /** user-defined types **/
 
+export type AgentDto = { did: string; role: string; name: string; substrate: string; added_at: string }
 /**
  * Application preferences that persist to disk.
  * Only contains settings that should be saved between sessions.
@@ -769,7 +786,6 @@ assistant_terminal?: string | null;
 assistant_command?: string | null }
 export type CognitionSettingsDto = { provider: string; api_key: string | null; api_base: string | null; model: string | null; route_threshold: number | null }
 export type CompositionSettingsDto = { closing_line: string; style_notes: string }
-export type ContactListing = { did: string; display_name: string }
 export type DeliverySettingsDto = { poll_interval_minutes: number }
 export type EntryKind = 
 /**
@@ -786,7 +802,7 @@ export type EntryKind =
 "channel_leaf" | 
 /**
  * Directory inside the channel tree without a `channel.md` (a non-leaf
- * handle segment, or a child dir like `envelopes/`, `_drafts/`).
+ * handle segment, or a child dir like `envelopes/`).
  */
 "dir" | 
 /**
@@ -806,7 +822,14 @@ to: string | null;
  * set on well-formed envelopes alongside `to`. Direct messages
  * conventionally use `inbox:default`.
  */
-queue: string | null; stamped: boolean; encrypted: boolean }
+queue: string | null; stamped: boolean; encrypted: boolean; 
+/**
+ * Delivery state marker from envelope frontmatter. `None` = draft
+ * / undelivered (substrate-for-themia Move 4). `Some("<relay-seq-id>")`
+ * = federated. `Some("local")` = self-owned channel that never
+ * federates.
+ */
+delivered: string | null }
 export type EnvelopePreview = { 
 /**
  * Absolute path to the `.md` file — caller uses this to open the
@@ -952,7 +975,7 @@ export type RecoveryError =
  */
 { type: "ParseError"; message: string }
 export type RelayInfo = { endpoint: string; registered: boolean }
-export type RelaySyncReport = { endpoint: string; inbound_count: number; auto_added_contacts: number; warnings: string[] }
+export type RelaySyncReport = { endpoint: string; inbound_count: number; warnings: string[] }
 /**
  * A reviewable organization the principal can dispatch a review session into.
  */
@@ -970,19 +993,29 @@ display_name: string;
  */
 root_path: string }
 /**
- * Stamp a draft and (best-effort) deliver it immediately. Touch
- * ID fires from the app's window context. Returns the relay-assigned
- * id on successful delivery, or stamp metadata only if delivery fails
- * (the daemon's next sync tick retries — same fallback as the CLI's
- * stamp-immediate-send path).
+ * Stamp a draft. Touch ID fires from the app's window context. The
+ * stamp's atomic rename promotes the file into the canonical
+ * `envelopes/YYYY/MM/DD/` day-shard, which is the daemon's wire-send
+ * signal — federation runs in the daemon (substrate-for-themia,
+ * Move 5).
  */
-export type StampReport = { stamped_path: string; doc_hash: string; stamped_at: string; delivered: boolean; 
+export type StampReport = { stamped_path: string; doc_hash: string; stamped_at: string; 
 /**
- * Relay-assigned envelope ID. String to avoid BigInt/JS-number
- * roundtripping (specta forbids `u64` directly).
+ * Kept for backward compatibility with the frontend; always
+ * `false` now that federation is daemon-only.
  */
-relay_assigned_id: string | null; delivery_warning: string | null }
-export type SyncReport = { per_relay: RelaySyncReport[]; sent_envelopes: number; outbox_warnings: string[] }
+delivered: boolean; 
+/**
+ * Kept for backward compatibility with the frontend; always
+ * `None` now.
+ */
+relay_assigned_id: string | null; 
+/**
+ * Kept for backward compatibility with the frontend; always
+ * `None` now.
+ */
+delivery_warning: string | null }
+export type SyncReport = { per_relay: RelaySyncReport[] }
 export type TreeEntry = { name: string; path: string; kind: EntryKind; 
 /**
  * Cheap to compute; true for dirs that have at least one visible

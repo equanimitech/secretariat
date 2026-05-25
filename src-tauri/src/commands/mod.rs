@@ -3,6 +3,7 @@
 //! Each submodule contains related commands and their helper functions.
 //! Import specific commands via their submodule (e.g., `commands::preferences::greet`).
 
+pub mod agent;
 pub mod explorer;
 pub mod markdown;
 pub mod notifications;

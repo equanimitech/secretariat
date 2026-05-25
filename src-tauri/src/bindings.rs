@@ -2,7 +2,7 @@ use tauri_specta::{collect_commands, Builder};
 
 pub fn generate_bindings() -> Builder<tauri::Wry> {
     use crate::commands::{
-        explorer, markdown, notifications, preferences, quick_pane, recovery, secretariat,
+        agent, explorer, markdown, notifications, preferences, quick_pane, recovery, secretariat,
         sessions, settings, timeline, updater,
     };
 
@@ -21,6 +21,8 @@ pub fn generate_bindings() -> Builder<tauri::Wry> {
         quick_pane::update_quick_pane_shortcut,
         secretariat::init_identity,
         secretariat::current_identity,
+        agent::provision_scribe,
+        agent::list_scribes,
         secretariat::secretariat_root,
         secretariat::claim_invite_url,
         secretariat::list_inbox,
