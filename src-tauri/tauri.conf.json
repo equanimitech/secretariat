@@ -78,9 +78,7 @@
     "deep-link": {
       "mobile": [],
       "desktop": {
-        "schemes": [
-          "secretariat"
-        ]
+        "schemes": ["secretariat"]
       }
     }
   }
