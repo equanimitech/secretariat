@@ -5,7 +5,8 @@
 use std::path::PathBuf;
 use std::process::Command;
 
-use secretariat_core::infrastructure::keys::KeyPaths;
+use secretariat_core::infrastructure::identity_store::load_identity;
+use secretariat_core::infrastructure::keys::{load_signing_key, KeyPaths};
 use secretariat_core::infrastructure::preferences::{
     load_or_migrate as load_or_migrate_preferences, CognitionProvider, Preferences,
 };
@@ -67,14 +68,19 @@ pub async fn list_relays() -> Result<Vec<RelayInfo>, String> {
         .collect())
 }
 
-/// Add (or upsert) a relay endpoint. Does NOT register the principal's
-/// DID with the relay — that happens automatically the first time
-/// `invite` or `accept_invite` runs against this endpoint, or
-/// (in CLI flows) via `sec relay register`.
+/// Add a relay endpoint and register the principal's DID against it
+/// in one shot. Upserts the entry into `relay-state.json` regardless of
+/// network outcome (so the row stays visible as "pending registration"
+/// on failure); attempts the DID-keyed registration handshake on top.
+///
+/// Returns `Ok(())` only when registration succeeds. On registration
+/// failure the entry persists as pending — callers can retry by calling
+/// `add_relay` again with the same endpoint, which will re-attempt the
+/// handshake.
 #[tauri::command]
 #[specta::specta]
 pub async fn add_relay(endpoint: String) -> Result<(), String> {
-    let trimmed = endpoint.trim();
+    let trimmed = endpoint.trim().to_string();
     if trimmed.is_empty() {
         return Err("endpoint must not be empty".to_string());
     }
@@ -82,11 +88,30 @@ pub async fn add_relay(endpoint: String) -> Result<(), String> {
         return Err("endpoint must start with `https://` or `http://`".to_string());
     }
     let paths = key_paths()?;
-    let mut state = RelayState::load(&paths.relay_state).map_err(|e| format!("loading: {e}"))?;
-    state.entry_mut(trimmed); // upserts an entry if missing
-    state
-        .save(&paths.relay_state)
-        .map_err(|e| format!("saving: {e}"))?;
+
+    // Persist the entry first so the UI has something to show even when
+    // the handshake fails (typo, server down, network off).
+    {
+        let mut state =
+            RelayState::load(&paths.relay_state).map_err(|e| format!("loading: {e}"))?;
+        state.entry_mut(&trimmed);
+        state
+            .save(&paths.relay_state)
+            .map_err(|e| format!("saving: {e}"))?;
+    }
+
+    // Now register. Re-upserts internally and sets `registered = true`
+    // on success. Requires identity to exist — pre-onboarding adds
+    // bail with a clear message.
+    let identity = load_identity(&paths.identity_md)
+        .map_err(|e| format!("loading identity: {e}"))?
+        .ok_or_else(|| "no identity — finish onboarding first".to_string())?;
+    let key = load_signing_key(&paths.signing_key)
+        .map_err(|e| format!("loading signing key: {e}"))?;
+
+    secretariat_daemon::register(&paths, &identity.did, &key, &trimmed)
+        .await
+        .map_err(|e| format!("registering with {trimmed}: {e}"))?;
     Ok(())
 }
 
