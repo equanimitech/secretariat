@@ -21,10 +21,10 @@ showing raw DIDs.
   (`Org` / `Subtree(handle)` / `Channels`) with wire-string parse +
   serialize; invite signature canonicalization v1 → v2 adds
   `scope_intent`. `sec invite create` learns `--org / --role /
-  --channels` with `*` / `<handle>` / `h1,h2` scope; `sec invite claim`
+--channels` with `*` / `<handle>` / `h1,h2` scope; `sec invite claim`
   persists membership and runs eager-bootstrap `sync_now` so the
   sidebar populates on first connect. `sec channels create/delete
-  --org` emit `channelDef` envelopes; MCP gains parity. Topological
+--org` emit `channelDef` envelopes; MCP gains parity. Topological
   backfill primitive (`sec orgs backfill-channel-defs <alias>`) replaces
   the removed `sec migrate`. Daemon Move-5 outbound drain walks
   `envelopes/*.md` under `orgs/*/channels/**` each tick, POSTs
