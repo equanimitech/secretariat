@@ -55,6 +55,23 @@ pub enum ChannelOpError {
     ChannelDefStore(#[from] ChannelDefStoreError),
     #[error("contract store: {0}")]
     ContractStore(#[from] ContractStoreError),
+    #[error(
+        "handle `{0}` uses a reserved segment (leading underscore) — \
+         `_meta` and other `_`-prefixed segments are substrate-private \
+         and cannot be assigned to user-named channels"
+    )]
+    ReservedHandle(String),
+}
+
+/// Canonical handle for the org-wide channelDef-announcement queue (Slice
+/// A'). Top-level `channelDef` envelopes are addressed to this handle on
+/// the org owner's relay; subscribers poll it to discover channels.
+pub const META_HANDLE: &str = "_meta";
+
+/// Returns true when the handle uses a substrate-private (leading
+/// underscore) segment that user-named channels MUST NOT claim.
+pub fn handle_is_reserved(handle: &QueueHandle) -> bool {
+    handle.segments().iter().any(|s| s.starts_with('_'))
 }
 
 /// One row in `list_channels` output.
@@ -102,6 +119,10 @@ pub struct ChannelEnvelope {
     /// Optional AG multi-sentence summary declared by the sender
     /// (envelope.summary).
     pub summary: Option<String>,
+    /// Free-form `tags:` list lifted from the envelope's root
+    /// frontmatter (not inside `$envelope`). Empty when absent or
+    /// malformed.
+    pub tags: Vec<String>,
 }
 
 /// Walk `<channels_root>/` and emit one `ChannelSummary` per dir that
@@ -305,6 +326,7 @@ fn read_one(path: &Path) -> Result<ChannelEnvelope, ChannelOpError> {
         ),
         None => (None, String::new(), false, None, None, None),
     };
+    let tags = tags_from_extra(&parsed.extra);
     Ok(ChannelEnvelope {
         file_path: path.display().to_string(),
         from,
@@ -316,7 +338,35 @@ fn read_one(path: &Path) -> Result<ChannelEnvelope, ChannelOpError> {
         title,
         lede,
         summary,
+        tags,
     })
+}
+
+/// Pull a root-level `tags:` list out of arbitrary frontmatter. Accepts
+/// either a YAML sequence of strings or a single string; anything else
+/// (missing key, non-stringy values, malformed) collapses to empty.
+fn tags_from_extra(
+    extra: &std::collections::BTreeMap<String, serde_yaml::Value>,
+) -> Vec<String> {
+    let Some(value) = extra.get("tags") else {
+        return Vec::new();
+    };
+    match value {
+        serde_yaml::Value::Sequence(items) => items
+            .iter()
+            .filter_map(|v| v.as_str().map(|s| s.trim().to_string()))
+            .filter(|s| !s.is_empty())
+            .collect(),
+        serde_yaml::Value::String(s) => {
+            let t = s.trim();
+            if t.is_empty() {
+                Vec::new()
+            } else {
+                vec![t.to_string()]
+            }
+        }
+        _ => Vec::new(),
+    }
 }
 
 /// Create a channel by writing its `channel.md` manifest, pre-creating
@@ -337,6 +387,9 @@ pub fn create_channel(
     created_at: DateTime<Utc>,
     stub_override: Option<&Path>,
 ) -> Result<ChannelDef, ChannelOpError> {
+    if handle_is_reserved(&handle) {
+        return Err(ChannelOpError::ReservedHandle(handle.as_str().to_string()));
+    }
     let def = ChannelDef::new(handle, name, description, created_at);
     save_channel_def(channels_root, &def, false)?;
     let contract_path = channel_contract_path(channels_root, &def.handle);
@@ -593,6 +646,27 @@ mod tests {
         assert_eq!(out[0].handle, "product:data:baux-commerciaux");
         assert_eq!(out[0].name, "Baux commerciaux");
         assert_eq!(out[0].envelope_count, 0);
+    }
+
+    #[test]
+    fn create_channel_rejects_reserved_meta_handle() {
+        let dir = TempDir::new().unwrap();
+        let channels = self_channels(&dir);
+        let h = QueueHandle::parse("_meta").unwrap();
+        let when = Utc.with_ymd_and_hms(2026, 5, 26, 0, 0, 0).unwrap();
+        let r = create_channel(&channels, h, "", "", when, None);
+        assert!(matches!(r, Err(ChannelOpError::ReservedHandle(_))));
+    }
+
+    #[test]
+    fn create_channel_rejects_reserved_underscore_segment_anywhere() {
+        let dir = TempDir::new().unwrap();
+        let channels = self_channels(&dir);
+        // Substrate-private prefix is reserved at any depth.
+        let h = QueueHandle::parse("project:_internal").unwrap();
+        let when = Utc.with_ymd_and_hms(2026, 5, 26, 0, 0, 0).unwrap();
+        let r = create_channel(&channels, h, "", "", when, None);
+        assert!(matches!(r, Err(ChannelOpError::ReservedHandle(_))));
     }
 
     #[test]

@@ -26,7 +26,7 @@ use chrono::{Duration, Utc};
 use ed25519_dalek::SigningKey;
 use thiserror::Error;
 
-use crate::application::list_channels;
+use crate::application::{list_channels, META_HANDLE};
 use crate::domain::QueueHandle;
 use crate::infrastructure::keys::KeyPaths;
 use crate::infrastructure::markdown::parse_document;
@@ -68,6 +68,15 @@ pub struct RelaySyncReport {
 #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SyncOutcome {
     pub per_relay: Vec<RelaySyncReport>,
+    /// Outbound federation summary across all orgs. Move 5 — drains
+    /// undelivered envelope drafts on each tick. See
+    /// [`crate::application::drain_undelivered`].
+    #[serde(default)]
+    pub federation_sent: usize,
+    #[serde(default)]
+    pub federation_local_marked: usize,
+    #[serde(default)]
+    pub federation_warnings: Vec<String>,
 }
 
 /// Run one full sync cycle. Idempotent + safe to call back-to-back; the
@@ -123,6 +132,23 @@ pub async fn sync_now(
         }
 
         outcome.per_relay.push(report);
+    }
+
+    // Move 5: drain outbound undelivered envelopes after the inbound
+    // poll. Same `state` so token refreshes are shared with the
+    // inbound path. Soft errors are collected, not fatal — a transient
+    // relay failure on one envelope retries next tick.
+    match crate::application::drain_undelivered(paths, did, key, &mut state).await {
+        Ok(fed) => {
+            outcome.federation_sent = fed.sent;
+            outcome.federation_local_marked = fed.local_marked;
+            outcome.federation_warnings = fed.warnings;
+        }
+        Err(e) => {
+            outcome
+                .federation_warnings
+                .push(format!("drain_undelivered: {e}"));
+        }
     }
 
     state.save(&paths.relay_state)?;
@@ -186,6 +212,17 @@ fn enumerate_subscribed_queues(
             let Ok(Some(membership)) = load_membership(&membership_path) else {
                 continue;
             };
+            // Always subscribe to the org's `_meta` queue — that's where
+            // channelDef announcements ride (Slice A'). The walker doesn't
+            // surface `_meta` (substrate-private, leading-underscore), so
+            // we add it explicitly per active org membership.
+            if let Ok(meta_handle) = QueueHandle::parse(META_HANDLE) {
+                queues.push(SubscribedQueue {
+                    owner: membership.org_did.clone(),
+                    handle: meta_handle,
+                    endpoint: membership.relay_endpoint.as_str().to_string(),
+                });
+            }
             let channels_root = org_channels_root(&paths.orgs_root, &org.alias);
             let Ok(channels) = list_channels(&channels_root) else {
                 continue;
@@ -338,7 +375,77 @@ fn file_inbound(
             );
         }
     }
+
+    // Slice A': if the freshly-filed envelope IS a channelDef, mirror it
+    // into the local org's channels tree (or apply a tombstone). Best-
+    // effort: a parse or write failure here is logged and skipped — the
+    // envelope file itself stays on disk, and the next poll's eager
+    // bootstrap can pick it up.
+    if let Some(body) = body_str {
+        if let Ok(Some((alias, expected_signer))) =
+            derive_org_alias_from_body(body, &paths.orgs_root)
+        {
+            if let Some(s) = body_str {
+                match crate::application::ingest_channel_def_envelope(
+                    &paths.orgs_root,
+                    &alias,
+                    &expected_signer,
+                    s,
+                ) {
+                    Ok(crate::application::IngestOutcome::Created { handle }) => eprintln!(
+                        "[sync] channelDef ingest: created `{}` in org `{}`",
+                        handle.as_str(),
+                        alias.as_str()
+                    ),
+                    Ok(crate::application::IngestOutcome::Tombstoned { handle }) => eprintln!(
+                        "[sync] channelDef ingest: tombstoned `{}` in org `{}`",
+                        handle.as_str(),
+                        alias.as_str()
+                    ),
+                    Ok(crate::application::IngestOutcome::NoOp { .. }) => {}
+                    Err(crate::application::ChannelDefEnvelopeError::NotAChannelDef) => {}
+                    Err(crate::application::ChannelDefEnvelopeError::UnauthorisedSigner {
+                        signer,
+                        org_did,
+                    }) => eprintln!(
+                        "[sync] channelDef ingest REJECTED: signer `{signer}` not authorised for org `{org_did}` (expected = org owner DID); ignoring envelope"
+                    ),
+                    Err(e) => eprintln!("[sync] channelDef ingest failed: {e}"),
+                }
+            }
+        }
+    }
     Ok(())
+}
+
+/// Resolve `(org_alias, expected_signer_did)` for a freshly-filed
+/// envelope by reading its `$envelope.to` DID and looking up an org-dir
+/// whose metadata declares that DID. `Ok(None)` means the envelope is
+/// for an org we don't know about — channelDef ingest is skipped (the
+/// substrate refuses to mirror channels from orgs it doesn't recognise).
+fn derive_org_alias_from_body(
+    body: &str,
+    orgs_root: &std::path::Path,
+) -> Result<Option<(crate::domain::OrgAlias, Did)>, std::io::Error> {
+    use crate::infrastructure::org_store::list_org_dirs;
+    let Ok(parsed) = parse_document(body) else {
+        return Ok(None);
+    };
+    let Some(env) = parsed.envelope else {
+        return Ok(None);
+    };
+    let to_did = env.recipient.owner.as_str().to_string();
+    let Ok(orgs) = list_org_dirs(orgs_root) else {
+        return Ok(None);
+    };
+    for org in orgs {
+        if let Some(did) = &org.did {
+            if did.as_str() == to_did {
+                return Ok(Some((org.alias, did.clone())));
+            }
+        }
+    }
+    Ok(None)
 }
 
 fn short_did(s: &str) -> String {
@@ -422,7 +529,14 @@ mod enumeration_tests {
         let state = RelayState::default();
         let queues = enumerate_subscribed_queues_for_tests(&paths, &self_did(), &state);
 
-        assert_eq!(queues.len(), 2);
+        // 2 channels + the `_meta` queue (Slice A' — channelDef
+        // announcements ride on `<alias>:_meta`, always subscribed per
+        // active org membership).
+        assert_eq!(queues.len(), 3);
+        assert!(
+            queues.iter().any(|q| q.handle.as_str() == META_HANDLE),
+            "_meta must be in subscribed queues"
+        );
         for q in &queues {
             assert_eq!(q.owner, org_did());
             assert_eq!(q.endpoint, "https://relay.equanimi.tech");

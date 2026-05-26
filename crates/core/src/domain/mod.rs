@@ -18,6 +18,7 @@ mod org_alias;
 mod queue_handle;
 mod recipient;
 mod root;
+mod scope_intent;
 mod signature;
 mod stamp;
 
@@ -42,5 +43,6 @@ pub use org_alias::{OrgAlias, OrgAliasError};
 pub use queue_handle::{QueueHandle, QueueHandleError};
 pub use recipient::Recipient;
 pub use root::Root;
+pub use scope_intent::{ScopeIntent, ScopeIntentParseError};
 pub use signature::{EnvelopeSignature, SignerRole, SignerRoleParseError};
 pub use stamp::Stamp;

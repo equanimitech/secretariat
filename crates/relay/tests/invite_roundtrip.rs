@@ -156,6 +156,7 @@ async fn org_invite_roundtrips_with_context() {
         role: "publish".to_string(),
         channel_handles: vec!["dev:secretariat".to_string(), "book".to_string()],
         channel_relay_endpoint: Some(endpoint.clone()),
+        scope_intent: secretariat_core::domain::ScopeIntent::Channels,
     };
 
     let endpoint_for_create = endpoint.clone();
@@ -185,6 +186,10 @@ async fn org_invite_roundtrips_with_context() {
     assert_eq!(view.role.as_deref(), Some("publish"));
     assert_eq!(view.channel_handles, vec!["dev:secretariat", "book"]);
     assert!(view.channel_relay_endpoint.is_some());
+    assert_eq!(
+        view.scope_intent,
+        Some(secretariat_core::domain::ScopeIntent::Channels)
+    );
 
     // Claim should surface the same org context.
     let claim_url = invite.claim_url.clone();
@@ -197,6 +202,121 @@ async fn org_invite_roundtrips_with_context() {
     assert_eq!(claim.org_did.as_ref().unwrap(), &org_did);
     assert_eq!(claim.role.as_deref(), Some("publish"));
     assert_eq!(claim.channel_handles, vec!["dev:secretariat", "book"]);
+    assert_eq!(
+        claim.scope_intent,
+        Some(secretariat_core::domain::ScopeIntent::Channels)
+    );
+}
+
+#[tokio::test]
+async fn org_invite_scope_intent_org_roundtrips() {
+    // `--channels '*'` → ScopeIntent::Org. Validate that the live-
+    // participant grant shape survives the create → view → claim cycle
+    // and that v2 signature canonicalization accepts the new field.
+    let endpoint = spawn_relay().await;
+    let (rafa_key, rafa_did) = fresh_principal();
+    let (marcelo_key, marcelo_did) = fresh_principal();
+    let rafa_client = RelayClient::new(endpoint.clone(), rafa_did.clone(), &rafa_key);
+    rafa_client.register().await.unwrap();
+    let (_, org_did) = fresh_principal();
+
+    let org_ctx = OrgInviteContext {
+        org_did: org_did.clone(),
+        org_alias: "equanimi.tech".to_string(),
+        role: "collaborator".to_string(),
+        channel_handles: vec![],
+        channel_relay_endpoint: Some(endpoint.clone()),
+        scope_intent: secretariat_core::domain::ScopeIntent::Org,
+    };
+
+    let endpoint_for_create = endpoint.clone();
+    let org_ctx_for_create = org_ctx.clone();
+    let invite = tokio::task::spawn_blocking(move || {
+        create_invite(
+            &endpoint_for_create,
+            &rafa_did,
+            &rafa_key,
+            None,
+            Some(24),
+            Some(&org_ctx_for_create),
+        )
+    })
+    .await
+    .unwrap()
+    .unwrap();
+
+    let claim_url = invite.claim_url.clone();
+    let claim_url_view = invite.claim_url.clone();
+    let view = tokio::task::spawn_blocking(move || view_invite(&claim_url_view))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        view.scope_intent,
+        Some(secretariat_core::domain::ScopeIntent::Org)
+    );
+
+    let did_for_claim = marcelo_did.clone();
+    let claim =
+        tokio::task::spawn_blocking(move || claim_invite(&claim_url, &did_for_claim, &marcelo_key))
+            .await
+            .unwrap()
+            .unwrap();
+    assert_eq!(
+        claim.scope_intent,
+        Some(secretariat_core::domain::ScopeIntent::Org)
+    );
+}
+
+#[tokio::test]
+async fn org_invite_scope_intent_subtree_roundtrips() {
+    let endpoint = spawn_relay().await;
+    let (rafa_key, rafa_did) = fresh_principal();
+    let (marcelo_key, marcelo_did) = fresh_principal();
+    let rafa_client = RelayClient::new(endpoint.clone(), rafa_did.clone(), &rafa_key);
+    rafa_client.register().await.unwrap();
+    let (_, org_did) = fresh_principal();
+
+    let subtree_handle =
+        secretariat_core::domain::QueueHandle::parse("project:secretariat").unwrap();
+    let org_ctx = OrgInviteContext {
+        org_did: org_did.clone(),
+        org_alias: "equanimi.tech".to_string(),
+        role: "publish".to_string(),
+        channel_handles: vec![],
+        channel_relay_endpoint: Some(endpoint.clone()),
+        scope_intent: secretariat_core::domain::ScopeIntent::Subtree(subtree_handle.clone()),
+    };
+
+    let endpoint_for_create = endpoint.clone();
+    let org_ctx_for_create = org_ctx.clone();
+    let invite = tokio::task::spawn_blocking(move || {
+        create_invite(
+            &endpoint_for_create,
+            &rafa_did,
+            &rafa_key,
+            None,
+            Some(24),
+            Some(&org_ctx_for_create),
+        )
+    })
+    .await
+    .unwrap()
+    .unwrap();
+
+    let claim_url = invite.claim_url.clone();
+    let did_for_claim = marcelo_did.clone();
+    let claim =
+        tokio::task::spawn_blocking(move || claim_invite(&claim_url, &did_for_claim, &marcelo_key))
+            .await
+            .unwrap()
+            .unwrap();
+    assert_eq!(
+        claim.scope_intent,
+        Some(secretariat_core::domain::ScopeIntent::Subtree(
+            subtree_handle
+        ))
+    );
 }
 
 #[tokio::test]

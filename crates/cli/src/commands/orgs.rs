@@ -9,13 +9,16 @@ use chrono::Utc;
 use clap::{Parser, Subcommand};
 
 use secretariat_core::application::{
-    create_org, delete_org, get_org_contract, list_orgs, set_org_contract, show_org,
+    create_org, delete_org, emit_channel_def_envelope, get_org_contract, list_channels, list_orgs,
+    set_org_contract, show_org,
 };
-use secretariat_core::domain::{Did, OrgAlias};
+use secretariat_core::domain::{Did, OrgAlias, QueueHandle, SignerRole};
+use secretariat_core::infrastructure::keys::load_signing_key;
+use secretariat_core::infrastructure::org_store::org_channels_root;
 
 use super::channels::build_patch;
 
-use super::paths::key_paths;
+use super::paths::{key_paths, load_did};
 
 #[derive(Parser, Debug)]
 pub struct Args {
@@ -37,12 +40,24 @@ enum Cmd {
     /// Hard-delete an org's directory tree (destructive — requires --yes).
     Delete(DeleteArgs),
 
+    /// One-shot: emit a `channelDef` envelope to `<alias>:_meta` for every
+    /// channel currently present in the org's local tree, parents first.
+    /// Idempotent on the receiver — ingest deduplicates. Slice A' backfill
+    /// primitive; replaces the removed `sec migrate` step.
+    BackfillChannelDefs(BackfillArgs),
+
     /// Read or edit this principal's private consumption contract for
     /// an org (`<org-dir>/contract.local.md`). Org-root overrides
     /// accumulate down the channel tree per
     /// [[project-consumption-vs-governance]].
     #[command(subcommand)]
     Contract(ContractCmd),
+}
+
+#[derive(Parser, Debug)]
+pub struct BackfillArgs {
+    /// Org alias whose channel tree should be backfilled.
+    alias: String,
 }
 
 #[derive(Subcommand, Debug)]
@@ -105,9 +120,78 @@ pub fn run(args: Args) -> Result<()> {
         Cmd::List => run_list(&paths.orgs_root),
         Cmd::Show(s) => run_show(&paths.orgs_root, s),
         Cmd::Delete(d) => run_delete(&paths.orgs_root, d),
+        Cmd::BackfillChannelDefs(b) => run_backfill_channeldefs(&paths, b),
         Cmd::Contract(ContractCmd::Get(g)) => run_contract_get(&paths.orgs_root, g),
         Cmd::Contract(ContractCmd::Set(s)) => run_contract_set(&paths.orgs_root, s),
     }
+}
+
+fn run_backfill_channeldefs(
+    paths: &secretariat_core::infrastructure::keys::KeyPaths,
+    args: BackfillArgs,
+) -> Result<()> {
+    let alias = OrgAlias::parse(&args.alias)
+        .map_err(|e| anyhow!("invalid org alias `{}`: {e}", args.alias))?;
+    let org = show_org(&paths.orgs_root, &alias)
+        .with_context(|| format!("looking up org `{}`", alias.as_str()))?
+        .ok_or_else(|| anyhow!("org `{}` not found", alias.as_str()))?;
+    let org_did = org.did.clone().ok_or_else(|| {
+        anyhow!(
+            "org `{}` has no DID — backfill needs a DID to address the `_meta` queue",
+            alias.as_str()
+        )
+    })?;
+    let owner_did = load_did(paths)?;
+    let key = load_signing_key(&paths.signing_key)
+        .with_context(|| format!("loading signing key from {}", paths.signing_key.display()))?;
+
+    let channels_root = org_channels_root(&paths.orgs_root, &alias);
+    let mut summaries = list_channels(&channels_root)
+        .with_context(|| format!("walking channels of org `{}`", alias.as_str()))?;
+    // Topological order: parents (fewer colons) first so subscribers
+    // can reason about parent-before-child if they ever care. Stable
+    // sort by handle within the same depth keeps the output predictable.
+    summaries.sort_by(|a, b| {
+        let da = a.handle.matches(':').count();
+        let db = b.handle.matches(':').count();
+        da.cmp(&db).then_with(|| a.handle.cmp(&b.handle))
+    });
+
+    if summaries.is_empty() {
+        println!(
+            "(org `{}` has no channels yet — nothing to backfill)",
+            alias.as_str()
+        );
+        return Ok(());
+    }
+
+    let now = Utc::now();
+    let mut emitted = 0usize;
+    for s in &summaries {
+        let handle = QueueHandle::parse(&s.handle)
+            .with_context(|| format!("malformed handle `{}`", s.handle))?;
+        let envelope_path = emit_channel_def_envelope(
+            &paths.orgs_root,
+            &alias,
+            &org_did,
+            &owner_did,
+            SignerRole::Principal,
+            &key,
+            &handle,
+            &s.name,
+            &s.description,
+            false,
+            now,
+        )
+        .with_context(|| format!("emitting channelDef envelope for `{}`", s.handle))?;
+        emitted += 1;
+        println!("emitted {} → {}", s.handle, envelope_path.display());
+    }
+    println!(
+        "backfill complete: {emitted} channelDef envelope(s) queued on `{}:_meta`",
+        alias.as_str()
+    );
+    Ok(())
 }
 
 fn run_contract_get(orgs_root: &std::path::Path, args: ContractGetArgs) -> Result<()> {

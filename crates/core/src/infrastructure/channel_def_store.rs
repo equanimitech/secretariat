@@ -82,6 +82,11 @@ struct ChannelDefFrontmatter {
     /// frontmatter when at default).
     #[serde(default, skip_serializing_if = "is_false")]
     requires_stamp: bool,
+    /// Tombstone marker. When `true`, this envelope's channelDef announces
+    /// the channel's removal. Receivers drop the local `channel.md` but
+    /// preserve `envelopes/` history. Default `false` (omitted).
+    #[serde(default, skip_serializing_if = "is_false")]
+    tombstoned: bool,
 }
 
 fn is_false(b: &bool) -> bool {
@@ -197,6 +202,7 @@ fn load_from_markdown(path: &Path) -> Result<ChannelDef, ChannelDefStoreError> {
         fm.description,
         fm.created_at,
         fm.requires_stamp,
+        fm.tombstoned,
         path,
     )
 }
@@ -217,16 +223,19 @@ fn load_from_legacy_json(path: &Path) -> Result<ChannelDef, ChannelDefStoreError
         file.description,
         file.created_at,
         false,
+        false,
         path,
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn finalize(
     handle: String,
     name: String,
     description: String,
     created_at: String,
     requires_stamp: bool,
+    tombstoned: bool,
     path: &Path,
 ) -> Result<ChannelDef, ChannelDefStoreError> {
     let parsed_handle =
@@ -240,10 +249,9 @@ fn finalize(
             path: path.to_path_buf(),
         })?
         .with_timezone(&Utc);
-    Ok(
-        ChannelDef::new(parsed_handle, name, description, created_at)
-            .with_requires_stamp(requires_stamp),
-    )
+    Ok(ChannelDef::new(parsed_handle, name, description, created_at)
+        .with_requires_stamp(requires_stamp)
+        .with_tombstoned(tombstoned))
 }
 
 pub fn save_channel_def(
@@ -276,6 +284,7 @@ pub fn save_channel_def(
         description: def.description.clone(),
         created_at: def.created_at.to_rfc3339(),
         requires_stamp: def.requires_stamp,
+        tombstoned: def.tombstoned,
     };
     let yaml =
         serde_yaml::to_string(&fm).map_err(|e| ChannelDefStoreError::MalformedFrontmatter {

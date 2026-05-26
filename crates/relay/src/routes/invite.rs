@@ -30,12 +30,12 @@ use uuid::Uuid;
 
 use crate::state::{AppState, Invite};
 
-/// v1 (2026-05-19): signature canonicalization extended to cover org-flavored
-/// fields (org_did, org_alias, role, channel_handles, channel_relay_endpoint).
-/// All fields are signed even when empty so bilateral peer invites and
-/// org invites use the same scheme — empty strings / empty lists are
-/// canonicalized as zero-length tokens between unit separators.
-const CREATE_DOMAIN: &[u8] = b"secretariat-relay-invite-create:v1:";
+/// v2 (2026-05-26 Slice A'): signature canonicalization extended with the
+/// `scope_intent` field — the grant-shape declaration (org / subtree /
+/// channels). All fields are signed even when empty so bilateral peer
+/// invites and org invites use the same scheme — empty strings / empty
+/// lists are canonicalized as zero-length tokens between unit separators.
+const CREATE_DOMAIN: &[u8] = b"secretariat-relay-invite-create:v2:";
 const CLAIM_DOMAIN: &[u8] = b"secretariat-relay-invite-claim:v0:";
 
 /// Unit separator (US, 0x1F) — joins fields in the signature preimage.
@@ -76,6 +76,10 @@ pub struct CreateRequest {
     /// receiving the invite when absent.
     #[serde(default)]
     pub channel_relay_endpoint: Option<String>,
+    /// Grant-shape declaration (v2). One of `"org"`, `"subtree:<handle>"`,
+    /// `"channels"`. Empty / absent for legacy bilateral invites.
+    #[serde(default)]
+    pub scope_intent: Option<String>,
     /// `ed25519:<base64>` over the canonical signature preimage. See
     /// `signature_preimage` for the exact byte sequence.
     pub signature: String,
@@ -106,6 +110,8 @@ pub struct ViewResponse {
     pub channel_handles: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub channel_relay_endpoint: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scope_intent: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -137,6 +143,8 @@ pub struct ClaimResponse {
     pub channel_handles: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub channel_relay_endpoint: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scope_intent: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -215,6 +223,7 @@ pub async fn create(
         role: req.role,
         channel_handles: req.channel_handles,
         channel_relay_endpoint: req.channel_relay_endpoint,
+        scope_intent: req.scope_intent,
     };
     state.create_invite(invite);
     info!(token = %token, inviter = %inviter, "invite created");
@@ -277,6 +286,7 @@ pub async fn view(
         role: invite.role,
         channel_handles: invite.channel_handles,
         channel_relay_endpoint: invite.channel_relay_endpoint,
+        scope_intent: invite.scope_intent,
     })
     .into_response()
 }
@@ -512,6 +522,7 @@ pub async fn claim(
         role: claimed.role,
         channel_handles: claimed.channel_handles,
         channel_relay_endpoint: claimed.channel_relay_endpoint,
+        scope_intent: claimed.scope_intent,
     })
     .into_response()
 }
@@ -593,7 +604,7 @@ pub fn create_input(inviter_did: &Did, expires_at: &str, purpose: Option<&str>) 
 }
 
 /// Bytes a client signs to claim an invite.
-/// Canonical signature preimage for v1 create-invite. Same scheme used by
+/// Canonical signature preimage for v2 create-invite. Same scheme used by
 /// both the relay verifier and the application-side signer in
 /// `crates/core/src/application/invite_ops.rs`. Order + separators MUST
 /// match exactly across both sides.
@@ -603,11 +614,13 @@ pub fn create_input(inviter_did: &Did, expires_at: &str, purpose: Option<&str>) 
 ///
 /// `CREATE_DOMAIN || inviter_did || US || expires_at || US || purpose ||
 /// US || org_did || US || org_alias || US || role || US || channel_handles
-/// joined by RS || US || channel_relay_endpoint`
+/// joined by RS || US || channel_relay_endpoint || US || scope_intent`
 ///
 /// Where `US` = 0x1F (unit separator), `RS` = 0x1E (record separator).
 /// Empty optional fields → zero-length tokens. Empty channel_handles list
-/// → zero bytes between the two surrounding `US`.
+/// → zero bytes between the two surrounding `US`. Slice A' (2026-05-26)
+/// added the trailing `scope_intent` field; v1 records cannot verify
+/// under v2 and must be rejected.
 #[allow(clippy::too_many_arguments)]
 pub fn create_signature_preimage_parts(
     inviter_did: &str,
@@ -618,6 +631,7 @@ pub fn create_signature_preimage_parts(
     role: Option<&str>,
     channel_handles: &[String],
     channel_relay_endpoint: Option<&str>,
+    scope_intent: Option<&str>,
 ) -> Vec<u8> {
     let mut v = CREATE_DOMAIN.to_vec();
     v.extend_from_slice(inviter_did.as_bytes());
@@ -640,6 +654,8 @@ pub fn create_signature_preimage_parts(
     }
     v.push(FIELD_SEP);
     v.extend_from_slice(channel_relay_endpoint.unwrap_or("").as_bytes());
+    v.push(FIELD_SEP);
+    v.extend_from_slice(scope_intent.unwrap_or("").as_bytes());
     v
 }
 
@@ -653,6 +669,7 @@ fn create_signature_preimage(req: &CreateRequest) -> Vec<u8> {
         req.role.as_deref(),
         &req.channel_handles,
         req.channel_relay_endpoint.as_deref(),
+        req.scope_intent.as_deref(),
     )
 }
 

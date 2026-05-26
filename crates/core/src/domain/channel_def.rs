@@ -28,6 +28,13 @@ pub struct ChannelDef {
     /// deferred per `[[role-tamper-proof]]`. Default `false` (ambient
     /// channels — most traffic).
     pub requires_stamp: bool,
+    /// Tombstone marker. When `true`, this channelDef announces the
+    /// channel's removal — receiving subscribers drop the channel from
+    /// their sidebar (delete local `channel.md` manifest) but preserve
+    /// any `envelopes/` history already on disk. Distinct from
+    /// `retired_at` (soft retire — still readable + listed). Default
+    /// `false`. Slice A' (live org membership).
+    pub tombstoned: bool,
 }
 
 impl ChannelDef {
@@ -43,6 +50,7 @@ impl ChannelDef {
             description: description.into(),
             created_at,
             requires_stamp: false,
+            tombstoned: false,
         }
     }
 
@@ -51,6 +59,12 @@ impl ChannelDef {
     /// `assemblee_generale`, board decisions, contracts).
     pub fn with_requires_stamp(mut self, requires_stamp: bool) -> Self {
         self.requires_stamp = requires_stamp;
+        self
+    }
+
+    /// Builder-style: mark this channelDef as a tombstone (channel removed).
+    pub fn with_tombstoned(mut self, tombstoned: bool) -> Self {
+        self.tombstoned = tombstoned;
         self
     }
 }

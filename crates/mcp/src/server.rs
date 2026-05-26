@@ -52,6 +52,7 @@ use secretariat_core::application::{
     add_agent as app_add_agent, archive_envelope, capture_to_queue_with_ag, channels_root_for,
     claim_invite, compose_envelope_with_ag, create_channel as app_create_channel, create_invite,
     create_org as app_create_org, delete_channel as app_delete_channel,
+    emit_channel_def_envelope as app_emit_channel_def_envelope,
     delete_org as app_delete_org, get_channel_contract as app_get_channel_contract,
     get_org_contract as app_get_org_contract, list_agents as app_list_agents, list_channels,
     list_draft_files, list_orgs as app_list_orgs, read_channel, read_envelope,
@@ -62,7 +63,9 @@ use secretariat_core::application::{
     CaptureRequest, ComposeRequest, ContractLevel, ContractPatch, ContractView,
     LayeredVerifyOutcome, PatchField, ResolvedContract, StampError, VerifyOutcome,
 };
-use secretariat_core::domain::{OrgAlias, QueueHandle, Recipient, Root, StampAct, TrustGate};
+use secretariat_core::domain::{
+    OrgAlias, QueueHandle, Recipient, Root, SignerRole, StampAct, TrustGate,
+};
 use secretariat_core::infrastructure::biometric::build_signer;
 use secretariat_core::infrastructure::composite_did_resolver::CompositeDidResolver;
 use secretariat_core::infrastructure::did_web_resolver::DidWebResolver;
@@ -462,6 +465,22 @@ pub struct InviteParams {
     /// in `~/.secretariat/relay-state.json`.
     #[serde(default)]
     pub endpoint: Option<String>,
+    /// Org alias granted by this invite (Slice A'). Pair with `role` and
+    /// `channels`; all three required together for org invites.
+    #[serde(default)]
+    pub org: Option<String>,
+    /// Role granted on org channels (`subscribe` / `publish` /
+    /// `collaborator` / `admin`).
+    #[serde(default)]
+    pub role: Option<String>,
+    /// Channel scope. `"*"` → live org participant; `"<handle>"` →
+    /// subtree; `"h1,h2"` → enumerated list.
+    #[serde(default)]
+    pub channels: Option<String>,
+    /// Relay endpoint where the org's channels live. Defaults to the
+    /// invite-creation endpoint.
+    #[serde(default)]
+    pub channel_relay_endpoint: Option<String>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -490,6 +509,16 @@ pub struct AcceptInviteOutput {
     pub claimed_at: String,
     /// Whether the relay registered the claimant's DID during this call.
     pub registered: bool,
+    /// Org alias the claimant joined, when this was an org-flavored
+    /// invite (Slice A'). Absent for bilateral peer invites.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub org_alias: Option<String>,
+    /// Role granted on the org's channels.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+    /// Grant scope (`org` / `subtree:<handle>` / `channels`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scope_intent: Option<String>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -1353,13 +1382,58 @@ impl SecretariatServer {
             None => first_registered_relay(&self.paths.relay_state)?,
         };
 
+        // Optional org context (Slice A'). `org`/`role`/`channels` ride
+        // together — error if partial.
+        let org_ctx = match (
+            params.org.as_deref(),
+            params.role.as_deref(),
+            params.channels.as_deref(),
+        ) {
+            (None, None, None) => None,
+            (Some(alias_str), Some(role_str), Some(channels_str)) => {
+                let alias = OrgAlias::parse(alias_str).map_err(|e| {
+                    invalid_request(format!("invalid org alias `{alias_str}`: {e}"))
+                })?;
+                let org_entry = app_show_org(&self.paths.orgs_root, &alias)
+                    .map_err(|e| invalid_request(format!("show_org failed: {e}")))?
+                    .ok_or_else(|| {
+                        invalid_request(format!("org `{}` not found locally", alias.as_str()))
+                    })?;
+                let org_did = org_entry.did.ok_or_else(|| {
+                    invalid_request(format!(
+                        "org `{}` has no DID — invite would carry no `org_did`",
+                        alias.as_str()
+                    ))
+                })?;
+                let (scope_intent, handles) = parse_channels_spec_mcp(channels_str)
+                    .map_err(|e| invalid_request(format!("--channels parse: {e}")))?;
+                let endpoint_for_channels = params
+                    .channel_relay_endpoint
+                    .clone()
+                    .unwrap_or_else(|| endpoint.clone());
+                Some(secretariat_core::application::OrgInviteContext {
+                    org_did,
+                    org_alias: alias.as_str().to_string(),
+                    role: role_str.to_string(),
+                    channel_handles: handles,
+                    channel_relay_endpoint: Some(endpoint_for_channels),
+                    scope_intent,
+                })
+            }
+            _ => {
+                return Err(invalid_request(
+                    "`org`/`role`/`channels` must be passed together for org invites".to_string(),
+                ));
+            }
+        };
+
         let invite = create_invite(
             &endpoint,
             &did,
             &key,
             params.purpose.as_deref(),
             params.ttl_hours,
-            None,
+            org_ctx.as_ref(),
         )
         .map_err(|e| invalid_request(format!("create_invite failed: {e}")))?;
 
@@ -1427,11 +1501,48 @@ impl SecretariatServer {
 
         info!(inviter = %claimed.inviter_did, "invite claimed via MCP");
 
+        // Slice A': org-flavored claim → persist membership locally so
+        // the daemon's poll loop pulls the `_meta` queue starting next
+        // tick. channelDef ingest hydrates the channel tree from there.
+        let mut org_alias_out = None;
+        let mut role_out = None;
+        let mut scope_intent_out = None;
+        if let (Some(org_did), Some(org_alias), Some(role)) = (
+            claimed.org_did.as_ref(),
+            claimed.org_alias.as_ref(),
+            claimed.role.as_ref(),
+        ) {
+            let relay_endpoint = claimed
+                .channel_relay_endpoint
+                .clone()
+                .unwrap_or_else(|| endpoint_origin.clone());
+            let request = secretariat_core::application::AcceptMembershipRequest {
+                org_did: org_did.clone(),
+                org_alias: org_alias.clone(),
+                role: role.clone(),
+                relay_endpoint,
+                inviter_did: Some(claimed.inviter_did.clone()),
+                joined_at: Utc::now(),
+            };
+            secretariat_core::application::persist_org_membership(
+                &self.paths.orgs_root,
+                Some(&self.paths.contract_stub),
+                request,
+            )
+            .map_err(|e| invalid_request(format!("persist_org_membership: {e}")))?;
+            org_alias_out = Some(org_alias.clone());
+            role_out = Some(role.clone());
+            scope_intent_out = claimed.scope_intent.as_ref().map(|s| s.to_wire_string());
+        }
+
         Ok(Json(AcceptInviteOutput {
             inviter_did: claimed.inviter_did.as_str().to_string(),
             claimant_did: claimed.claimant_did.as_str().to_string(),
             claimed_at: claimed.claimed_at.to_rfc3339(),
             registered: claimed.registered,
+            org_alias: org_alias_out,
+            role: role_out,
+            scope_intent: scope_intent_out,
         }))
     }
 
@@ -1710,16 +1821,53 @@ impl SecretariatServer {
             .name
             .unwrap_or_else(|| handle.segments().last().copied().unwrap_or("").to_string());
         let description = params.description.unwrap_or_default();
+        let now = Utc::now();
         let def = app_create_channel(
             &root,
-            handle,
-            name,
-            description,
-            Utc::now(),
+            handle.clone(),
+            name.clone(),
+            description.clone(),
+            now,
             Some(&self.paths.contract_stub),
         )
         .map_err(|e| invalid_request(format!("create_channel failed: {e}")))?;
         info!(handle = %def.handle.as_str(), "channel created via MCP");
+        // Org channels: also emit a channelDef envelope to `<alias>:_meta`
+        // so subscribers learn about it on next poll (Slice A').
+        if let Some(org_alias_str) = &params.org {
+            let alias = OrgAlias::parse(org_alias_str).map_err(|e| {
+                invalid_request(format!("invalid org alias `{org_alias_str}`: {e}"))
+            })?;
+            let org = app_show_org(&self.paths.orgs_root, &alias)
+                .map_err(|e| invalid_request(format!("show_org failed: {e}")))?
+                .ok_or_else(|| invalid_request(format!("org `{}` not found", alias.as_str())))?;
+            if let Some(org_did) = org.did {
+                let owner_did = load_principal_did(&self.paths)?;
+                let key = load_signing_key(&self.paths.signing_key).map_err(|e| {
+                    invalid_request(format!(
+                        "loading signing key from {}: {e}",
+                        self.paths.signing_key.display()
+                    ))
+                })?;
+                if let Err(e) = app_emit_channel_def_envelope(
+                    &self.paths.orgs_root,
+                    &alias,
+                    &org_did,
+                    &owner_did,
+                    SignerRole::Principal,
+                    &key,
+                    &handle,
+                    &name,
+                    &description,
+                    false,
+                    now,
+                ) {
+                    return Err(invalid_request(format!(
+                        "channelDef envelope emit failed: {e}"
+                    )));
+                }
+            }
+        }
         Ok(Json(ChannelDefDto {
             handle: def.handle.as_str().to_string(),
             name: def.name,
@@ -1758,6 +1906,44 @@ impl SecretariatServer {
             }));
         }
         let root = self.resolve_channels_root(params.org.as_deref())?;
+        let now = Utc::now();
+        // Org channels: emit a tombstone channelDef BEFORE removing
+        // local tree so subscribers can mirror the removal.
+        if let Some(org_alias_str) = &params.org {
+            let alias = OrgAlias::parse(org_alias_str).map_err(|e| {
+                invalid_request(format!("invalid org alias `{org_alias_str}`: {e}"))
+            })?;
+            if let Some(org) = app_show_org(&self.paths.orgs_root, &alias)
+                .map_err(|e| invalid_request(format!("show_org failed: {e}")))?
+            {
+                if let Some(org_did) = org.did {
+                    let owner_did = load_principal_did(&self.paths)?;
+                    let key = load_signing_key(&self.paths.signing_key).map_err(|e| {
+                        invalid_request(format!(
+                            "loading signing key from {}: {e}",
+                            self.paths.signing_key.display()
+                        ))
+                    })?;
+                    if let Err(e) = app_emit_channel_def_envelope(
+                        &self.paths.orgs_root,
+                        &alias,
+                        &org_did,
+                        &owner_did,
+                        SignerRole::Principal,
+                        &key,
+                        &handle,
+                        "",
+                        "",
+                        true,
+                        now,
+                    ) {
+                        return Err(invalid_request(format!(
+                            "tombstone channelDef emit failed: {e}"
+                        )));
+                    }
+                }
+            }
+        }
         app_delete_channel(&root, &handle)
             .map_err(|e| invalid_request(format!("delete_channel failed: {e}")))?;
         info!(handle = %handle.as_str(), "channel deleted via MCP");
@@ -2410,6 +2596,41 @@ fn relay_origin_from_claim_url(claim_url: &str) -> Result<String, ErrorData> {
         .find("/v0/invite/")
         .ok_or_else(|| invalid_request("claim URL does not contain `/v0/invite/`".to_string()))?;
     Ok(claim_url[..idx].to_string())
+}
+
+/// Parse a `--channels` spec into `(ScopeIntent, channel_handles)`. Same
+/// grammar as the CLI's `invite::parse_channels_spec` (`*` → live org,
+/// bare handle → subtree, comma list → explicit). Module-local because
+/// CLI returns `anyhow::Error` and MCP returns `ErrorData`.
+fn parse_channels_spec_mcp(
+    spec: &str,
+) -> Result<(secretariat_core::domain::ScopeIntent, Vec<String>), String> {
+    use secretariat_core::domain::{QueueHandle, ScopeIntent};
+    let trimmed = spec.trim();
+    if trimmed.is_empty() {
+        return Err("--channels cannot be empty".to_string());
+    }
+    if trimmed == "*" {
+        return Ok((ScopeIntent::Org, Vec::new()));
+    }
+    if trimmed.contains(',') {
+        let mut handles = Vec::new();
+        for raw in trimmed.split(',') {
+            let h = raw.trim();
+            if h.is_empty() {
+                continue;
+            }
+            QueueHandle::parse(h).map_err(|e| format!("invalid channel handle `{h}`: {e}"))?;
+            handles.push(h.to_string());
+        }
+        if handles.is_empty() {
+            return Err("--channels comma-separated list parsed empty".to_string());
+        }
+        return Ok((ScopeIntent::Channels, handles));
+    }
+    let handle = QueueHandle::parse(trimmed)
+        .map_err(|e| format!("invalid subtree handle `{trimmed}`: {e}"))?;
+    Ok((ScopeIntent::Subtree(handle), Vec::new()))
 }
 
 fn layered_outcome_to_view(outcome: LayeredVerifyOutcome) -> VerifyOutput {

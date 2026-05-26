@@ -24,11 +24,13 @@ use serde::Deserialize;
 use thiserror::Error;
 
 use crate::codec::encode_ed25519_multibase;
+use crate::domain::ScopeIntent;
 use crate::Did;
 
-/// Domain-separation tags must match `relay::routes::invite`. v1 of the
-/// create domain (2026-05-19) covers the org-flavored fields.
-const CREATE_DOMAIN: &[u8] = b"secretariat-relay-invite-create:v1:";
+/// Domain-separation tags must match `relay::routes::invite`. v2 of the
+/// create domain (2026-05-26 Slice A') extends v1 with `scope_intent` —
+/// the grant-shape declaration (org / subtree / channels).
+const CREATE_DOMAIN: &[u8] = b"secretariat-relay-invite-create:v2:";
 const CLAIM_DOMAIN: &[u8] = b"secretariat-relay-invite-claim:v0:";
 /// Unit separator — joins fields in the create-invite signature preimage.
 const FIELD_SEP: u8 = 0x1F;
@@ -74,6 +76,9 @@ pub struct InviteView {
     pub role: Option<String>,
     pub channel_handles: Vec<String>,
     pub channel_relay_endpoint: Option<String>,
+    /// Grant-shape declared by the inviter. `None` for bilateral invites
+    /// and legacy v1 records. See [`ScopeIntent`].
+    pub scope_intent: Option<ScopeIntent>,
 }
 
 #[derive(Debug, Clone)]
@@ -87,6 +92,7 @@ pub struct InviteClaimed {
     pub role: Option<String>,
     pub channel_handles: Vec<String>,
     pub channel_relay_endpoint: Option<String>,
+    pub scope_intent: Option<ScopeIntent>,
 }
 
 /// Optional org context attached to an invite at creation time. Pass `None`
@@ -98,6 +104,10 @@ pub struct OrgInviteContext {
     pub role: String,
     pub channel_handles: Vec<String>,
     pub channel_relay_endpoint: Option<String>,
+    /// Grant-shape. `ScopeIntent::Org` for `--channels '*'`. Defaults to
+    /// `Channels` when omitted by the caller — preserves legacy semantics
+    /// (use the explicit `channel_handles` list, no future channels).
+    pub scope_intent: ScopeIntent,
 }
 
 // ---------------------------------------------------------------------------
@@ -130,6 +140,10 @@ pub fn create_invite(
     let empty: Vec<String> = Vec::new();
     let channel_handles: &[String] = org.map(|o| o.channel_handles.as_slice()).unwrap_or(&empty);
     let channel_relay_endpoint_str = org.and_then(|o| o.channel_relay_endpoint.as_deref());
+    // Bilateral peer invites have no scope_intent (signed as empty); org
+    // invites carry a populated ScopeIntent.
+    let scope_intent_wire: Option<String> = org.map(|o| o.scope_intent.to_wire_string());
+    let scope_intent_str = scope_intent_wire.as_deref();
 
     let to_sign = create_signature_preimage(
         inviter_did.as_str(),
@@ -140,6 +154,7 @@ pub fn create_invite(
         role_str,
         channel_handles,
         channel_relay_endpoint_str,
+        scope_intent_str,
     );
     let sig = inviter_signing_key.sign(&to_sign);
     let sig_str = format!("ed25519:{}", B64.encode(sig.to_bytes()));
@@ -153,6 +168,7 @@ pub fn create_invite(
         "role": role_str,
         "channel_handles": channel_handles,
         "channel_relay_endpoint": channel_relay_endpoint_str,
+        "scope_intent": scope_intent_str,
         "signature": sig_str,
     });
 
@@ -179,7 +195,7 @@ pub fn create_invite(
     })
 }
 
-/// Canonical signature preimage for v1 create-invite. Must match the
+/// Canonical signature preimage for v2 create-invite. Must match the
 /// relay-side `create_signature_preimage_parts` in
 /// `crates/relay/src/routes/invite.rs` byte-for-byte.
 #[allow(clippy::too_many_arguments)]
@@ -192,6 +208,7 @@ fn create_signature_preimage(
     role: Option<&str>,
     channel_handles: &[String],
     channel_relay_endpoint: Option<&str>,
+    scope_intent: Option<&str>,
 ) -> Vec<u8> {
     let mut v = CREATE_DOMAIN.to_vec();
     v.extend_from_slice(inviter_did.as_bytes());
@@ -214,6 +231,8 @@ fn create_signature_preimage(
     }
     v.push(FIELD_SEP);
     v.extend_from_slice(channel_relay_endpoint.unwrap_or("").as_bytes());
+    v.push(FIELD_SEP);
+    v.extend_from_slice(scope_intent.unwrap_or("").as_bytes());
     v
 }
 
@@ -254,7 +273,20 @@ pub fn view_invite(claim_url: &str) -> Result<InviteView, InviteError> {
         role: parsed.role,
         channel_handles: parsed.channel_handles,
         channel_relay_endpoint: parsed.channel_relay_endpoint,
+        scope_intent: parse_scope_intent_wire(parsed.scope_intent.as_deref())?,
     })
+}
+
+/// Parse an inbound scope_intent string. Empty / absent → `None` (legacy
+/// bilateral, or v1 record). Recognised string → `Some(ScopeIntent)`.
+fn parse_scope_intent_wire(s: Option<&str>) -> Result<Option<ScopeIntent>, InviteError> {
+    match s {
+        None => Ok(None),
+        Some("") => Ok(None),
+        Some(text) => ScopeIntent::parse_wire_string(text)
+            .map(Some)
+            .map_err(|e| InviteError::BadResponse(format!("scope_intent: {e}"))),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -314,6 +346,7 @@ pub fn claim_invite(
         role: parsed.role,
         channel_handles: parsed.channel_handles,
         channel_relay_endpoint: parsed.channel_relay_endpoint,
+        scope_intent: parse_scope_intent_wire(parsed.scope_intent.as_deref())?,
     })
 }
 
@@ -363,6 +396,8 @@ struct ViewRespWire {
     channel_handles: Vec<String>,
     #[serde(default)]
     channel_relay_endpoint: Option<String>,
+    #[serde(default)]
+    scope_intent: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -381,6 +416,8 @@ struct ClaimRespWire {
     channel_handles: Vec<String>,
     #[serde(default)]
     channel_relay_endpoint: Option<String>,
+    #[serde(default)]
+    scope_intent: Option<String>,
 }
 
 #[cfg(test)]

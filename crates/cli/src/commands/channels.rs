@@ -14,13 +14,15 @@ use chrono::Utc;
 use clap::{Parser, Subcommand};
 
 use secretariat_core::application::{
-    create_channel, delete_channel, get_channel_contract, list_channels, read_channel,
-    resolve_channel_contract, set_channel_contract, show_org, ContractPatch, PatchField,
+    create_channel, delete_channel, emit_channel_def_envelope, get_channel_contract,
+    list_channels, read_channel, resolve_channel_contract, set_channel_contract, show_org,
+    ContractPatch, PatchField,
 };
-use secretariat_core::domain::{OrgAlias, QueueHandle, TrustGate};
+use secretariat_core::domain::{OrgAlias, QueueHandle, SignerRole, TrustGate};
+use secretariat_core::infrastructure::keys::load_signing_key;
 use secretariat_core::infrastructure::org_store::org_channels_root;
 
-use super::paths::key_paths;
+use super::paths::{key_paths, load_did};
 
 #[derive(Parser, Debug)]
 pub struct Args {
@@ -327,12 +329,13 @@ fn run_create(paths: &secretariat_core::infrastructure::KeyPaths, args: CreateAr
     let name = args
         .name
         .unwrap_or_else(|| handle.segments().last().copied().unwrap_or("").to_string());
+    let now = Utc::now();
     let def = create_channel(
         &root,
-        handle,
-        name,
-        args.description,
-        Utc::now(),
+        handle.clone(),
+        name.clone(),
+        args.description.clone(),
+        now,
         Some(&paths.contract_stub),
     )
     .context("creating channel")?;
@@ -343,8 +346,40 @@ fn run_create(paths: &secretariat_core::infrastructure::KeyPaths, args: CreateAr
     if !def.description.is_empty() {
         println!("  description: {}", def.description);
     }
-    if let Some(org_alias) = &args.org {
-        println!("  org: {}", org_alias);
+    if let Some(org_alias_str) = &args.org {
+        println!("  org: {}", org_alias_str);
+        // Emit a channelDef envelope to the org's `_meta` queue so
+        // subscribers learn the channel exists on next poll. Slice A'.
+        let alias = OrgAlias::parse(org_alias_str)
+            .map_err(|e| anyhow!("invalid org alias `{org_alias_str}`: {e}"))?;
+        let org = show_org(&paths.orgs_root, &alias)
+            .context("looking up org")?
+            .ok_or_else(|| anyhow!("org `{}` not found", alias.as_str()))?;
+        let org_did = org
+            .did
+            .ok_or_else(|| anyhow!(
+                "org `{}` has no DID — can't emit channelDef envelope (set the org's DID first)",
+                alias.as_str()
+            ))?;
+        let owner_did = load_did(paths)?;
+        let key = load_signing_key(&paths.signing_key).with_context(|| {
+            format!("loading signing key from {}", paths.signing_key.display())
+        })?;
+        let envelope_path = emit_channel_def_envelope(
+            &paths.orgs_root,
+            &alias,
+            &org_did,
+            &owner_did,
+            SignerRole::Principal,
+            &key,
+            &handle,
+            &name,
+            &args.description,
+            false,
+            now,
+        )
+        .context("emitting channelDef envelope to <alias>:_meta")?;
+        println!("  channelDef envelope: {}", envelope_path.display());
     }
     Ok(())
 }
@@ -483,6 +518,41 @@ fn run_delete(paths: &secretariat_core::infrastructure::KeyPaths, args: DeleteAr
     let handle = QueueHandle::parse(&args.handle)
         .map_err(|e| anyhow!("invalid handle `{}`: {e}", args.handle))?;
     let root = resolve_channels_root(paths, args.org.as_deref())?;
+    let now = Utc::now();
+    // For org channels: emit a tombstoned channelDef envelope BEFORE
+    // removing the local tree. Subscribers' daemons will then mirror
+    // the removal (Slice A').
+    if let Some(org_alias_str) = &args.org {
+        let alias = OrgAlias::parse(org_alias_str)
+            .map_err(|e| anyhow!("invalid org alias `{org_alias_str}`: {e}"))?;
+        let org = show_org(&paths.orgs_root, &alias)
+            .context("looking up org")?
+            .ok_or_else(|| anyhow!("org `{}` not found", alias.as_str()))?;
+        if let Some(org_did) = org.did {
+            let owner_did = load_did(paths)?;
+            let key = load_signing_key(&paths.signing_key).with_context(|| {
+                format!("loading signing key from {}", paths.signing_key.display())
+            })?;
+            let envelope_path = emit_channel_def_envelope(
+                &paths.orgs_root,
+                &alias,
+                &org_did,
+                &owner_did,
+                SignerRole::Principal,
+                &key,
+                &handle,
+                "",
+                "",
+                true,
+                now,
+            )
+            .context("emitting tombstoned channelDef envelope")?;
+            println!(
+                "tombstone channelDef envelope: {}",
+                envelope_path.display()
+            );
+        }
+    }
     delete_channel(&root, &handle).context("deleting channel")?;
     println!("deleted channel: {}", handle.as_str());
     Ok(())

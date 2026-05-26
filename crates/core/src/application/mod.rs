@@ -1,14 +1,17 @@
 //! Application — orchestrates use cases (composition of domain + ports).
 
+pub mod accept_org_membership;
 pub mod ag_extract;
 pub mod agent_manifest_ops;
 pub mod agent_ops;
+pub mod channel_def_envelope;
 pub mod capture_ops;
 pub mod channels_ops;
 pub mod compose_envelope;
 pub mod contextify_capture;
 pub mod contract_ops;
 pub mod delivery_policy;
+pub mod federation;
 pub mod inbox_actions;
 pub mod inbox_ops;
 pub mod invite_ops;
@@ -19,6 +22,10 @@ pub mod stamp_document;
 pub mod sync;
 pub mod verify_document;
 
+pub use accept_org_membership::{
+    persist_org_membership, AcceptMembershipError, AcceptMembershipOutcome,
+    AcceptMembershipRequest,
+};
 pub use agent_manifest_ops::{
     emit_manifest_into_channel, ingest_manifest_from_file, AgentManifestOpsError,
 };
@@ -26,9 +33,14 @@ pub use agent_ops::{add_agent, list_agents, remove_agent, rotate_agent, AgentOps
 pub use capture_ops::{
     capture_to_queue, capture_to_queue_with_ag, channels_root_for, CaptureError, CaptureRequest,
 };
+pub use channel_def_envelope::{
+    emit_channel_def_envelope, ingest_channel_def_envelope, parse_channel_def_from_envelope,
+    ChannelDefEnvelopeError, ChannelDefRecord, IngestOutcome,
+    CHANNEL_DEF_TYPE as CHANNEL_DEF_ENVELOPE_TYPE,
+};
 pub use channels_ops::{
-    create_channel, delete_channel, list_channels, read_channel, ChannelEnvelope, ChannelOpError,
-    ChannelSummary,
+    create_channel, delete_channel, handle_is_reserved, list_channels, read_channel,
+    ChannelEnvelope, ChannelOpError, ChannelSummary, META_HANDLE,
 };
 pub use compose_envelope::{
     compose_envelope, compose_envelope_with_ag, ComposeError, ComposeRequest, ComposeSigner,
@@ -43,6 +55,7 @@ pub use contract_ops::{
     ResolvedContract,
 };
 pub use delivery_policy::{decide_poll, CadenceConfig, CadenceConfigError, PollDecision};
+pub use federation::{drain_undelivered, FederationError, FederationOutcome};
 pub use inbox_actions::{archive_envelope, defer_envelope, unarchive_envelope, InboxActionError};
 pub use inbox_ops::{
     list_draft_files, list_inbox_files, read_envelope, InboxOpError, ListedEnvelope, ReadResult,

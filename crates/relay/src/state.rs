@@ -107,6 +107,12 @@ pub struct Invite {
     /// structure (org metadata here, channels elsewhere).
     #[serde(default)]
     pub channel_relay_endpoint: Option<String>,
+    /// Grant-shape declaration (Slice A', v2). Stored verbatim as the
+    /// wire string (`"org"`, `"subtree:<handle>"`, `"channels"`) —
+    /// the application layer parses on claim. Empty / absent for legacy
+    /// bilateral or v1 records.
+    #[serde(default)]
+    pub scope_intent: Option<String>,
 }
 
 /// Composite key for the queue index — `(owner_did, handle)`. The owner is the

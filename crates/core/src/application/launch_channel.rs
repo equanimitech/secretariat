@@ -103,6 +103,7 @@ mod tests {
             description: String::new(),
             created_at: Utc::now(),
             requires_stamp: false,
+            tombstoned: false,
         };
         crate::infrastructure::save_channel_def(channels_root, &def, false).unwrap();
         dir
