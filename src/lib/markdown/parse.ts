@@ -13,19 +13,37 @@ function trim(s: string): string {
   return s.replace(/^\n+/, '').replace(/\n+$/, '')
 }
 
+function loadFrontmatterObject(fmText: string): Frontmatter {
+  const loaded = yaml.load(fmText)
+  return loaded && typeof loaded === 'object' && !Array.isArray(loaded)
+    ? (loaded as Frontmatter)
+    : {}
+}
+
+// Some upstream writers (notably `sec capture --stdin` with bodies that
+// themselves already carry a `---...---` block) produce files with two
+// adjacent frontmatter blocks. Without this merge, the second block leaks
+// into the body, gets parsed as markdown by the editor, and a roundtrip
+// rewrites `_` as `\_`, `- ` as `* `, and `---` as `***` — corrupting the
+// YAML and bricking later loads.
 export function parseMarkdown(source: string): ParsedMarkdown {
-  const match = source.match(FM_RE)
-  if (!match) {
+  let remaining = source
+  const merged: Frontmatter = {}
+  let matched = false
+  while (true) {
+    const m = remaining.match(FM_RE)
+    if (!m) break
+    matched = true
+    const fm = loadFrontmatterObject(m[1] ?? '')
+    for (const [k, v] of Object.entries(fm)) {
+      if (!(k in merged)) merged[k] = v
+    }
+    remaining = (m[2] ?? '').replace(/^\n+/, '')
+  }
+  if (!matched) {
     return { frontmatter: {}, body: trim(source) }
   }
-  const fmText = match[1] ?? ''
-  const body = match[2] ?? ''
-  const loaded = yaml.load(fmText)
-  const frontmatter =
-    loaded && typeof loaded === 'object' && !Array.isArray(loaded)
-      ? (loaded as Frontmatter)
-      : {}
-  return { frontmatter, body: trim(body) }
+  return { frontmatter: merged, body: trim(remaining) }
 }
 
 export function serializeMarkdown(

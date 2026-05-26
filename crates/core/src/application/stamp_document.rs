@@ -148,9 +148,7 @@ fn build_stamp_reason(basename: Option<&str>, headline: Option<&str>, short_hash
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::{
-        Did, EnvelopeBuilder, EnvelopeDepth, EnvelopeUrgency, QueueHandle, Recipient,
-    };
+    use crate::domain::{Did, EnvelopeBuilder, QueueHandle, Recipient};
     use crate::infrastructure::ed25519_signer::{AlwaysAllowGate, Ed25519Signer};
     use crate::infrastructure::keys::generate_keypair;
     use crate::infrastructure::markdown::embed_stamp as do_embed;
@@ -257,8 +255,6 @@ mod tests {
             me.clone(),
             Recipient::new(me.clone(), QueueHandle::parse("inbox:triage").unwrap()),
         )
-        .depth(EnvelopeDepth::Gross)
-        .urgency(EnvelopeUrgency::Whenever)
         .source("capture-test")
         .build();
         // Local capture: owner DID matches the principal's DID.
@@ -298,8 +294,6 @@ mod tests {
                 QueueHandle::parse("inbox:default").unwrap(),
             ),
         )
-        .depth(EnvelopeDepth::Subtle)
-        .urgency(EnvelopeUrgency::Soon)
         .source("test")
         .build();
         let pre = do_embed("# Body\n", Some(&envelope), None).unwrap();

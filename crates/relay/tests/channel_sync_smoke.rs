@@ -135,8 +135,6 @@ $type: tech.equanimi.secretariat.envelope\n  \
 from: {}\n  \
 to: {}\n  \
 handle: {}\n  \
-depth: subtle\n  \
-urgency: whenever\n  \
 source: smoke-test\n\
 ---\nhello channel\n",
         owner_did.as_str(),

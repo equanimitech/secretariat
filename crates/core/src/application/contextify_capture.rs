@@ -398,7 +398,7 @@ fn relocate(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::{Did, EnvelopeBuilder, EnvelopeDepth, EnvelopeUrgency};
+    use crate::domain::{Did, EnvelopeBuilder};
     use crate::infrastructure::cognition::read_entries;
     use crate::infrastructure::markdown::embed_stamp;
     use tempfile::TempDir;
@@ -441,8 +441,6 @@ mod tests {
         let me = rafa();
         let handle = QueueHandle::parse("inbox:triage").unwrap();
         let envelope = EnvelopeBuilder::new(me.clone(), Recipient::new(me, handle))
-            .depth(EnvelopeDepth::Subtle)
-            .urgency(EnvelopeUrgency::Whenever)
             .source("test".to_string())
             .build();
         let dir = queues_root
@@ -559,8 +557,6 @@ mod tests {
         let me = rafa();
         let handle = QueueHandle::parse("area:health").unwrap();
         let envelope = EnvelopeBuilder::new(me.clone(), Recipient::new(me, handle))
-            .depth(EnvelopeDepth::Subtle)
-            .urgency(EnvelopeUrgency::Whenever)
             .source("test".to_string())
             .build();
         let target_dir = queues

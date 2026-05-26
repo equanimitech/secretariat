@@ -19,7 +19,7 @@ pub mod ports;
 // Curated re-exports for callers (CLI, Tauri, future MCP server).
 pub use application::{stamp_document, verify_document, StampOutcome, VerifyOutcome};
 pub use domain::{
-    AttestedDocument, Did, DisplayName, DocHash, EncryptionScheme, Envelope, EnvelopeDepth,
-    EnvelopeUrgency, RelayEndpoint, Signature, Stamp, StampAct,
+    AttestedDocument, Did, DisplayName, DocHash, EncryptionScheme, Envelope, RelayEndpoint,
+    Signature, Stamp, StampAct,
 };
 pub use ports::{DidResolver, Signer};

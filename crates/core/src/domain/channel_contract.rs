@@ -3,9 +3,9 @@
 //! Per AGENTS.md rule #6: `<channel-dir>/contract.local.md` is **the
 //! principal's private consumption contract for that channel** — how
 //! *they* approach it. Cadence they poll at, minimum trust they
-//! require before surfacing, depth/urgency filters, notify rules.
-//! Private file on the subscriber's disk. Never sent on wire. Never
-//! shared with other roster members.
+//! require before surfacing, notify rules. Private file on the
+//! subscriber's disk. Never sent on wire. Never shared with other
+//! roster members.
 //!
 //! Distinct from **channel governance** (roster, "this channel only
 //! accepts stamped envelopes" policy) — that lives in `channel.md` or
@@ -24,8 +24,11 @@
 //!   this trust level or higher (`signed-only` → also `stamp-required`;
 //!   `stamp-required` → stamped only).
 //!
-//! Additional consumption fields (`depth_filter`, `urgency_filter`,
-//! `notify`) land when the routing daemon ships and demands them.
+//! Additional consumption fields (`notify`) land when the routing
+//! daemon ships and demands them. The earlier `depth_filter` /
+//! `urgency_filter` shape is dropped — pitch
+//! `2026-05-21-drop-envelope-depth-urgency.md` removed those envelope
+//! hints; routing composes from handle-tree + cadence only.
 //! Governance fields (`roster`, `accepts_only`, `cadence_max`) don't
 //! belong here at all — they extend `channel.md`.
 

@@ -28,9 +28,9 @@ If the template is empty or missing critical sections, fall back to the default 
 
 ### 2. Draft the body
 
-Apply the template. Default depth: `subtle` (most envelopes). Default urgency: `whenever`. Override only if the topic genuinely warrants `gross` depth or `now`/`soon` urgency, and surface the choice to the principal.
+Apply the template.
 
-Tone: match the principal's voice. If the channel has a `contract.local.md`, let its cadence / depth preferences shape the default urgency you propose (a "weekly review" channel rarely warrants `now`).
+Tone: match the principal's voice. If the channel has a `contract.local.md`, let its cadence preferences shape the framing you propose (a "weekly review" channel rarely warrants urgent language).
 
 ### 3. Show the draft INLINE first
 
@@ -49,8 +49,6 @@ Call the `compose` tool with:
 - `to`: the channel-owner DID
 - `handle`: the channel handle
 - `body`: the approved body
-- `depth`: chosen depth
-- `urgency`: chosen urgency
 - `source`: `"mcp-compose-prompt"` (lets the substrate trace provenance)
 
 The tool returns the file_path of the draft in `<root>/.../channels/<handle-path>/envelopes/YYYY/MM/DD/`. The envelope's frontmatter omits `delivered:` — that's the substrate's "draft" signal until the daemon federates it. For own-channels, no federation occurs; for channels owned by another DID, the daemon picks it up and writes `delivered:` in place on success.

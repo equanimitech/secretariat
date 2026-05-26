@@ -9,7 +9,7 @@ use clap::Parser;
 
 use secretariat_core::application::{compose_envelope_with_ag, ComposeRequest, ComposeSigner};
 use secretariat_core::domain::{
-    Agent, AgentRole, Did, EnvelopeDepth, EnvelopeUrgency, QueueHandle, Recipient, SignerRole,
+    Agent, AgentRole, Did, QueueHandle, Recipient, SignerRole,
 };
 use secretariat_core::infrastructure::identity_store::load_identity_verified;
 use secretariat_core::infrastructure::keys::load_signing_key;
@@ -40,14 +40,6 @@ pub struct Args {
     /// did.json. Pass `--from` only if you maintain multiple identities.
     #[arg(long)]
     from: Option<String>,
-
-    /// Declared depth.
-    #[arg(long, value_enum, default_value_t = DepthArg::Subtle)]
-    depth: DepthArg,
-
-    /// Declared urgency.
-    #[arg(long, value_enum, default_value_t = UrgencyArg::Soon)]
-    urgency: UrgencyArg,
 
     /// Free-form origin string (e.g. claude session id).
     #[arg(long, default_value_t = String::from("manual"))]
@@ -90,38 +82,6 @@ pub struct Args {
     agent: Option<String>,
 }
 
-#[derive(clap::ValueEnum, Debug, Clone, Copy)]
-enum DepthArg {
-    Gross,
-    Subtle,
-}
-
-impl From<DepthArg> for EnvelopeDepth {
-    fn from(v: DepthArg) -> Self {
-        match v {
-            DepthArg::Gross => EnvelopeDepth::Gross,
-            DepthArg::Subtle => EnvelopeDepth::Subtle,
-        }
-    }
-}
-
-#[derive(clap::ValueEnum, Debug, Clone, Copy)]
-enum UrgencyArg {
-    Now,
-    Soon,
-    Whenever,
-}
-
-impl From<UrgencyArg> for EnvelopeUrgency {
-    fn from(v: UrgencyArg) -> Self {
-        match v {
-            UrgencyArg::Now => EnvelopeUrgency::Now,
-            UrgencyArg::Soon => EnvelopeUrgency::Soon,
-            UrgencyArg::Whenever => EnvelopeUrgency::Whenever,
-        }
-    }
-}
-
 pub fn run(args: Args) -> Result<()> {
     let paths = key_paths()?;
     paths.ensure_dirs()?;
@@ -138,8 +98,6 @@ pub fn run(args: Args) -> Result<()> {
     let req = ComposeRequest {
         from,
         recipient,
-        depth: args.depth.into(),
-        urgency: args.urgency.into(),
         source: args.source,
         cadence_hint: args.cadence_hint,
         body: args.body,

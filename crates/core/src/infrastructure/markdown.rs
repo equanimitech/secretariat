@@ -39,10 +39,17 @@
 //! step performed after verification, on the recipient side, by the
 //! application layer.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::domain::{Envelope, EnvelopeSignature, Stamp};
+
+/// Reserved frontmatter keys that carry cryptographic semantics. A
+/// caller-supplied body may NOT inject these (see capture_ops): they are
+/// emitted only by the substrate.
+pub const RESERVED_FRONTMATTER_KEYS: &[&str] = &["$envelope", "$signature", "$attestation"];
 
 #[derive(Debug, Error)]
 pub enum MarkdownError {
@@ -65,6 +72,9 @@ pub struct ParsedDocument {
     /// principal's `stamp`; see module docs.
     pub signature: Option<EnvelopeSignature>,
     pub stamp: Option<Stamp>,
+    /// Free-form frontmatter keys that aren't one of the three reserved
+    /// cryptographic blocks. Preserved through parse → embed round-trips.
+    pub extra: BTreeMap<String, serde_yaml::Value>,
     pub body: String,
     pub raw_frontmatter: Option<String>,
 }
@@ -85,6 +95,8 @@ struct FrontmatterShape {
         skip_serializing_if = "Option::is_none"
     )]
     attestation: Option<Stamp>,
+    #[serde(flatten)]
+    extra: BTreeMap<String, serde_yaml::Value>,
 }
 
 const DELIM: &str = "---";
@@ -103,6 +115,7 @@ pub fn parse_document(content: &str) -> Result<ParsedDocument, MarkdownError> {
             envelope: None,
             signature: None,
             stamp: None,
+            extra: BTreeMap::new(),
             body: stripped.to_string(),
             raw_frontmatter: None,
         });
@@ -128,6 +141,7 @@ pub fn parse_document(content: &str) -> Result<ParsedDocument, MarkdownError> {
         envelope: parsed.envelope,
         signature: parsed.signature,
         stamp: parsed.attestation,
+        extra: parsed.extra,
         body: after_close.to_string(),
         raw_frontmatter: Some(yaml_block.to_string()),
     })
@@ -149,7 +163,25 @@ pub fn embed_frontmatter(
     signature: Option<&EnvelopeSignature>,
     stamp: Option<&Stamp>,
 ) -> Result<String, MarkdownError> {
-    if envelope.is_none() && signature.is_none() && stamp.is_none() {
+    embed_frontmatter_with_extra(body, envelope, signature, stamp, BTreeMap::new())
+}
+
+/// Same as [`embed_frontmatter`], plus arbitrary free-form keys merged
+/// into the same frontmatter block (alongside `$envelope` /
+/// `$signature` / `$attestation`). Used by capture flows that lift a
+/// caller-supplied frontmatter block out of the body into the canonical
+/// single-block shape.
+///
+/// `extra` must not contain reserved keys (see
+/// [`RESERVED_FRONTMATTER_KEYS`]); enforce upstream.
+pub fn embed_frontmatter_with_extra(
+    body: &str,
+    envelope: Option<&Envelope>,
+    signature: Option<&EnvelopeSignature>,
+    stamp: Option<&Stamp>,
+    extra: BTreeMap<String, serde_yaml::Value>,
+) -> Result<String, MarkdownError> {
+    if envelope.is_none() && signature.is_none() && stamp.is_none() && extra.is_empty() {
         return Ok(body.to_string());
     }
 
@@ -157,6 +189,7 @@ pub fn embed_frontmatter(
         envelope: envelope.cloned(),
         signature: signature.cloned(),
         attestation: stamp.cloned(),
+        extra,
     };
     let yaml = serde_yaml::to_string(&shape).map_err(|e| MarkdownError::YamlEmit(e.to_string()))?;
 
@@ -224,8 +257,8 @@ fn split_at_closing_delim(s: &str) -> Option<(&str, &str)> {
 mod tests {
     use super::*;
     use crate::domain::{
-        canonical_body_hash, AttestedDocument, Did, DocHash, EnvelopeBuilder, EnvelopeDepth,
-        EnvelopeUrgency, QueueHandle, Recipient, Signature, StampAct,
+        canonical_body_hash, AttestedDocument, Did, DocHash, EnvelopeBuilder, QueueHandle,
+        Recipient, Signature, StampAct,
     };
     use chrono::TimeZone;
     use chrono::Utc;
@@ -242,8 +275,6 @@ mod tests {
                 QueueHandle::parse("inbox:default").unwrap(),
             ),
         )
-        .depth(EnvelopeDepth::Subtle)
-        .urgency(EnvelopeUrgency::Soon)
         .source("claude-code-2026-04-30T14:22:00Z")
         .build()
     }
@@ -274,6 +305,7 @@ mod tests {
             envelope: Some(env.clone()),
             signature: None,
             attestation: None,
+            extra: BTreeMap::new(),
         })
         .unwrap();
         let doc = format!("---\n{}---\n# hello\n", yaml);

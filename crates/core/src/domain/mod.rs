@@ -21,7 +21,7 @@ mod root;
 mod signature;
 mod stamp;
 
-pub use acts::{EnvelopeDepth, EnvelopeUrgency, StampAct};
+pub use acts::StampAct;
 pub use agent::{
     Agent, AgentName, AgentNameParseError, AgentRole, AgentRoleParseError, AgentSubstrate,
     AgentSubstrateParseError,

@@ -28,8 +28,8 @@ use secretariat_core::application::{
     SignatureOutcome, VerifyOutcome,
 };
 use secretariat_core::domain::{
-    AgentName, AgentRole, AgentSubstrate, Did, DisplayName, EnvelopeDepth, EnvelopeUrgency,
-    ManifestTarget, QueueHandle, Recipient, SignerRole, StampAct,
+    AgentName, AgentRole, AgentSubstrate, Did, DisplayName, ManifestTarget, QueueHandle, Recipient,
+    SignerRole, StampAct,
 };
 use secretariat_core::infrastructure::ed25519_signer::{AlwaysAllowGate, Ed25519Signer};
 use secretariat_core::infrastructure::identity_store::{save_identity, PrincipalIdentity};
@@ -161,8 +161,6 @@ fn themia_walkthrough_christophe_to_rafa() {
     let request = ComposeRequest {
         from: christophe_did.clone(),
         recipient: channel_recipient.clone(),
-        depth: EnvelopeDepth::Subtle,
-        urgency: EnvelopeUrgency::Whenever,
         source: "themia-walkthrough-test".to_string(),
         cadence_hint: None,
         body: Some("# PV — assemblée générale\n\nDraft minutes for board review.\n".to_string()),

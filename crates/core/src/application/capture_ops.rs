@@ -28,11 +28,12 @@ use rand::Rng;
 use thiserror::Error;
 
 use crate::domain::{
-    AgSource, Did, Envelope, EnvelopeBuilder, EnvelopeDepth, EnvelopeUrgency, QueueHandle,
-    Recipient, Root,
+    AgSource, Did, Envelope, EnvelopeBuilder, QueueHandle, Recipient, Root,
 };
 use crate::infrastructure::channel_def_store::{channel_def_exists_in_dir, channel_dir};
-use crate::infrastructure::markdown::{embed_stamp, MarkdownError};
+use crate::infrastructure::markdown::{
+    embed_frontmatter_with_extra, parse_document, MarkdownError, RESERVED_FRONTMATTER_KEYS,
+};
 use crate::infrastructure::preferences::CognitionPrefs;
 
 use super::ag_extract::{try_extract_ag, AgExtractOutcome, AuthorAgFields};
@@ -54,6 +55,13 @@ pub enum CaptureError {
         (or the `create_channel` MCP tool)"
     )]
     ChannelNotFound { handle: String },
+    #[error(
+        "capture body contains reserved frontmatter key(s) {keys:?} \
+        — `$envelope`, `$signature`, and `$attestation` are emitted only \
+        by the substrate. Strip them from the body and let `sec capture` \
+        attach the envelope."
+    )]
+    ReservedFrontmatterInBody { keys: Vec<String> },
 }
 
 #[derive(Debug, Clone)]
@@ -169,12 +177,57 @@ fn capture_to_queue_inner(
     let filename = generate_filename(now);
     let target_path = target_dir.join(filename);
 
-    let content = embed_stamp(&request.body, Some(&envelope), None)?;
+    // Single-frontmatter invariant: if the caller's body already carries
+    // a leading `---...---` block, lift its non-reserved keys into the
+    // canonical frontmatter we're about to write and strip them from the
+    // body. Two adjacent frontmatter blocks would otherwise survive on
+    // disk and break any consumer that runs the body through a markdown
+    // round-trip (e.g. Milkdown's autosave).
+    //
+    // Security: reject any caller-supplied `$envelope` / `$signature` /
+    // `$attestation` outright. Those carry cryptographic semantics and
+    // are emitted only here, with a freshly-built envelope. Letting a
+    // caller smuggle them in would forge provenance.
+    let (extra, clean_body) = lift_leading_frontmatter(&request.body)?;
+
+    let content =
+        embed_frontmatter_with_extra(&clean_body, Some(&envelope), None, None, extra)?;
     fs::write(&target_path, content).map_err(|e| CaptureError::Io {
         path: target_path.clone(),
         source: e,
     })?;
     Ok(target_path)
+}
+
+fn lift_leading_frontmatter(
+    body: &str,
+) -> Result<(std::collections::BTreeMap<String, serde_yaml::Value>, String), CaptureError> {
+    let parsed = parse_document(body)?;
+    if parsed.raw_frontmatter.is_none() {
+        return Ok((std::collections::BTreeMap::new(), body.to_string()));
+    }
+    let mut reserved: Vec<String> = Vec::new();
+    if parsed.envelope.is_some() {
+        reserved.push("$envelope".to_string());
+    }
+    if parsed.signature.is_some() {
+        reserved.push("$signature".to_string());
+    }
+    if parsed.stamp.is_some() {
+        reserved.push("$attestation".to_string());
+    }
+    // Defense-in-depth: also scan the raw frontmatter for any reserved
+    // key whose payload failed to deserialize into its typed shape (and
+    // therefore wouldn't have been caught above).
+    for key in RESERVED_FRONTMATTER_KEYS {
+        if !reserved.iter().any(|k| k == key) && parsed.extra.contains_key(*key) {
+            reserved.push((*key).to_string());
+        }
+    }
+    if !reserved.is_empty() {
+        return Err(CaptureError::ReservedFrontmatterInBody { keys: reserved });
+    }
+    Ok((parsed.extra, parsed.body))
 }
 
 fn resolve_target_dir(
@@ -208,8 +261,6 @@ fn build_envelope(req: &CaptureRequest) -> Envelope {
         req.from.clone(),
         Recipient::new(req.from.clone(), req.queue.clone()),
     )
-    .depth(EnvelopeDepth::Subtle)
-    .urgency(EnvelopeUrgency::Whenever)
     .source(req.source.clone());
     if let Some(t) = &req.title {
         b = b.title(t.clone());

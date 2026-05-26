@@ -23,7 +23,7 @@ use secretariat_core::infrastructure::crypto::sealed::{
 use secretariat_core::infrastructure::ed25519_signer::{AlwaysAllowGate, Ed25519Signer};
 use secretariat_core::infrastructure::markdown::{embed_stamp, parse_document};
 use secretariat_core::infrastructure::transport::RelayClient;
-use secretariat_core::{Did, EncryptionScheme, Envelope, EnvelopeDepth, EnvelopeUrgency};
+use secretariat_core::{Did, EncryptionScheme, Envelope};
 use secretariat_relay::{router, AppState, Config};
 use std::path::PathBuf;
 use tempfile::TempDir;
@@ -94,8 +94,6 @@ fn compose_and_stamp_with_handle(
         rafa_did.clone(),
         Recipient::new(marcelo_did.clone(), QueueHandle::parse(handle).unwrap()),
     )
-    .depth(EnvelopeDepth::Subtle)
-    .urgency(EnvelopeUrgency::Whenever)
     .source("v0-correspondence-test")
     .encryption(EncryptionScheme::X25519XChaCha20Poly1305)
     .build();

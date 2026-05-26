@@ -26,8 +26,7 @@ use rand::Rng;
 use thiserror::Error;
 
 use crate::domain::{
-    AgSource, Did, Envelope, EnvelopeBuilder, EnvelopeDepth, EnvelopeSignature, EnvelopeUrgency,
-    Recipient, SignerRole,
+    AgSource, Did, Envelope, EnvelopeBuilder, EnvelopeSignature, Recipient, SignerRole,
 };
 use crate::infrastructure::markdown::{embed_frontmatter, MarkdownError};
 use crate::infrastructure::preferences::CognitionPrefs;
@@ -75,8 +74,6 @@ pub enum ComposeError {
 pub struct ComposeRequest {
     pub from: Did,
     pub recipient: Recipient,
-    pub depth: EnvelopeDepth,
-    pub urgency: EnvelopeUrgency,
     pub source: String,
     pub cadence_hint: Option<String>,
     /// Raw markdown body. When `Some`, it replaces the AG template entirely —
@@ -176,8 +173,6 @@ fn compose_envelope_inner(
 
 fn build_envelope(req: &ComposeRequest) -> Envelope {
     let mut b = EnvelopeBuilder::new(req.from.clone(), req.recipient.clone())
-        .depth(req.depth)
-        .urgency(req.urgency)
         .source(req.source.clone());
     if let Some(hint) = &req.cadence_hint {
         b = b.cadence_hint(hint.clone());
@@ -355,8 +350,6 @@ mod tests {
         let req = ComposeRequest {
             from: rafa_did(),
             recipient: Recipient::new(marcelo_did(), QueueHandle::parse("inbox:default").unwrap()),
-            depth: EnvelopeDepth::Subtle,
-            urgency: EnvelopeUrgency::Soon,
             source: "test".into(),
             cadence_hint: None,
             body: None,
@@ -414,8 +407,6 @@ mod tests {
         let req = ComposeRequest {
             from: rafa_did(),
             recipient: Recipient::new(rafa_did(), QueueHandle::parse("journal").unwrap()),
-            depth: EnvelopeDepth::Gross,
-            urgency: EnvelopeUrgency::Whenever,
             source: "agent-test".into(),
             cadence_hint: None,
             body: None,
@@ -456,8 +447,6 @@ mod tests {
         let req = ComposeRequest {
             from: rafa_did(),
             recipient: Recipient::new(rafa_did(), QueueHandle::parse("inbox:default").unwrap()),
-            depth: EnvelopeDepth::Gross,
-            urgency: EnvelopeUrgency::Whenever,
             source: "test".into(),
             cadence_hint: None,
             body: None,
@@ -498,8 +487,6 @@ mod tests {
         let req = ComposeRequest {
             from: rafa_did(),
             recipient: Recipient::new(rafa_did(), QueueHandle::parse("secretariat:dev").unwrap()),
-            depth: EnvelopeDepth::Subtle,
-            urgency: EnvelopeUrgency::Whenever,
             source: "test".into(),
             cadence_hint: None,
             body: None,
@@ -528,8 +515,6 @@ mod tests {
         let req = ComposeRequest {
             from: rafa_did(),
             recipient: Recipient::new(rafa_did(), QueueHandle::parse("inbox:scratch").unwrap()),
-            depth: EnvelopeDepth::Gross,
-            urgency: EnvelopeUrgency::Whenever,
             source: "test".into(),
             cadence_hint: None,
             body: None,

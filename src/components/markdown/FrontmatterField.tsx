@@ -139,14 +139,6 @@ function summarizeFacts(
       facts.push({ key: 'to', label: 'to', value: shortDid(value['to']) })
     if (typeof value['handle'] === 'string')
       facts.push({ key: 'handle', label: 'handle', value: value['handle'] })
-    if (typeof value['urgency'] === 'string')
-      facts.push({
-        key: 'urgency',
-        label: 'urgency',
-        value: value['urgency'],
-      })
-    if (typeof value['depth'] === 'string')
-      facts.push({ key: 'depth', label: 'depth', value: value['depth'] })
     return facts
   }
 

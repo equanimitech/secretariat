@@ -14,7 +14,7 @@ Call `read` on the file path. This decrypts the body if encrypted and returns th
 
 ### 2. Render the body verbatim
 
-Display the FULL body of the envelope to the principal — code block or quoted region, never a summary, never a paraphrase. Include the recipient DID and (if present) the depth + urgency frontmatter.
+Display the FULL body of the envelope to the principal — code block or quoted region, never a summary, never a paraphrase. Include the recipient DID.
 
 This is the mandatory display gate. If you skip this step the principal cannot give informed consent and the ceremony is broken.
 

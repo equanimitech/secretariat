@@ -20,7 +20,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::{Did, DocHash, EnvelopeDepth, EnvelopeUrgency, QueueHandle, Recipient};
+use super::{Did, DocHash, QueueHandle, Recipient};
 
 /// The encryption scheme applied to the document body. v0 ships a single
 /// scheme; future versions may add others (post-quantum, etc.) by extending
@@ -112,8 +112,6 @@ impl<'de> Deserialize<'de> for AgSource {
 pub struct Envelope {
     pub from: Did,
     pub recipient: Recipient,
-    pub depth: EnvelopeDepth,
-    pub urgency: EnvelopeUrgency,
     pub source: String,
     pub cadence_hint: Option<String>,
     /// Body encryption scheme. `None` = plaintext markdown body. `Some(_)` =
@@ -179,8 +177,6 @@ struct EnvelopeWire {
     /// (2026-05-21+). Legacy envelopes without this field fail to
     /// deserialize — no migration synthesis.
     handle: QueueHandle,
-    depth: EnvelopeDepth,
-    urgency: EnvelopeUrgency,
     source: String,
     #[serde(
         rename = "cadenceHint",
@@ -211,8 +207,6 @@ impl Serialize for Envelope {
             from: self.from.clone(),
             to: self.recipient.owner.clone(),
             handle: self.recipient.handle.clone(),
-            depth: self.depth,
-            urgency: self.urgency,
             source: self.source.clone(),
             cadence_hint: self.cadence_hint.clone(),
             encryption: self.encryption,
@@ -240,8 +234,6 @@ impl<'de> Deserialize<'de> for Envelope {
         Ok(Envelope {
             from: w.from,
             recipient: Recipient::new(w.to, w.handle),
-            depth: w.depth,
-            urgency: w.urgency,
             source: w.source,
             cadence_hint: w.cadence_hint,
             encryption: w.encryption,
@@ -256,7 +248,7 @@ impl<'de> Deserialize<'de> for Envelope {
 }
 
 /// Fluent builder. Mandatory: `from`, `recipient`. Defaults:
-/// `depth = Subtle`, `urgency = Whenever`, `source = ""`, `encryption = None`.
+/// `source = ""`, `encryption = None`.
 ///
 /// `recipient` is `(owner, handle)` with `handle` a bare slug — no
 /// namespace prefix. Org-scoped publication:
@@ -266,8 +258,6 @@ impl<'de> Deserialize<'de> for Envelope {
 pub struct EnvelopeBuilder {
     from: Did,
     recipient: Recipient,
-    depth: EnvelopeDepth,
-    urgency: EnvelopeUrgency,
     source: String,
     cadence_hint: Option<String>,
     encryption: Option<EncryptionScheme>,
@@ -284,8 +274,6 @@ impl EnvelopeBuilder {
         Self {
             from,
             recipient,
-            depth: EnvelopeDepth::Subtle,
-            urgency: EnvelopeUrgency::Whenever,
             source: String::new(),
             cadence_hint: None,
             encryption: None,
@@ -296,16 +284,6 @@ impl EnvelopeBuilder {
             ag_source: None,
             delivered: None,
         }
-    }
-
-    pub fn depth(mut self, depth: EnvelopeDepth) -> Self {
-        self.depth = depth;
-        self
-    }
-
-    pub fn urgency(mut self, urgency: EnvelopeUrgency) -> Self {
-        self.urgency = urgency;
-        self
     }
 
     pub fn source(mut self, source: impl Into<String>) -> Self {
@@ -362,8 +340,6 @@ impl EnvelopeBuilder {
         Envelope {
             from: self.from,
             recipient: self.recipient,
-            depth: self.depth,
-            urgency: self.urgency,
             source: self.source,
             cadence_hint: self.cadence_hint,
             encryption: self.encryption,
@@ -400,8 +376,6 @@ mod tests {
 
     fn fixture() -> Envelope {
         Envelope::builder(rafa(), peer_to_marcelo())
-            .depth(EnvelopeDepth::Subtle)
-            .urgency(EnvelopeUrgency::Soon)
             .source("claude-code-2026-04-30T14:22:00Z")
             .cadence_hint("morning")
             .build()
@@ -465,8 +439,6 @@ mod tests {
         let yaml = "$type: tech.equanimi.secretariat.envelope\n\
                     from: did:web:rafa.equanimi.tech\n\
                     to: did:web:marcelo.ballestiero.com\n\
-                    depth: subtle\n\
-                    urgency: whenever\n\
                     source: legacy-test\n";
         let r: Result<Envelope, _> = serde_yaml::from_str(yaml);
         assert!(r.is_err());
@@ -496,8 +468,6 @@ mod tests {
             rafa(),
             Recipient::new(synth_peer(), QueueHandle::parse("book-progress").unwrap()),
         )
-        .depth(EnvelopeDepth::Subtle)
-        .urgency(EnvelopeUrgency::Whenever)
         .source("daemon-2026-05-02")
         .encryption(EncryptionScheme::X25519XChaCha20Poly1305)
         .build();
@@ -550,11 +520,26 @@ mod tests {
                     from: did:web:rafa.equanimi.tech\n\
                     to: did:web:marcelo.ballestiero.com\n\
                     handle: book-progress\n\
+                    source: legacy-test\n";
+        let env: Envelope = serde_yaml::from_str(yaml).unwrap();
+        assert!(env.reply_to.is_none());
+    }
+
+    #[test]
+    fn legacy_envelope_with_depth_urgency_parses_silently() {
+        // Pre-v0.11 envelopes carry author-declared `depth` and `urgency`
+        // hints. Both keys were dropped (pitch: drop-envelope-depth-
+        // urgency, 2026-05-21); readers MUST tolerate them on legacy
+        // documents (unknown frontmatter is silently ignored).
+        let yaml = "$type: tech.equanimi.secretariat.envelope\n\
+                    from: did:web:rafa.equanimi.tech\n\
+                    to: did:web:marcelo.ballestiero.com\n\
+                    handle: book-progress\n\
                     depth: subtle\n\
                     urgency: whenever\n\
                     source: legacy-test\n";
         let env: Envelope = serde_yaml::from_str(yaml).unwrap();
-        assert!(env.reply_to.is_none());
+        assert_eq!(env.source, "legacy-test");
     }
 
     #[test]
@@ -602,8 +587,6 @@ mod tests {
                     from: did:web:rafa.equanimi.tech\n\
                     to: did:web:marcelo.ballestiero.com\n\
                     handle: book-progress\n\
-                    depth: subtle\n\
-                    urgency: whenever\n\
                     source: legacy-test\n\
                     title: Author chose this\n";
         let env: Envelope = serde_yaml::from_str(yaml).unwrap();
@@ -616,8 +599,6 @@ mod tests {
         let yaml = "$type: tech.equanimi.secretariat.envelope\n\
                     from: did:web:rafa.equanimi.tech\n\
                     to: did:web:marcelo.ballestiero.com\n\
-                    depth: subtle\n\
-                    urgency: whenever\n\
                     source: x\n\
                     agSource: bot\n";
         let r: Result<Envelope, _> = serde_yaml::from_str(yaml);
@@ -629,8 +610,6 @@ mod tests {
         let yaml = "$type: tech.equanimi.secretariat.envelope\n\
                     from: did:web:rafa.equanimi.tech\n\
                     to: did:web:marcelo.ballestiero.com\n\
-                    depth: subtle\n\
-                    urgency: whenever\n\
                     source: x\n\
                     encryption: aes-gcm-future-scheme\n";
         let r: Result<Envelope, _> = serde_yaml::from_str(yaml);

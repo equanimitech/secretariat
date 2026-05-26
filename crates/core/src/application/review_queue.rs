@@ -86,7 +86,7 @@ mod tests {
             String::new()
         };
         let body = format!(
-            "---\n$envelope:\n  $type: tech.equanimi.secretariat.envelope\n  from: {from}\n  to: {to}\n  handle: triage\n  depth: subtle\n  urgency: soon\n  source: test\n{delivered_line}{stamp_block}---\n# Hello\n"
+            "---\n$envelope:\n  $type: tech.equanimi.secretariat.envelope\n  from: {from}\n  to: {to}\n  handle: triage\n  source: test\n{delivered_line}{stamp_block}---\n# Hello\n"
         );
         fs::write(dir.join(name), body).unwrap();
     }

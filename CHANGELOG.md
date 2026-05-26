@@ -6,6 +6,64 @@ All notable changes to Secretariat are recorded here. Format follows
 
 ## [Unreleased](https://github.com/equanimitech/secretariat/compare/v0.11.5...HEAD)
 
+Drop author-declared envelope attention hints. Two fields on every
+envelope (`depth ∈ {gross, subtle}` and `urgency ∈ {now, soon, whenever}`)
+claimed routing authority they never had — the recipient's
+`contract.local.md` cadence + the envelope's `queue_handle` + `kind`
+are the routing inputs. The lexicon itself flagged urgency as
+_"inflationary by nature; the recipient's per-channel
+contract.local.md cadence governs whether it surfaces inline or queues
+for review,"_ so we shipped a required field whose interpretation was
+"ignore." Cut both. See pitch
+`docs/pitches/2026-05-21-drop-envelope-depth-urgency.md`.
+
+In parallel: a defense-in-depth slice on capture frontmatter — the
+single-frontmatter invariant. `sec capture` (and the MCP `capture`
+tool) now lift any leading frontmatter the caller smuggled in,
+reject the three reserved cryptographic keys (`$envelope`,
+`$signature`, `$attestation`) outright, and preserve the rest through
+the envelope-write. Prevents the Milkdown-autosave / double-`---`
+corruption that broke loads on round-trip. See pitch
+`docs/pitches/2026-05-21-stamp-comprehension-gate.md`.
+
+### Removed
+
+- **Envelope `depth` and `urgency` fields, end-to-end.** Lexicon
+  (`tech.equanimi.secretariat.envelope` no longer requires or accepts
+  them), domain (`EnvelopeDepth` / `EnvelopeUrgency` enums deleted,
+  `Envelope` / `EnvelopeBuilder` / `EnvelopeWire` no longer carry the
+  fields), application use cases (`ComposeRequest` shrinks), CLI
+  (`sec compose --depth` / `--urgency` removed), MCP tool surface
+  (`compose` tool params + `parse_depth` / `parse_urgency` helpers
+  gone), MCP prompt language (`compose.md` / `stamp.md` no longer
+  reference the hints), TS bindings + UI (`FrontmatterField` stops
+  rendering the rows). Receiver-side parsers stay tolerant — legacy
+  envelopes on disk that still carry the keys parse cleanly; the
+  fields are silently ignored. No vault migration ships.
+
+### Added
+
+- **Single-frontmatter invariant on capture.** New
+  `lift_leading_frontmatter` pass in `capture_to_queue` parses any
+  caller-supplied leading `---...---` block, errors on reserved
+  cryptographic keys, and merges the rest into the canonical
+  frontmatter the substrate writes. Parser gains a `extra:
+BTreeMap<String, serde_yaml::Value>` field that flows through
+  `parse_document` → `embed_frontmatter_with_extra`. New
+  `RESERVED_FRONTMATTER_KEYS` constant + `CaptureError::
+ReservedFrontmatterInBody` variant.
+- **TS-side double-frontmatter merge.** `parseMarkdown` now loops on
+  adjacent `---...---` blocks, merging the first occurrence of each
+  key into a single frontmatter object — defends against the
+  Milkdown-autosave path that would otherwise rewrite `_` as `\_`,
+  `- ` as `* `, and `---` as `***`, bricking later YAML loads.
+
+### Changed
+
+- **`channel_contract.rs` doc comments.** Drop `depth_filter` /
+  `urgency_filter` references from the anticipated-fields list; the
+  receiver-side contract composes from cadence + handle-tree only.
+
 ## [0.11.5](https://github.com/equanimitech/secretariat/compare/v0.11.4...v0.11.5) — 2026-05-26
 
 Updater unblock. The two-workflow release pipeline (`release.yml` for CLI

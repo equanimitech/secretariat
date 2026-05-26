@@ -1,6 +1,6 @@
-//! Enum value objects: stamp acts, envelope depth, envelope urgency.
+//! Enum value objects: stamp acts.
 //!
-//! All three serialize as lowercase strings to match the AT-proto-shaped lexicon.
+//! Serializes as lowercase strings to match the AT-proto-shaped lexicon.
 
 use serde::{Deserialize, Serialize};
 
@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 pub enum StampAct {
     /// "I read this and stand behind it."
     Attest,
-    /// "Send back to queue, lower urgency, with reason."
+    /// "Send back to queue, lower priority, with reason."
     Defer,
     /// "I'm willing to forward this with my seal."
     Vouch,
@@ -36,30 +36,6 @@ impl std::fmt::Display for StampAct {
     }
 }
 
-/// Declared depth of the bid for attention.
-///
-/// `Gross` = surface-level, can be acknowledged peripherally.
-/// `Subtle` = needs deeper engagement.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
-#[serde(rename_all = "lowercase")]
-pub enum EnvelopeDepth {
-    Gross,
-    Subtle,
-}
-
-/// Declared urgency of the bid.
-///
-/// Inflationary by nature; the recipient's per-channel
-/// `contract.local.md` cadence is what governs whether an urgency
-/// surfaces inline or queues for the next review session.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
-#[serde(rename_all = "lowercase")]
-pub enum EnvelopeUrgency {
-    Now,
-    Soon,
-    Whenever,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -70,25 +46,5 @@ mod tests {
         assert_eq!(json, "\"attest\"");
         let back: StampAct = serde_json::from_str("\"defer\"").unwrap();
         assert_eq!(back, StampAct::Defer);
-    }
-
-    #[test]
-    fn envelope_depth_serde_lowercase() {
-        assert_eq!(
-            serde_json::to_string(&EnvelopeDepth::Subtle).unwrap(),
-            "\"subtle\""
-        );
-        let back: EnvelopeDepth = serde_json::from_str("\"gross\"").unwrap();
-        assert_eq!(back, EnvelopeDepth::Gross);
-    }
-
-    #[test]
-    fn envelope_urgency_serde_lowercase() {
-        assert_eq!(
-            serde_json::to_string(&EnvelopeUrgency::Whenever).unwrap(),
-            "\"whenever\""
-        );
-        let back: EnvelopeUrgency = serde_json::from_str("\"now\"").unwrap();
-        assert_eq!(back, EnvelopeUrgency::Now);
     }
 }

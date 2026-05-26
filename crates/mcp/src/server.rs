@@ -71,7 +71,7 @@ use secretariat_core::infrastructure::org_store::org_channels_root;
 use secretariat_core::infrastructure::preferences::load_or_migrate as load_or_migrate_preferences;
 use secretariat_core::infrastructure::transport::RelayState;
 use secretariat_core::ports::SignerError;
-use secretariat_core::{Did, EnvelopeDepth, EnvelopeUrgency};
+use secretariat_core::Did;
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
@@ -247,12 +247,6 @@ pub struct ComposeParams {
     /// Plaintext body (markdown). v0 writes it as-is; encryption happens at
     /// stamp / send time. (v0.x: optional `encrypt: bool` here.)
     pub body: String,
-    /// `gross` or `subtle`. Defaults to `subtle`.
-    #[serde(default)]
-    pub depth: Option<String>,
-    /// `now`, `soon`, or `whenever`. Defaults to `whenever`.
-    #[serde(default)]
-    pub urgency: Option<String>,
     /// Free-form provenance hint (e.g. "claude-code-2026-05-02").
     #[serde(default)]
     pub source: Option<String>,
@@ -861,8 +855,6 @@ impl SecretariatServer {
         Parameters(params): Parameters<ComposeParams>,
     ) -> Result<Json<ComposeOutput>, ErrorData> {
         let to = resolve_to_did(&self.paths, &params.to)?;
-        let depth = parse_depth(params.depth.as_deref())?;
-        let urgency = parse_urgency(params.urgency.as_deref())?;
         let from = load_principal_did(&self.paths)?;
 
         let body = if params.body.trim().is_empty() {
@@ -878,8 +870,6 @@ impl SecretariatServer {
         let req = ComposeRequest {
             from,
             recipient: Recipient::new(to, handle),
-            depth,
-            urgency,
             source: params.source.unwrap_or_else(|| "mcp".to_string()),
             cadence_hint: params.cadence_hint,
             body,
@@ -2309,29 +2299,6 @@ fn resolve_to_did(_paths: &KeyPaths, to: &str) -> Result<Did, ErrorData> {
             "invalid did `{to}`: {e} — recipients must be DIDs (contact-slug lookup removed)"
         ))
     })
-}
-
-fn parse_depth(s: Option<&str>) -> Result<EnvelopeDepth, ErrorData> {
-    match s {
-        None => Ok(EnvelopeDepth::Subtle),
-        Some("gross") => Ok(EnvelopeDepth::Gross),
-        Some("subtle") => Ok(EnvelopeDepth::Subtle),
-        Some(other) => Err(invalid_request(format!(
-            "depth must be `gross` or `subtle`, got `{other}`"
-        ))),
-    }
-}
-
-fn parse_urgency(s: Option<&str>) -> Result<EnvelopeUrgency, ErrorData> {
-    match s {
-        None => Ok(EnvelopeUrgency::Whenever),
-        Some("now") => Ok(EnvelopeUrgency::Now),
-        Some("soon") => Ok(EnvelopeUrgency::Soon),
-        Some("whenever") => Ok(EnvelopeUrgency::Whenever),
-        Some(other) => Err(invalid_request(format!(
-            "urgency must be `now`, `soon`, or `whenever`, got `{other}`"
-        ))),
-    }
 }
 
 fn load_principal_did(paths: &KeyPaths) -> Result<Did, ErrorData> {
