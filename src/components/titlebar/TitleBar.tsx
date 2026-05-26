@@ -71,21 +71,22 @@ export function TitleBar({ className, title, forcePlatform }: TitleBarProps) {
   }
 
   // macOS (default): Things-3-style integrated title bar. The native
-  // chrome runs in `titleBarStyle: "Overlay"` (set in tauri.conf.json),
-  // so the OS draws inset traffic lights at top-left and the title is
-  // hidden via `hiddenTitle: true`. Our row provides the drag region
-  // and right-aligned actions; left padding clears the native lights.
+  // chrome runs in `titleBarStyle: "Overlay"` (set in tauri.conf.json)
+  // with `trafficLightPosition` anchoring the traffic lights inside
+  // this row; the title is hidden via `hiddenTitle: true`. Our row
+  // provides the drag region and right-aligned actions; left padding
+  // clears the native lights.
   return (
     <div
       data-tauri-drag-region
       className={cn(
-        'relative flex h-8 w-full shrink-0 items-center justify-between border-b bg-background pl-20',
+        'relative flex h-8 w-full shrink-0 items-center border-b bg-background pl-20 pr-2',
         className
       )}
     >
       <TitleBarLeftActions />
 
-      <div className="flex items-center pr-2">
+      <div className="ml-auto flex items-center">
         <TitleBarRightActions />
       </div>
     </div>
