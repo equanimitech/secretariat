@@ -267,7 +267,9 @@ export function ExplorerTree({
           type="button"
           className="flex flex-1 items-center justify-center gap-2 px-3 transition-colors hover:bg-muted hover:text-foreground"
           onClick={() => setShowAll(v => !v)}
-          title={showAll ? 'Show channels only' : 'Show every file in the vault'}
+          title={
+            showAll ? 'Show channels only' : 'Show every file in the vault'
+          }
         >
           {showAll
             ? 'Showing all files — click to hide internals'
