@@ -4,7 +4,35 @@ All notable changes to Secretariat are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased](https://github.com/equanimitech/secretariat/compare/v0.11.4...HEAD)
+## [Unreleased](https://github.com/equanimitech/secretariat/compare/v0.11.5...HEAD)
+
+## [0.11.5](https://github.com/equanimitech/secretariat/compare/v0.11.4...v0.11.5) — 2026-05-26
+
+Updater unblock. The two-workflow release pipeline (`release.yml` for CLI
+tarballs + `tauri-release.yml` for the .dmg + `latest.json`) raced two
+`release_id`s at the same tag — `softprops/action-gh-release` couldn't
+see the Tauri draft, so it created a competing non-draft release; the
+Tauri draft carrying `latest.json` sat orphaned and the in-app updater
+started returning _"Could not fetch a valid release JSON from the
+remote."_ for v0.11.2, .3, and .4.
+
+### Fixed
+
+- **Single `release_id` per tag.** Merged the two workflows into one
+  `release.yml`. A `create-release` job finds-or-creates the draft;
+  CLI tarball jobs upload via `gh release upload --clobber` (works
+  against drafts, unlike `softprops`); the Tauri build job uploads via
+  `tauri-action`'s `releaseId`. No two writers ever race at the same
+  tag.
+- **Atomic publish.** `publish-release` runs an asset-completeness
+  gate (`latest.json` + both tarballs + `.dmg` + `.app.tar.gz` + `.sig`)
+  and only flips the draft if every expected file is present. Mid-flight
+  failure leaves the draft in place for recovery instead of
+  half-publishing a "Latest" release with missing updater metadata.
+- **Idempotent re-runs.** find-or-create on the draft; `--clobber` on
+  CLI uploads; `tauri-action` overwrites by `releaseId`; publish is a
+  single PATCH. Re-running failed jobs picks up where it left off
+  without duplicating releases.
 
 ## [0.11.4](https://github.com/equanimitech/secretariat/compare/v0.11.3...v0.11.4) — 2026-05-26
 

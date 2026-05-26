@@ -1,4 +1,20 @@
-name: Release binaries
+name: Release
+
+# Single source-of-truth for tag releases. Replaces the prior two-workflow
+# split (`release.yml` + `tauri-release.yml`) that raced two `release_id`s
+# at the same tag — see the v0.11.2/.3/.4 incident: both workflows wrote
+# the same tag, `softprops/action-gh-release` couldn't see the draft, so it
+# created a competing non-draft release; the Tauri draft (carrying
+# `latest.json`) sat orphaned and the updater started returning
+# "Could not fetch a valid release JSON from the remote."
+#
+# Invariants:
+#   1. Exactly one release_id per tag — created (or found) by `create-release`
+#      and passed downstream.
+#   2. Draft until every expected asset is present. Failure leaves the draft
+#      in place; nothing flips to "Latest" half-baked.
+#   3. Idempotent re-runs: create-release finds-or-creates; uploaders use
+#      `--clobber` / overwrite; publish-release is a single PATCH.
 
 on:
   push:
@@ -7,11 +23,57 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
-    name: Build ${{ matrix.target }}
-    runs-on: ${{ matrix.os }}
+  create-release:
     permissions:
       contents: write
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.create-release.outputs.result }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Get version
+        run: echo "PACKAGE_VERSION=$(node -p "require('./package.json').version")" >> $GITHUB_ENV
+
+      - name: Find or create draft release
+        id: create-release
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const tag = `v${process.env.PACKAGE_VERSION}`;
+            const existing = await github.paginate(
+              github.rest.repos.listReleases,
+              { owner: context.repo.owner, repo: context.repo.repo, per_page: 100 }
+            );
+            const match = existing.find(r => r.tag_name === tag);
+            if (match) {
+              core.info(`Reusing existing release ${match.id} for ${tag} (draft=${match.draft}).`);
+              return match.id;
+            }
+            const { data } = await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: tag,
+              name: `Secretariat ${tag}`,
+              body: 'See CHANGELOG.md for details.',
+              draft: true,
+              prerelease: false,
+            });
+            core.info(`Created draft release ${data.id} for ${tag}.`);
+            return data.id;
+
+  build-cli:
+    name: CLI tarball ${{ matrix.target }}
+    needs: create-release
+    permissions:
+      contents: write
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
@@ -26,8 +88,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Mirror of the guard in tauri-release.yml. Refuse to ship a CLI
-      # tarball whose embedded crate versions disagree with the tag.
       - name: Verify version consistency vs tag
         env:
           REF_NAME: ${{ github.ref_name }}
@@ -72,9 +132,133 @@ jobs:
           [ -f scripts/install.sh ] && cp scripts/install.sh dist/secretariat/
           tar czf "${ARCHIVE}" -C dist secretariat
 
-      - name: Upload to release
-        uses: softprops/action-gh-release@v2
+      - name: Upload tarball to draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          ARCHIVE: ${{ matrix.archive }}
+          REPO: ${{ github.repository }}
+        run: gh release upload "$TAG" "$ARCHIVE" --clobber --repo "$REPO"
+
+  build-tauri:
+    needs: create-release
+    permissions:
+      contents: write
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          files: ${{ matrix.archive }}
-          fail_on_unmatched_files: true
-          generate_release_notes: true
+          node-version: 20
+
+      - name: Verify version consistency vs tag
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          TAG="${REF_NAME#v}"
+          PKG=$(node -p "require('./package.json').version")
+          TAURI=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          CORE=$(grep -m1 '^version' crates/core/Cargo.toml | cut -d'"' -f2)
+          CLI=$(grep -m1 '^version' crates/cli/Cargo.toml | cut -d'"' -f2)
+          DAEMON=$(grep -m1 '^version' crates/daemon/Cargo.toml | cut -d'"' -f2)
+          MCP=$(grep -m1 '^version' crates/mcp/Cargo.toml | cut -d'"' -f2)
+          RELAY=$(grep -m1 '^version' crates/relay/Cargo.toml | cut -d'"' -f2)
+          TAURI_CARGO=$(grep -m1 '^version' src-tauri/Cargo.toml | cut -d'"' -f2)
+          echo "tag=$TAG pkg=$PKG tauri.conf=$TAURI tauri.cargo=$TAURI_CARGO core=$CORE cli=$CLI daemon=$DAEMON mcp=$MCP relay=$RELAY"
+          fail=0
+          for v in "$PKG" "$TAURI" "$TAURI_CARGO" "$CORE" "$CLI" "$DAEMON" "$MCP" "$RELAY"; do
+            if [ "$v" != "$TAG" ]; then fail=1; fi
+          done
+          if [ "$fail" -ne 0 ]; then
+            echo "::error::Version mismatch — at least one manifest disagrees with tag $TAG"
+            exit 1
+          fi
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Install frontend dependencies
+        run: pnpm install
+
+      - name: Build the app (Apple Silicon)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          TARGET: aarch64-apple-darwin
+        with:
+          releaseId: ${{ needs.create-release.outputs.release_id }}
+          args: '--target aarch64-apple-darwin'
+
+  publish-release:
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    needs: [create-release, build-cli, build-tauri]
+
+    steps:
+      - name: Verify required assets present on draft
+        uses: actions/github-script@v7
+        env:
+          release_id: ${{ needs.create-release.outputs.release_id }}
+          tag_name: ${{ github.ref_name }}
+        with:
+          script: |
+            const { data } = await github.rest.repos.getRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: Number(process.env.release_id),
+            });
+            const tag = process.env.tag_name;
+            const ver = tag.replace(/^v/, '');
+            const required = [
+              'latest.json',
+              'secretariat-darwin-arm64.tar.gz',
+              'secretariat-darwin-x86_64.tar.gz',
+              `Secretariat_${ver}_aarch64.dmg`,
+              'Secretariat_aarch64.app.tar.gz',
+              'Secretariat_aarch64.app.tar.gz.sig',
+            ];
+            const present = new Set(data.assets.map(a => a.name));
+            const missing = required.filter(n => !present.has(n));
+            if (missing.length) {
+              core.setFailed(`Missing assets on draft ${data.id}: ${missing.join(', ')}`);
+            } else {
+              core.info(`All ${required.length} required assets present on draft ${data.id}.`);
+            }
+
+      - name: Publish release
+        uses: actions/github-script@v7
+        env:
+          release_id: ${{ needs.create-release.outputs.release_id }}
+        with:
+          script: |
+            await github.rest.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: Number(process.env.release_id),
+              draft: false,
+              prerelease: false,
+            });
