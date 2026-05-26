@@ -4,7 +4,27 @@ All notable changes to Secretariat are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased](https://github.com/equanimitech/secretariat/compare/v0.11.1...HEAD)
+## [Unreleased](https://github.com/equanimitech/secretariat/compare/v0.11.2...HEAD)
+
+## [0.11.2](https://github.com/equanimitech/secretariat/compare/v0.11.1...v0.11.2) — 2026-05-26
+
+Follow-up to v0.11.1. The activation-policy flip from `accessory` to
+`regular` was landing in code but the dock icon never appeared in
+practice — a known Cocoa gotcha. NSApp.setActivationPolicy needs a
+runloop tick to propagate before NSApp.activate (which Tauri's
+`set_focus` invokes) will refresh the dock state. Without the gap,
+the policy change takes effect but the dock icon stays missing and
+the app is absent from cmd+tab.
+
+### Fixed
+
+- **Dock icon now appears when the main window opens on macOS.**
+  `surface_main_window` now sets the activation policy, then sleeps
+  100 ms on a background thread, then dispatches the show/focus
+  sequence back to the main thread via `run_on_main_thread`. The
+  show/focus logic is extracted into `show_and_focus_main`, used
+  directly on non-macOS platforms. Reference:
+  https://steipete.me/posts/2025/showing-settings-from-macos-menu-bar-items
 
 ## [0.11.1](https://github.com/equanimitech/secretariat/compare/v0.11.0...v0.11.1) — 2026-05-26
 

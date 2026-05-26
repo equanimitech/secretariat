@@ -423,12 +423,35 @@ pub fn run() {
 /// policy to `Regular` so the dock icon appears and fullscreen works (Accessory
 /// mode breaks NSWindow fullscreen animations and menubar behavior). The dock
 /// icon goes away again when the main window is hidden — see CloseRequested.
+///
+/// The 100 ms gap between the policy change and `set_focus` is load-bearing:
+/// NSApp.setActivationPolicy from Accessory → Regular needs a Cocoa runloop
+/// tick before NSApp.activate (which `set_focus` invokes) will actually
+/// refresh the dock state. Without the delay, the policy change "takes" but
+/// the dock icon never appears. See:
+///   https://steipete.me/posts/2025/showing-settings-from-macos-menu-bar-items
 fn surface_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     #[cfg(target_os = "macos")]
     {
         let _ = app.set_activation_policy(ActivationPolicy::Regular);
+
+        let app_handle = app.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            let app_for_show = app_handle.clone();
+            let _ = app_handle.run_on_main_thread(move || {
+                show_and_focus_main(&app_for_show);
+            });
+        });
     }
 
+    #[cfg(not(target_os = "macos"))]
+    {
+        show_and_focus_main(app);
+    }
+}
+
+fn show_and_focus_main<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     if let Some(window) = app.get_webview_window("main") {
         let was_hidden = !window.is_visible().unwrap_or(true);
         let _ = window.show();
