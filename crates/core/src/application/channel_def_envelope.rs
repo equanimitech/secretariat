@@ -61,7 +61,8 @@ use crate::domain::{
     Did, EnvelopeBuilder, EnvelopeSignature, OrgAlias, QueueHandle, Recipient, SignerRole,
 };
 use crate::infrastructure::channel_def_store::{
-    channel_dir, channel_def_path, save_channel_def, ChannelDefStoreError, CHANNEL_DEF_FILENAME,
+    channel_dir, channel_def_path, load_channel_def, save_channel_def, ChannelDefStoreError,
+    CHANNEL_DEF_FILENAME,
 };
 use crate::infrastructure::markdown::{
     embed_frontmatter_with_extra, parse_document, MarkdownError,
@@ -99,6 +100,16 @@ pub enum ChannelDefEnvelopeError {
     UnauthorisedSigner { signer: String, org_did: String },
     #[error("channelDef envelope has no `$signature` block — refuse to ingest unsigned record")]
     MissingSignature,
+    #[error(
+        "stale tombstone rejected for `{handle}`: envelope createdAt {tombstone_at} \
+         predates the local channel's createdAt {local_at} — likely replay of a \
+         tombstone against a since-recreated channel"
+    )]
+    StaleTombstone {
+        handle: String,
+        tombstone_at: String,
+        local_at: String,
+    },
 }
 
 /// Maximum displayable string length on inbound channelDef records.

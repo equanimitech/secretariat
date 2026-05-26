@@ -106,8 +106,8 @@ pub async fn add_relay(endpoint: String) -> Result<(), String> {
     let identity = load_identity(&paths.identity_md)
         .map_err(|e| format!("loading identity: {e}"))?
         .ok_or_else(|| "no identity — finish onboarding first".to_string())?;
-    let key = load_signing_key(&paths.signing_key)
-        .map_err(|e| format!("loading signing key: {e}"))?;
+    let key =
+        load_signing_key(&paths.signing_key).map_err(|e| format!("loading signing key: {e}"))?;
 
     secretariat_daemon::register(&paths, &identity.did, &key, &trimmed)
         .await
