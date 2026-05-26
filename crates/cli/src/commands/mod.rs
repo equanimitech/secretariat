@@ -12,7 +12,6 @@ pub mod invite;
 pub mod launch;
 pub mod list;
 pub mod mcp;
-pub mod migrate;
 pub mod orgs;
 pub mod profile;
 pub mod read;

@@ -62,9 +62,6 @@ enum Cmd {
     /// Wire `sec-mcp` into Claude Desktop / Claude Code (no JSON editing).
     Mcp(commands::mcp::Args),
 
-    /// One-shot substrate migrations (e.g. v0.8 → v0.9 outbox-to-drafts).
-    Migrate(commands::migrate::Args),
-
     /// Manage the principal's display name (presence, distinct from identity).
     Profile(commands::profile::Args),
 
@@ -89,7 +86,6 @@ fn main() -> Result<()> {
         Cmd::Invite(a) => commands::invite::run(a),
         Cmd::Launch(a) => commands::launch::run(a),
         Cmd::Mcp(a) => commands::mcp::run(a),
-        Cmd::Migrate(a) => commands::migrate::run(a),
         Cmd::Profile(a) => commands::profile::run(a),
         Cmd::View(a) => commands::view::run(a),
     }
