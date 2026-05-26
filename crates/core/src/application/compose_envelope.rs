@@ -28,7 +28,9 @@ use thiserror::Error;
 use crate::domain::{
     AgSource, Did, Envelope, EnvelopeBuilder, EnvelopeSignature, Recipient, SignerRole,
 };
-use crate::infrastructure::markdown::{embed_frontmatter, MarkdownError};
+use crate::infrastructure::markdown::{
+    embed_frontmatter_with_extra, lift_leading_frontmatter, LiftFrontmatterError, MarkdownError,
+};
 use crate::infrastructure::preferences::CognitionPrefs;
 use crate::infrastructure::queue_dir::AliasMap;
 
@@ -68,6 +70,13 @@ pub enum ComposeError {
     },
     #[error("markdown error: {0}")]
     Markdown(#[from] MarkdownError),
+    #[error(
+        "compose body contains reserved frontmatter key(s) {keys:?} \
+        — `$envelope`, `$signature`, and `$attestation` are emitted only \
+        by the substrate. Strip them from the body and let `sec compose` \
+        attach the envelope."
+    )]
+    ReservedFrontmatterInBody { keys: Vec<String> },
 }
 
 #[derive(Debug, Clone)]
@@ -129,9 +138,22 @@ fn compose_envelope_inner(
     let filename = generate_filename(now);
     let target_path = target_dir.join(filename);
 
-    let body_owned: String;
-    let body: &str = match &request.body {
-        Some(b) => b.as_str(),
+    // Resolve the raw body source. Caller-supplied body goes through
+    // `lift_leading_frontmatter` (single-frontmatter invariant: a body
+    // beginning with `---...---` is lifted, not concatenated, so the
+    // file never lands with two adjacent blocks). Template-read goes
+    // through `strip_existing_frontmatter` — templates are scaffolds,
+    // not metadata carriers, so any frontmatter they declare is dropped.
+    let (body_owned, extra) = match &request.body {
+        Some(b) => {
+            let lifted = lift_leading_frontmatter(b).map_err(|e| match e {
+                LiftFrontmatterError::Markdown(m) => ComposeError::Markdown(m),
+                LiftFrontmatterError::ReservedKeys { keys } => {
+                    ComposeError::ReservedFrontmatterInBody { keys }
+                }
+            })?;
+            (lifted.body, lifted.extra)
+        }
         None => {
             // Per-channel template override (AGENTS.md rule #5): prefer
             // `<channel-dir>/template.md` when present; fall back to the
@@ -142,13 +164,17 @@ fn compose_envelope_inner(
             } else {
                 template_path
             };
-            body_owned = fs::read_to_string(chosen).map_err(|e| ComposeError::Io {
+            let raw = fs::read_to_string(chosen).map_err(|e| ComposeError::Io {
                 path: chosen.to_path_buf(),
                 source: e,
             })?;
-            strip_existing_frontmatter(&body_owned)
+            (
+                strip_existing_frontmatter(&raw).to_string(),
+                std::collections::BTreeMap::new(),
+            )
         }
     };
+    let body: &str = &body_owned;
 
     // Substrate-for-themia Move 2: sign the body at compose. The author
     // signature is mandatory on every envelope on the wire; the
@@ -162,7 +188,8 @@ fn compose_envelope_inner(
         signer.signing_key,
     );
 
-    let content = embed_frontmatter(body, Some(&envelope), Some(&signature), None)?;
+    let content =
+        embed_frontmatter_with_extra(body, Some(&envelope), Some(&signature), None, extra)?;
 
     fs::write(&target_path, content).map_err(|e| ComposeError::Io {
         path: target_path.clone(),
@@ -502,6 +529,101 @@ mod tests {
         let parsed = parse_document(&fs::read_to_string(&path).unwrap()).unwrap();
         assert!(parsed.body.contains("Channel-specific body"));
         assert!(!parsed.body.contains("Global body"));
+    }
+
+    #[test]
+    fn lifts_caller_body_leading_frontmatter_into_canonical_block() {
+        // Caller passes a body that already begins with a `---...---`
+        // block (typical LLM-drafted markdown). The result must be a
+        // single canonical frontmatter block — `$envelope` + `$signature`
+        // alongside the lifted `title` / `tags` keys — not two adjacent
+        // blocks. (Two adjacent blocks survive on disk pre-fix and
+        // Milkdown autosave corrupts them on roundtrip.)
+        let dir = TempDir::new().unwrap();
+        let template = dir.path().join("template.md");
+        fs::write(&template, "# Template\n").unwrap();
+        let root = dir.path();
+        let aliases = AliasMap::new(rafa_did());
+
+        let body = "---\ntitle: Caller Title\ntags:\n  - a\n  - b\n---\n# Real body\ntext\n";
+
+        let req = ComposeRequest {
+            from: rafa_did(),
+            recipient: Recipient::new(rafa_did(), QueueHandle::parse("journal").unwrap()),
+            source: "test".into(),
+            cadence_hint: None,
+            body: Some(body.to_string()),
+            title: None,
+            lede: None,
+            summary: None,
+        };
+
+        let now = Utc.with_ymd_and_hms(2026, 5, 26, 18, 0, 0).unwrap();
+        let key = fixture_signing_key();
+        let sgn = signer(&key);
+        let path = compose_envelope(req, &sgn, &template, root, &aliases, now).unwrap();
+
+        let content = fs::read_to_string(&path).unwrap();
+        // Single frontmatter block: exactly one opening `---\n` at start
+        // and exactly one closing `---\n` before the body. Count the
+        // delimiter lines.
+        let delim_lines = content
+            .lines()
+            .filter(|l| *l == "---")
+            .count();
+        assert_eq!(
+            delim_lines, 2,
+            "expected exactly one frontmatter block (2 `---` lines), got {delim_lines}.\ncontent:\n{content}"
+        );
+
+        let parsed = parse_document(&content).unwrap();
+        // Body must be the body after the lifted block.
+        assert!(parsed.body.contains("# Real body"));
+        assert!(!parsed.body.starts_with("---"));
+        // Lifted free-form keys land alongside the canonical records.
+        assert!(parsed.extra.contains_key("title"));
+        assert!(parsed.extra.contains_key("tags"));
+        // Author signature covers the lifted (clean) body — not the
+        // pre-lift bytes — so verify against `parsed.body`.
+        let sig = parsed.signature.as_ref().expect("$signature present");
+        assert!(sig.verify_body(&parsed.body, &key.verifying_key()));
+    }
+
+    #[test]
+    fn rejects_caller_body_smuggling_reserved_envelope_key() {
+        // Defense-in-depth: an LLM-supplied body that begins with a
+        // `$envelope:` block must not be accepted — the substrate emits
+        // those records, never the caller.
+        let dir = TempDir::new().unwrap();
+        let template = dir.path().join("template.md");
+        fs::write(&template, "# T\n").unwrap();
+        let root = dir.path();
+        let aliases = AliasMap::new(rafa_did());
+
+        // Forge a body that smuggles a real-shaped envelope block.
+        let smuggled_envelope = "---\n$envelope:\n  $type: tech.equanimi.secretariat.envelope\n  from: did:key:z6MkjB8PQaN1vuUzdtnJsxyXR2f8d3tckGHkUYZMDytQsfak\n  to: did:key:z6MkjB8PQaN1vuUzdtnJsxyXR2f8d3tckGHkUYZMDytQsfak\n  handle: journal\n  source: forgery\n---\n# Body\n";
+
+        let req = ComposeRequest {
+            from: rafa_did(),
+            recipient: Recipient::new(rafa_did(), QueueHandle::parse("journal").unwrap()),
+            source: "test".into(),
+            cadence_hint: None,
+            body: Some(smuggled_envelope.to_string()),
+            title: None,
+            lede: None,
+            summary: None,
+        };
+
+        let now = Utc.with_ymd_and_hms(2026, 5, 26, 18, 0, 0).unwrap();
+        let key = fixture_signing_key();
+        let sgn = signer(&key);
+        let err = compose_envelope(req, &sgn, &template, root, &aliases, now).unwrap_err();
+        match err {
+            ComposeError::ReservedFrontmatterInBody { keys } => {
+                assert!(keys.iter().any(|k| k == "$envelope"));
+            }
+            other => panic!("expected ReservedFrontmatterInBody, got {other:?}"),
+        }
     }
 
     #[test]

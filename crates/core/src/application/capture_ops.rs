@@ -32,7 +32,7 @@ use crate::domain::{
 };
 use crate::infrastructure::channel_def_store::{channel_def_exists_in_dir, channel_dir};
 use crate::infrastructure::markdown::{
-    embed_frontmatter_with_extra, parse_document, MarkdownError, RESERVED_FRONTMATTER_KEYS,
+    embed_frontmatter_with_extra, lift_leading_frontmatter, LiftFrontmatterError, MarkdownError,
 };
 use crate::infrastructure::preferences::CognitionPrefs;
 
@@ -188,46 +188,25 @@ fn capture_to_queue_inner(
     // `$attestation` outright. Those carry cryptographic semantics and
     // are emitted only here, with a freshly-built envelope. Letting a
     // caller smuggle them in would forge provenance.
-    let (extra, clean_body) = lift_leading_frontmatter(&request.body)?;
+    let lifted = lift_leading_frontmatter(&request.body).map_err(|e| match e {
+        LiftFrontmatterError::Markdown(m) => CaptureError::Markdown(m),
+        LiftFrontmatterError::ReservedKeys { keys } => {
+            CaptureError::ReservedFrontmatterInBody { keys }
+        }
+    })?;
 
-    let content =
-        embed_frontmatter_with_extra(&clean_body, Some(&envelope), None, None, extra)?;
+    let content = embed_frontmatter_with_extra(
+        &lifted.body,
+        Some(&envelope),
+        None,
+        None,
+        lifted.extra,
+    )?;
     fs::write(&target_path, content).map_err(|e| CaptureError::Io {
         path: target_path.clone(),
         source: e,
     })?;
     Ok(target_path)
-}
-
-fn lift_leading_frontmatter(
-    body: &str,
-) -> Result<(std::collections::BTreeMap<String, serde_yaml::Value>, String), CaptureError> {
-    let parsed = parse_document(body)?;
-    if parsed.raw_frontmatter.is_none() {
-        return Ok((std::collections::BTreeMap::new(), body.to_string()));
-    }
-    let mut reserved: Vec<String> = Vec::new();
-    if parsed.envelope.is_some() {
-        reserved.push("$envelope".to_string());
-    }
-    if parsed.signature.is_some() {
-        reserved.push("$signature".to_string());
-    }
-    if parsed.stamp.is_some() {
-        reserved.push("$attestation".to_string());
-    }
-    // Defense-in-depth: also scan the raw frontmatter for any reserved
-    // key whose payload failed to deserialize into its typed shape (and
-    // therefore wouldn't have been caught above).
-    for key in RESERVED_FRONTMATTER_KEYS {
-        if !reserved.iter().any(|k| k == key) && parsed.extra.contains_key(*key) {
-            reserved.push((*key).to_string());
-        }
-    }
-    if !reserved.is_empty() {
-        return Err(CaptureError::ReservedFrontmatterInBody { keys: reserved });
-    }
-    Ok((parsed.extra, parsed.body))
 }
 
 fn resolve_target_dir(

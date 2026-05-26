@@ -215,6 +215,73 @@ pub fn embed_stamp(
     embed_frontmatter(body, envelope, None, stamp)
 }
 
+/// Result of lifting a caller-supplied leading frontmatter block.
+#[derive(Debug, Default, Clone)]
+pub struct LiftedFrontmatter {
+    /// Free-form keys (no reserved cryptographic ones — see
+    /// [`RESERVED_FRONTMATTER_KEYS`]) lifted from the body's leading block.
+    pub extra: BTreeMap<String, serde_yaml::Value>,
+    /// Body with the leading frontmatter block stripped. If the input had
+    /// no leading frontmatter, this is the input unchanged.
+    pub body: String,
+}
+
+/// Error from [`lift_leading_frontmatter`].
+#[derive(Debug, Error)]
+pub enum LiftFrontmatterError {
+    #[error(transparent)]
+    Markdown(#[from] MarkdownError),
+    #[error("body carries reserved frontmatter key(s) {keys:?}")]
+    ReservedKeys { keys: Vec<String> },
+}
+
+/// Single-frontmatter invariant helper. If `body` begins with a
+/// `---...---` block, parse it, reject any reserved cryptographic keys
+/// (`$envelope` / `$signature` / `$attestation`), and return the
+/// non-reserved keys plus the body with the block stripped. If `body`
+/// has no leading block, returns an empty `extra` and the body unchanged.
+///
+/// Used by capture + compose to merge caller-supplied leading
+/// frontmatter into the canonical single-block shape on disk — without
+/// this, an LLM-drafted body that itself begins with `---title: ...---`
+/// would land on disk as two adjacent frontmatter blocks, which corrupts
+/// any consumer that runs the body through a markdown round-trip
+/// (notably Milkdown's autosave: `---` → `***`, `- ` → `* `, `_` → `\_`).
+pub fn lift_leading_frontmatter(body: &str) -> Result<LiftedFrontmatter, LiftFrontmatterError> {
+    let parsed = parse_document(body)?;
+    if parsed.raw_frontmatter.is_none() {
+        return Ok(LiftedFrontmatter {
+            extra: BTreeMap::new(),
+            body: body.to_string(),
+        });
+    }
+    let mut reserved: Vec<String> = Vec::new();
+    if parsed.envelope.is_some() {
+        reserved.push("$envelope".to_string());
+    }
+    if parsed.signature.is_some() {
+        reserved.push("$signature".to_string());
+    }
+    if parsed.stamp.is_some() {
+        reserved.push("$attestation".to_string());
+    }
+    // Defense-in-depth: also scan the raw frontmatter for any reserved
+    // key whose payload failed to deserialize into its typed shape (and
+    // therefore wouldn't have been caught above).
+    for key in RESERVED_FRONTMATTER_KEYS {
+        if !reserved.iter().any(|k| k == key) && parsed.extra.contains_key(*key) {
+            reserved.push((*key).to_string());
+        }
+    }
+    if !reserved.is_empty() {
+        return Err(LiftFrontmatterError::ReservedKeys { keys: reserved });
+    }
+    Ok(LiftedFrontmatter {
+        extra: parsed.extra,
+        body: parsed.body,
+    })
+}
+
 // -- helpers ------------------------------------------------------------------
 
 fn starts_with_delim(s: &str) -> bool {
@@ -421,5 +488,43 @@ mod tests {
         let recipient_secret = signing_to_x25519(&recipient);
         let opened = open(&parsed_sealed, &recipient_secret).unwrap();
         assert_eq!(opened, plaintext);
+    }
+
+    #[test]
+    fn lift_no_leading_frontmatter_is_identity() {
+        let lifted = lift_leading_frontmatter("# hello\nworld\n").unwrap();
+        assert!(lifted.extra.is_empty());
+        assert_eq!(lifted.body, "# hello\nworld\n");
+    }
+
+    #[test]
+    fn lift_extracts_extra_keys_and_strips_block() {
+        let src = "---\ntitle: Foo\ntags:\n  - a\n  - b\n---\n# Body\ntext\n";
+        let lifted = lift_leading_frontmatter(src).unwrap();
+        assert_eq!(lifted.body, "# Body\ntext\n");
+        assert!(lifted.extra.contains_key("title"));
+        assert!(lifted.extra.contains_key("tags"));
+    }
+
+    #[test]
+    fn lift_rejects_reserved_envelope_key() {
+        // Build a real envelope, embed it, then attempt to lift —
+        // simulates an LLM-supplied body that smuggles a substrate-only
+        // block. Must be rejected.
+        let envelope = fixture_envelope();
+        let doc = embed_frontmatter(
+            "# Body\n",
+            Some(&envelope),
+            None,
+            None,
+        )
+        .unwrap();
+        let err = lift_leading_frontmatter(&doc).unwrap_err();
+        match err {
+            LiftFrontmatterError::ReservedKeys { keys } => {
+                assert!(keys.iter().any(|k| k == "$envelope"));
+            }
+            other => panic!("expected ReservedKeys, got {other:?}"),
+        }
     }
 }
