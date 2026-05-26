@@ -24,6 +24,8 @@
         "maximized": false,
         "center": true,
         "decorations": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
         "alwaysOnTop": false,
         "transparent": false,
         "shadow": true,
@@ -75,9 +77,7 @@
     "deep-link": {
       "mobile": [],
       "desktop": {
-        "schemes": [
-          "secretariat"
-        ]
+        "schemes": ["secretariat"]
       }
     }
   }

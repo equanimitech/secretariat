@@ -4,7 +4,32 @@ All notable changes to Secretariat are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased](https://github.com/equanimitech/secretariat/compare/v0.11.3...HEAD)
+## [Unreleased](https://github.com/equanimitech/secretariat/compare/v0.11.4...HEAD)
+
+## [0.11.4](https://github.com/equanimitech/secretariat/compare/v0.11.3...v0.11.4) — 2026-05-26
+
+Things-3-style integrated title bar on macOS. The previous shell drew both
+a native title bar ("Secretariat" at the top) and a custom React title
+bar below it (also "Secretariat", centered) — the React bar was designed
+to replace the native one but `decorations: true` left the native chrome
+in place, so users saw two of everything.
+
+### Changed
+
+- **Main window title bar is now `Overlay` with hidden title.** Set
+  `titleBarStyle: "Overlay"` and `hiddenTitle: true` in `tauri.conf.json`
+  on the main window only. The OS now inlays the traffic lights at the
+  top-left of the content area; the native title text is hidden.
+  Markdown viewer windows keep their default native title bar — the
+  filename is useful context in a doc-viewer context.
+- **Custom React title bar drops the duplicated chrome on macOS.**
+  `TitleBar.tsx`'s macOS branch no longer renders `MacOSWindowControls`
+  (the native overlay provides traffic lights) or `TitleBarTitle` (no
+  title text — the row is a drag region with right-aligned action
+  buttons). Left padding (`pl-20`) clears the native traffic lights.
+  Windows + Linux branches unchanged. `MacOSWindowControls.tsx` retained
+  as dead code for now — easier to delete in a later sweep with other
+  titlebar cleanup than to chase orphan refs piecemeal.
 
 ## [0.11.3](https://github.com/equanimitech/secretariat/compare/v0.11.2...v0.11.3) — 2026-05-26
 

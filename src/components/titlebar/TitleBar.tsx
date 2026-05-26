@@ -1,8 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 import { usePlatform, type AppPlatform } from '@/hooks/use-platform'
-import { useUIStore } from '@/store/ui-store'
-import { MacOSWindowControls } from './MacOSWindowControls'
 import { WindowsWindowControls } from './WindowsWindowControls'
 import {
   TitleBarLeftActions,
@@ -35,7 +33,6 @@ export function TitleBar({ className, title, forcePlatform }: TitleBarProps) {
   const { t } = useTranslation()
   const displayTitle = title ?? t('titlebar.default')
   const detectedPlatform = usePlatform()
-  const isFullscreen = useUIStore(state => state.isFullscreen)
 
   // In development, allow forcing a platform for testing
   const platform =
@@ -73,32 +70,21 @@ export function TitleBar({ className, title, forcePlatform }: TitleBarProps) {
     )
   }
 
-  // macOS (default): traffic lights on the left.
-  //
-  // In native fullscreen we hide the custom traffic lights — macOS
-  // already provides the menu-bar reveal at the top edge with native
-  // controls, and rendering our own buttons there both overlaps that
-  // reveal and confuses fullscreen exit (the green button no longer
-  // means "fullscreen" once you're already in it). The titlebar row
-  // itself stays so the left/right action menus remain reachable.
+  // macOS (default): Things-3-style integrated title bar. The native
+  // chrome runs in `titleBarStyle: "Overlay"` (set in tauri.conf.json),
+  // so the OS draws inset traffic lights at top-left and the title is
+  // hidden via `hiddenTitle: true`. Our row provides the drag region
+  // and right-aligned actions; left padding clears the native lights.
   return (
     <div
       data-tauri-drag-region
       className={cn(
-        'relative flex h-8 w-full shrink-0 items-center justify-between border-b bg-background',
+        'relative flex h-8 w-full shrink-0 items-center justify-between border-b bg-background pl-20',
         className
       )}
     >
-      {/* Left side - Window Controls + Actions */}
-      <div className="flex items-center">
-        {!isFullscreen && <MacOSWindowControls />}
-        <TitleBarLeftActions />
-      </div>
+      <TitleBarLeftActions />
 
-      {/* Center - Title */}
-      <TitleBarTitle title={displayTitle} />
-
-      {/* Right side - Actions */}
       <div className="flex items-center pr-2">
         <TitleBarRightActions />
       </div>
