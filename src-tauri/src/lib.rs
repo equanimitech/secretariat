@@ -355,25 +355,17 @@ pub fn run() {
                         let _ = window.hide();
                         log::info!("Main window hidden");
                     }
+
+                    // Drop back to Accessory so the dock icon disappears with the window.
+                    // CleanMyMac pattern: dock icon tracks main-window visibility.
+                    let _ = app_handle.set_activation_policy(ActivationPolicy::Accessory);
                 }
             }
 
             // macOS: Dock icon clicked — reopen the main window if it was hidden
             #[cfg(target_os = "macos")]
             RunEvent::Reopen { .. } => {
-                if let Some(window) = app_handle.get_webview_window("main") {
-                    if !window.is_visible().unwrap_or(true) {
-                        let _ = window.show();
-
-                        // The window-state plugin only auto-restores on app startup, not after
-                        // a hide/show cycle. Without this the window can appear at stale coords.
-                        use tauri_plugin_window_state::{StateFlags, WindowExt};
-                        let _ = window.restore_state(StateFlags::all());
-
-                        let _ = window.set_focus();
-                        log::info!("Main window reopened from dock");
-                    }
-                }
+                surface_main_window(app_handle);
             }
 
             // macOS: "Open With" / `open -a Secretariat path/to/file.md` →
@@ -427,13 +419,28 @@ pub fn run() {
         });
 }
 
-/// Show + unminimize + focus the main window. On macOS in Accessory mode
-/// `set_focus()` invokes `NSApp.activate(ignoringOtherApps: true)` so the
-/// window comes to the front even though we have no Dock icon.
+/// Show + unminimize + focus the main window. On macOS, flip the activation
+/// policy to `Regular` so the dock icon appears and fullscreen works (Accessory
+/// mode breaks NSWindow fullscreen animations and menubar behavior). The dock
+/// icon goes away again when the main window is hidden — see CloseRequested.
 fn surface_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = app.set_activation_policy(ActivationPolicy::Regular);
+    }
+
     if let Some(window) = app.get_webview_window("main") {
+        let was_hidden = !window.is_visible().unwrap_or(true);
         let _ = window.show();
         let _ = window.unminimize();
+
+        // The window-state plugin only auto-restores on app startup, not after
+        // a hide/show cycle. Without this the window can appear at stale coords.
+        if was_hidden {
+            use tauri_plugin_window_state::{StateFlags, WindowExt};
+            let _ = window.restore_state(StateFlags::all());
+        }
+
         let _ = window.set_focus();
     }
 }

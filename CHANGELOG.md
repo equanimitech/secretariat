@@ -4,7 +4,40 @@ All notable changes to Secretariat are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased](https://github.com/equanimitech/secretariat/compare/v0.11.0...HEAD)
+## [Unreleased](https://github.com/equanimitech/secretariat/compare/v0.11.1...HEAD)
+
+## [0.11.1](https://github.com/equanimitech/secretariat/compare/v0.11.0...v0.11.1) — 2026-05-26
+
+Polish release. Fixes a long-standing macOS fullscreen-rendering glitch on
+the main window, and slims the developer's working `target/` directory
+from 16+ GB to ~4–6 GB by tuning the dev compile profile.
+
+### Fixed
+
+- **Main-window fullscreen on macOS.** The Tauri shell launched in
+  `NSApplicationActivationPolicy.accessory` (no dock icon, tray-only),
+  which is incompatible with `NSWindow` fullscreen — menubar auto-hide,
+  green-button animation, and Space behavior all glitched. The policy
+  now flips to `regular` when the main window is surfaced (tray menu,
+  dock-click reopen, single-instance fallback) and back to `accessory`
+  when the window is hidden (red-X close). Mirrors the CleanMyMac
+  in-process pattern; the daemon already runs as a separate
+  launchd-managed process and is unaffected by `Cmd+Q`. The `Reopen`
+  handler collapses to a single call to `surface_main_window`, removing
+  the duplicated show/restore/focus path.
+
+### Changed
+
+- **Dev compile profile tuned for disk.** Workspace `Cargo.toml` now sets
+  `[profile.dev] debug = "line-tables-only"` and `incremental = false`.
+  Backtraces keep file:line; the unbounded ~4 GB incremental snapshot
+  cache is gone. Combined with rust-analyzer's own target directory
+  (`.vscode/settings.json`: `rust-analyzer.cargo.targetDir = true`),
+  real-world `target/debug` lands around 4–6 GB instead of 16+ GB.
+  Background: Tauri statically compiles every dep from source
+  (wry + tao + objc2 + reqwest + tokio + serde — hundreds of crates),
+  and rust-analyzer's `cargo check` shares the same `target/` by
+  default, triggering constant cache invalidation.
 
 ## [0.11.0](https://github.com/equanimitech/secretariat/compare/v0.10.2...v0.11.0) — 2026-05-26
 
