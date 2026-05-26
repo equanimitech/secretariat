@@ -5,6 +5,7 @@
 //! state, encryption flag, source tag, sender DID, parsed timestamp).
 //! Used by the channel-tab timeline pane.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
@@ -43,6 +44,14 @@ pub struct EnvelopePreview {
     /// Sender-declared AG multi-sentence summary (envelope.summary).
     /// Optional. Surfaced in expanded views, not compact rows.
     pub summary: Option<String>,
+    /// Best-effort human name for the sender DID — principal's
+    /// `display_name`, an authorized agent's nickname, or an org's
+    /// `name`. None when no record matches (callers should fall back
+    /// to a shortened DID).
+    pub from_name: Option<String>,
+    /// Free-form tags lifted from envelope root frontmatter (not
+    /// inside `$envelope`). Renderers MAY show these as chips.
+    pub tags: Vec<String>,
 }
 
 const PREVIEW_LINES: usize = 3;
@@ -74,6 +83,8 @@ pub async fn read_channel_envelopes(
     let envelopes =
         read_channel(&channels_root, &parsed, limit.max(1) as usize).map_err(|e| format!("{e}"))?;
 
+    let names = NameResolver::load();
+
     Ok(envelopes
         .into_iter()
         .map(|env| {
@@ -86,6 +97,7 @@ pub async fn read_channel_envelopes(
             } else {
                 preview_of(&env.body)
             };
+            let from_name = env.from.as_deref().and_then(|d| names.lookup(d));
             EnvelopePreview {
                 file_path: env.file_path,
                 from: env.from,
@@ -98,9 +110,63 @@ pub async fn read_channel_envelopes(
                 title: env.title,
                 lede: env.lede,
                 summary: env.summary,
+                from_name,
+                tags: env.tags,
             }
         })
         .collect())
+}
+
+/// Best-effort DID → human-name map built from the principal's
+/// `identity.md` (self DID + authorized agents) and each `orgs/*/org.md`.
+/// Loaded once per timeline read; cheap enough for the 100-envelope
+/// pagination this command serves. Returns `None` for unknown DIDs —
+/// callers fall back to a shortened DID.
+struct NameResolver {
+    by_did: HashMap<String, String>,
+}
+
+impl NameResolver {
+    fn load() -> Self {
+        use secretariat_core::infrastructure::identity_store::load_identity;
+        use secretariat_core::infrastructure::keys::KeyPaths;
+        use secretariat_core::infrastructure::org_store::list_org_dirs;
+
+        let mut by_did = HashMap::new();
+        let Ok(paths) = KeyPaths::discover() else {
+            return Self { by_did };
+        };
+        if let Ok(Some(identity)) = load_identity(&paths.identity_md) {
+            by_did.insert(
+                identity.did.as_str().to_string(),
+                identity.display_name.to_string(),
+            );
+            for agent in &identity.authorized_agents {
+                by_did.insert(
+                    agent.did.as_str().to_string(),
+                    agent.name.as_str().to_string(),
+                );
+            }
+        }
+        if paths.orgs_root.exists() {
+            if let Ok(orgs) = list_org_dirs(&paths.orgs_root) {
+                for org in orgs {
+                    let Some(did) = org.did else { continue };
+                    let name = if org.name.trim().is_empty() {
+                        org.alias.as_str().to_string()
+                    } else {
+                        org.name
+                    };
+                    by_did.insert(did.as_str().to_string(), name);
+                }
+            }
+        }
+        Self { by_did }
+    }
+
+    fn lookup(&self, did: &str) -> Option<String> {
+        self.by_did.get(did).cloned()
+    }
 }
 
 /// Walk up from a channel-dir path until we find a `channels` segment;

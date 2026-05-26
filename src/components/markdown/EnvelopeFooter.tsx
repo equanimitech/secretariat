@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { Check, Stamp } from 'lucide-react'
+import { BadgeCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Popover,
@@ -72,7 +72,7 @@ export function EnvelopeFooter({
           disabled={stamping || saving}
           className="h-7"
         >
-          <Stamp size={14} className="mr-1.5" />
+          <BadgeCheck size={14} className="mr-1.5" />
           {stamping ? 'Stamping…' : 'Stamp'}
         </Button>
       )}
@@ -115,7 +115,7 @@ function StampedPill({
           title="Stamp details"
           className="inline-flex h-7 items-center gap-1.5 rounded-full bg-amber-100 px-3 text-xs font-medium text-amber-900 hover:bg-amber-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:bg-amber-950 dark:text-amber-200 dark:hover:bg-amber-900"
         >
-          <Check className="h-3.5 w-3.5" />
+          <BadgeCheck className="h-3.5 w-3.5" />
           {label}
         </button>
       </PopoverTrigger>

@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
-import { Check, Lock, Hash, Terminal } from 'lucide-react'
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
+import { Lock, Hash, Terminal, BadgeCheck } from 'lucide-react'
 import { toast } from 'sonner'
 import { commands, type EnvelopePreview } from '@/lib/bindings'
 import { Button } from '@/components/ui/button'
@@ -24,8 +24,13 @@ export function ChannelTimeline({ tab }: ChannelTimelineProps) {
   const refresh = useCallback(async () => {
     setError(null)
     const res = await commands.readChannelEnvelopes(tab.channelPath, 100)
-    if (res.status === 'ok') setEnvelopes(res.data)
-    else setError(res.error)
+    if (res.status === 'ok') {
+      setEnvelopes(res.data)
+      // Seed the unread store so the *next* refresh that discovers
+      // new envelopes can compare against this baseline. First sight
+      // ≠ unread (matches Explorer's quiet-on-first-launch contract).
+      unreadStore.recordSeen(res.data.map(e => e.file_path))
+    } else setError(res.error)
   }, [tab.channelPath])
 
   useEffect(() => {
@@ -88,30 +93,32 @@ export function ChannelTimeline({ tab }: ChannelTimelineProps) {
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-3">
-        {error && (
-          <div className="mb-3 rounded border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-            {error}
-          </div>
-        )}
-        {envelopes === null && (
-          <div className="py-10 text-center text-sm text-muted-foreground">
-            Loading…
-          </div>
-        )}
-        {envelopes !== null && envelopes.length === 0 && (
-          <div className="py-10 text-center text-sm text-muted-foreground">
-            No envelopes in this channel yet.
-          </div>
-        )}
-        <ol className="flex flex-col gap-2">
-          {envelopes?.map(env => (
-            <EnvelopeCard
-              key={env.file_path}
-              env={env}
-              onOpen={() => openEnvelope(env)}
-            />
-          ))}
-        </ol>
+        <div className="mx-auto w-full max-w-3xl">
+          {error && (
+            <div className="mb-3 rounded border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              {error}
+            </div>
+          )}
+          {envelopes === null && (
+            <div className="py-10 text-center text-sm text-muted-foreground">
+              Loading…
+            </div>
+          )}
+          {envelopes !== null && envelopes.length === 0 && (
+            <div className="py-10 text-center text-sm text-muted-foreground">
+              No envelopes in this channel yet.
+            </div>
+          )}
+          <ol className="flex flex-col gap-2">
+            {envelopes?.map(env => (
+              <EnvelopeCard
+                key={env.file_path}
+                env={env}
+                onOpen={() => openEnvelope(env)}
+              />
+            ))}
+          </ol>
+        </div>
       </div>
     </div>
   )
@@ -131,38 +138,67 @@ function EnvelopeCard({
   // (first ~3 lines of the body).
   const title = env.title?.trim() ? env.title.trim() : null
   const lede = env.lede?.trim() ? env.lede.trim() : null
+  const sender = env.from_name?.trim() || shortDid(env.from)
+  const isUnread = useIsUnread(env.file_path)
   return (
     <li>
       <button
         type="button"
         onClick={onOpen}
         className={cn(
-          'group flex w-full flex-col gap-1 rounded-md border border-border bg-card px-3 py-2 text-left transition-colors',
-          'hover:border-foreground/30 hover:bg-accent/40'
+          'group flex w-full flex-col gap-1.5 rounded-md border px-4 py-3 text-left transition-colors',
+          // Quiet stamped-vs-not cue: stamped envelopes carry a stronger
+          // border + card surface; unstamped envelopes sit flatter on
+          // the page. No badge, no shout — the hierarchy itself is the
+          // signal. See AGENTS.md hard rule #4 (stamped = authoritative).
+          env.stamped
+            ? 'border-foreground/30 bg-card shadow-sm hover:border-foreground/50'
+            : 'border-border/60 bg-background hover:border-border'
         )}
       >
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-            <StampBadge stamped={env.stamped} encrypted={env.encrypted} />
-            <span className="font-mono">{shortDid(env.from)}</span>
-            {env.source && (
-              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px]">
-                {env.source}
-              </span>
+        <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+          {isUnread && (
+            <span
+              aria-label="unread"
+              title="Unread"
+              className="h-2 w-2 shrink-0 rounded-full bg-sky-500 dark:bg-sky-400"
+            />
+          )}
+          <span
+            className={cn(
+              'font-medium text-foreground',
+              !env.from_name && 'font-mono text-muted-foreground'
             )}
-            <span>{when}</span>
-          </div>
+          >
+            {sender}
+          </span>
+          <span aria-hidden>·</span>
+          <span>{when}</span>
+          {env.stamped && (
+            <BadgeCheck
+              className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400"
+              aria-label="Stamped — principal-attested"
+            />
+          )}
+          {env.encrypted && (
+            <Lock
+              className="h-3 w-3 text-muted-foreground"
+              aria-label="Sealed wire form"
+            />
+          )}
         </div>
         {title && (
-          <div className="text-sm font-semibold text-foreground">{title}</div>
+          <div className="text-sm font-semibold leading-tight text-foreground">
+            {title}
+          </div>
         )}
-        <div className="line-clamp-3 text-sm text-foreground">
+        <div className="line-clamp-3 text-sm text-foreground/90">
           {env.encrypted ? (
             <span className="italic text-muted-foreground">
               [sealed — open to decrypt]
             </span>
           ) : lede ? (
-            <span className="text-foreground/90">{lede}</span>
+            <span>{lede}</span>
           ) : env.preview ? (
             <div className="flex flex-col gap-0.5">
               {renderPreviewMarkdown(env.preview, { maxLines: 3 })}
@@ -171,47 +207,39 @@ function EnvelopeCard({
             <span className="italic text-muted-foreground">[empty]</span>
           )}
         </div>
+        {(env.tags.length > 0 || env.source) && (
+          <div className="mt-0.5 flex flex-wrap items-center gap-1">
+            {env.tags.map(tag => (
+              <span
+                key={tag}
+                className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground"
+              >
+                {tag}
+              </span>
+            ))}
+            {env.source && (
+              <span
+                title="Source"
+                className="rounded-full border border-dashed border-border px-2 py-0.5 text-[10px] text-muted-foreground"
+              >
+                {env.source}
+              </span>
+            )}
+          </div>
+        )}
       </button>
     </li>
   )
 }
 
-function StampBadge({
-  stamped,
-  encrypted,
-}: {
-  stamped: boolean
-  encrypted: boolean
-}) {
-  if (stamped) {
-    return (
-      <span
-        title="Stamped — principal-attested"
-        className="inline-flex items-center gap-0.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-900 dark:bg-amber-950 dark:text-amber-200"
-      >
-        <Check className="h-3 w-3" />
-        stamped
-      </span>
-    )
-  }
-  if (encrypted) {
-    return (
-      <span
-        title="Sealed wire form"
-        className="inline-flex items-center gap-0.5 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
-      >
-        <Lock className="h-3 w-3" />
-        sealed
-      </span>
-    )
-  }
-  return (
-    <span
-      title="Signed but not stamped — informational, not principal-attested"
-      className="inline-flex items-center gap-0.5 rounded-full border border-border bg-background px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
-    >
-      unstamped
-    </span>
+function useIsUnread(path: string): boolean {
+  // Treat as unread iff we've recorded it on a prior walk (so it isn't
+  // brand new — Explorer's first-sight-doesn't-count rule applies) and
+  // the principal hasn't opened it yet.
+  return useSyncExternalStore(
+    cb => unreadStore.subscribe(cb),
+    () => unreadStore.wasSeenPreviously(path) && !unreadStore.isOpened(path),
+    () => false
   )
 }
 

@@ -4,7 +4,76 @@ All notable changes to Secretariat are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased](https://github.com/equanimitech/secretariat/compare/v0.11.7...HEAD)
+## [Unreleased](https://github.com/equanimitech/secretariat/compare/v0.11.8...HEAD)
+
+Substrate gets live org membership (Slice A'): one invite now grants
+ongoing participation — new channels appear on subscribers' sidebars
+within the next poll cycle without re-inviting. Compose hardens its
+frontmatter handling. Settings auto-registers a relay on add. The
+envelope-card timeline learns to lean on the AG hierarchy instead of
+showing raw DIDs.
+
+### Added
+
+- **Live org membership via `channelDef` envelopes.** New lexicon field
+  `channelDef.tombstoned` (envelope-history-preserving removal, distinct
+  from `retiredAt` soft-retire). Domain gains `ScopeIntent`
+  (`Org` / `Subtree(handle)` / `Channels`) with wire-string parse +
+  serialize; invite signature canonicalization v1 → v2 adds
+  `scope_intent`. `sec invite create` learns `--org / --role /
+  --channels` with `*` / `<handle>` / `h1,h2` scope; `sec invite claim`
+  persists membership and runs eager-bootstrap `sync_now` so the
+  sidebar populates on first connect. `sec channels create/delete
+  --org` emit `channelDef` envelopes; MCP gains parity. Topological
+  backfill primitive (`sec orgs backfill-channel-defs <alias>`) replaces
+  the removed `sec migrate`. Daemon Move-5 outbound drain walks
+  `envelopes/*.md` under `orgs/*/channels/**` each tick, POSTs
+  undelivered envelopes to the membership-declared relay, writes
+  `delivered: <seq>` in place; self-owned envelopes mark
+  `delivered: local`.
+- **Receiver-side signer gate on ingest.** `envelope.$signature.signer`
+  must match the expected org-owner DID — without this, any relay-
+  registered party could mint phantom channels on every subscriber's
+  vault. Name + description sanitised at ingest (control chars and
+  bidi/zero-width Unicode stripped, length-capped 80 / 500) as
+  defense-in-depth against prompt-injection payloads riding into AI
+  surfaces.
+- **Auto-register relay on settings add.** Adding a relay in the
+  preferences pane registers the principal with that relay's roster
+  automatically — no separate ceremony.
+- **Envelope-preview backend surfaces tags + human sender name.**
+  `EnvelopePreview` gained `from_name` (resolved against `identity.md`
+  display-name + authorized agents + `orgs/*/org.md`) and `tags`
+  (lifted from root frontmatter). Callers fall back to a shortened DID
+  when no name record matches.
+
+### Changed
+
+- **Envelope cards re-shaped around the AG hierarchy.** Channel-tab
+  timeline now caps card width at `max-w-3xl` and centers the column.
+  Sender renders as a human name (DID only when unknown). Stamped /
+  unstamped status is conveyed quietly — stamped cards carry a
+  stronger border + `bg-card` + subtle shadow, unstamped cards sit
+  flatter on the page; the loud `stamped`/`unstamped` pills are gone,
+  replaced by a single inline `BadgeCheck` glyph on stamped rows.
+  Unread envelopes carry a small sky dot in the meta row (driven by
+  the existing `unreadStore`). Free-form `tags:` render as filled
+  chips; the envelope `source` keeps a dashed-outline chip on the
+  same row.
+- **`BadgeCheck` is now the standard stamping glyph.** Envelope-footer
+  `Stamp` button + stamped-pill both replaced their `Stamp` / `Check`
+  lucide icons with `BadgeCheck` for consistency with the timeline.
+
+### Fixed
+
+- **Compose lifts caller body's leading frontmatter; rejects reserved
+  keys.** Capture/compose paths that accept a markdown body now extract
+  any leading frontmatter block and merge it into the envelope's own
+  frontmatter, rather than letting it sit inside the body where parsers
+  miss it. Reserved keys (`$envelope`, `$signature`, `$attestation`)
+  are refused outright.
+
+## [0.11.8](https://github.com/equanimitech/secretariat/compare/v0.11.7...v0.11.8) — 2026-05-26
 
 Revert v0.11.4's Things-3 integrated chrome. `titleBarStyle: "Overlay" +
 hiddenTitle: true` left the main window with no traffic lights (close,

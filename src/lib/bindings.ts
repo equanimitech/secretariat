@@ -428,7 +428,7 @@ async listLaunchableChannels() : Promise<Result<LaunchableChannel[], string>> {
 }
 },
 /**
- * Create a new channel. Private (`_self`) when `org` is None;
+ * Create a new channel. Private (self channels root) when `org` is None;
  * org-scoped when supplied. Returns the resolved channel root path so
  * the caller can pop it open as a session tab immediately.
  */
@@ -615,10 +615,15 @@ async listRelays() : Promise<Result<RelayInfo[], string>> {
 }
 },
 /**
- * Add (or upsert) a relay endpoint. Does NOT register the principal's
- * DID with the relay — that happens automatically the first time
- * `invite` or `accept_invite` runs against this endpoint, or
- * (in CLI flows) via `sec relay register`.
+ * Add a relay endpoint and register the principal's DID against it
+ * in one shot. Upserts the entry into `relay-state.json` regardless of
+ * network outcome (so the row stays visible as "pending registration"
+ * on failure); attempts the DID-keyed registration handshake on top.
+ * 
+ * Returns `Ok(())` only when registration succeeds. On registration
+ * failure the entry persists as pending — callers can retry by calling
+ * `add_relay` again with the same endpoint, which will re-attempt the
+ * handshake.
  */
 async addRelay(endpoint: string) : Promise<Result<null, string>> {
     try {
@@ -789,7 +794,8 @@ export type CompositionSettingsDto = { closing_line: string; style_notes: string
 export type DeliverySettingsDto = { poll_interval_minutes: number }
 export type EntryKind = 
 /**
- * Top-level "Private" entry pointing at `_self`.
+ * Top-level "Private" entry pointing at the principal's self
+ * channels root (`<root>/channels/`).
  */
 "private" | 
 /**
@@ -884,7 +890,19 @@ lede: string | null;
  * Sender-declared AG multi-sentence summary (envelope.summary).
  * Optional. Surfaced in expanded views, not compact rows.
  */
-summary: string | null }
+summary: string | null; 
+/**
+ * Best-effort human name for the sender DID — principal's
+ * `display_name`, an authorized agent's nickname, or an org's
+ * `name`. None when no record matches (callers should fall back
+ * to a shortened DID).
+ */
+from_name: string | null; 
+/**
+ * Free-form tags lifted from envelope root frontmatter (not
+ * inside `$envelope`). Renderers MAY show these as chips.
+ */
+tags: string[] }
 export type EnvelopeRead = { body: string; from: string | null; 
 /**
  * DID of the queue *owner* (recipient).
@@ -981,7 +999,8 @@ export type RelaySyncReport = { endpoint: string; inbound_count: number; warning
  */
 export type ReviewableOrg = { 
 /**
- * `_self` for the private vault, alias DNS-label for orgs.
+ * `_self` for the private vault (UI-layer sentinel — the on-disk
+ * `_self/` wrapper is gone post-Move-3c), alias DNS-label for orgs.
  */
 alias: string; 
 /**
@@ -1040,8 +1059,8 @@ ext: string;
  */
 handle: string | null; 
 /**
- * For channel leaves under an org: the org alias. None for `_self`
- * or non-channel entries.
+ * For channel leaves under an org: the org alias. None for
+ * self channels or non-channel entries.
  */
 org: string | null }
 export type UpdateInfo = { 
