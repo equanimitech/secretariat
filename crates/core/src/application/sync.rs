@@ -410,6 +410,13 @@ fn file_inbound(
                     }) => eprintln!(
                         "[sync] channelDef ingest REJECTED: signer `{signer}` not authorised for org `{org_did}` (expected = org owner DID); ignoring envelope"
                     ),
+                    Err(crate::application::ChannelDefEnvelopeError::StaleTombstone {
+                        handle,
+                        tombstone_at,
+                        local_at,
+                    }) => eprintln!(
+                        "[sync] tombstone REJECTED for `{handle}`: envelope createdAt {tombstone_at} predates local created_at {local_at} (likely replay against since-recreated channel)"
+                    ),
                     Err(e) => eprintln!("[sync] channelDef ingest failed: {e}"),
                 }
             }

@@ -306,8 +306,25 @@ pub fn ingest_channel_def_envelope(
     if record.tombstoned {
         // Tombstone: remove local `channel.md` so the walker stops
         // surfacing this channel; preserve any `envelopes/` history.
+        //
+        // Replay/race protection: only honour the tombstone when its
+        // `createdAt` is at least as new as the local channel's
+        // `created_at`. A stale tombstone (e.g. replayed after the org
+        // owner re-created the channel under the same handle) is
+        // rejected. The signer-DID gate above prevents *forgery* by a
+        // non-owner; this gate prevents *replay* by anyone who captured
+        // a genuine tombstone earlier.
         let manifest = local_dir.join(CHANNEL_DEF_FILENAME);
         if manifest.is_file() {
+            if let Some(local_def) = load_channel_def(&channels_root, &handle)? {
+                if created_at < local_def.created_at {
+                    return Err(ChannelDefEnvelopeError::StaleTombstone {
+                        handle: handle.as_str().to_string(),
+                        tombstone_at: created_at.to_rfc3339(),
+                        local_at: local_def.created_at.to_rfc3339(),
+                    });
+                }
+            }
             fs::remove_file(&manifest).map_err(|e| ChannelDefEnvelopeError::Io {
                 path: manifest.clone(),
                 source: e,
@@ -658,6 +675,88 @@ mod tests {
             Err(ChannelDefEnvelopeError::NotAChannelDef) => {}
             other => panic!("expected NotAChannelDef, got: {other:?}"),
         }
+    }
+
+    #[test]
+    fn ingest_rejects_stale_tombstone_replay() {
+        // Scenario: org owner created `project:x` at T1, deleted it,
+        // owner re-created `project:x` at T2 > T1. Mallory captured
+        // the genuine tombstone from the T1 lifecycle and now replays
+        // it after T2's create has been mirrored — trying to make the
+        // re-created channel disappear from Marcelo's sidebar.
+        let tmp = TempDir::new().unwrap();
+        let orgs_root = tmp.path().join("orgs");
+        let alias = OrgAlias::parse("equanimi.tech").unwrap();
+        crate::application::create_org(
+            &orgs_root,
+            alias.clone(),
+            None,
+            "EquanimiTech",
+            "",
+            Utc::now(),
+            None,
+        )
+        .unwrap();
+        let (key, owner_did) = deterministic_key(31);
+        let (_, org_did) = deterministic_key(32);
+        let handle = QueueHandle::parse("project:x").unwrap();
+        let t1 = DateTime::parse_from_rfc3339("2026-05-01T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let t2 = DateTime::parse_from_rfc3339("2026-05-26T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+
+        // T1: capture a genuine tombstone (signed by the real owner)
+        // for project:x as it existed in the T1 lifecycle.
+        let tomb_t1 = emit_channel_def_envelope(
+            &orgs_root,
+            &alias,
+            &org_did,
+            &owner_did,
+            SignerRole::Principal,
+            &key,
+            &handle,
+            "",
+            "",
+            true,
+            t1,
+        )
+        .unwrap();
+        let tomb_t1_raw = fs::read_to_string(&tomb_t1).unwrap();
+
+        // T2: owner re-creates project:x. Mirror that on the receiver.
+        let create_t2 = emit_channel_def_envelope(
+            &orgs_root,
+            &alias,
+            &org_did,
+            &owner_did,
+            SignerRole::Principal,
+            &key,
+            &handle,
+            "Reborn",
+            "Second incarnation",
+            false,
+            t2,
+        )
+        .unwrap();
+        let create_t2_raw = fs::read_to_string(&create_t2).unwrap();
+        ingest_channel_def_envelope(&orgs_root, &alias, &owner_did, &create_t2_raw).unwrap();
+        let manifest_path =
+            channel_def_path(&org_channels_root(&orgs_root, &alias), &handle);
+        assert!(manifest_path.is_file(), "T2 channel must be present pre-replay");
+
+        // Replay the T1 tombstone — receiver MUST reject (createdAt
+        // T1 < local created_at T2).
+        let r = ingest_channel_def_envelope(&orgs_root, &alias, &owner_did, &tomb_t1_raw);
+        match r {
+            Err(ChannelDefEnvelopeError::StaleTombstone { .. }) => {}
+            other => panic!("expected StaleTombstone, got: {other:?}"),
+        }
+        assert!(
+            manifest_path.is_file(),
+            "T2 channel must survive a replayed T1 tombstone"
+        );
     }
 
     #[test]
