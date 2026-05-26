@@ -197,9 +197,9 @@ impl SecretariatServer {
         )])
     }
 
-    /// Draft an envelope to a peer using the principal's
-    /// attentional-granularity template, with the inline-render-first
-    /// consent gate before the draft hits disk.
+    /// Draft an envelope addressed to a channel, formatted per the
+    /// principal's attentional-granularity template, with the
+    /// inline-render-first consent gate before the draft hits disk.
     #[prompt(name = "compose")]
     pub async fn compose_prompt(&self) -> Result<Vec<PromptMessage>, ErrorData> {
         Ok(vec![PromptMessage::new_text(
@@ -239,7 +239,10 @@ impl SecretariatServer {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ComposeParams {
-    /// Recipient DID (`did:web:...` / `did:key:...`).
+    /// Channel-owner DID (`did:web:...` / `did:key:...`). The envelope
+    /// addresses a channel owned by this DID (often the principal's
+    /// own DID for own-org channels). Move 3b removed DM / peer /
+    /// bilateral primitives — every compose targets a channel.
     pub to: String,
     /// Plaintext body (markdown). v0 writes it as-is; encryption happens at
     /// stamp / send time. (v0.x: optional `encrypt: bool` here.)
@@ -253,13 +256,13 @@ pub struct ComposeParams {
     /// Free-form provenance hint (e.g. "claude-code-2026-05-02").
     #[serde(default)]
     pub source: Option<String>,
-    /// Optional cadence hint for the recipient.
+    /// Optional cadence hint for the channel.
     #[serde(default)]
     pub cadence_hint: Option<String>,
-    /// Recipient queue handle on the peer's machine. Defaults to
-    /// `inbox` (the conventional handle for direct messages).
-    /// Specify a different handle to post to a non-default queue the
-    /// peer owns — e.g. a channel they publish.
+    /// Channel handle on the owner's machine — colon-separated path
+    /// segments (e.g. `assemblee_generale`,
+    /// `dommage-corporel:paris-cohort`). Defaults to `inbox` for
+    /// MCP-compat; CLI requires this explicitly post-Move-3a.
     #[serde(default)]
     pub handle: Option<String>,
     /// Optional headline (AG gross signal, 2-6 words). Setting any of
@@ -827,8 +830,9 @@ impl SecretariatServer {
             idempotent_hint = false,
             open_world_hint = false
         ),
-        description = "Compose a draft envelope to a recipient and write it directly \
-        into the recipient queue's `envelopes/YYYY/MM/DD/` day-shard. The envelope's \
+        description = "Compose a draft envelope addressed to a channel \
+        (`{owner_did, channel_handle}`) and write it directly into the \
+        channel's `envelopes/YYYY/MM/DD/` day-shard. The envelope's \
         frontmatter omits `delivered:` — absence is the substrate's draft signal. \
         \
         **Substrate-for-themia Move 2: the envelope is signed at compose.** The \
@@ -950,11 +954,11 @@ impl SecretariatServer {
             open_world_hint = false
         ),
         description = "Drop a body of text into a local queue. Captures are \
-        envelopes whose owner is the principal themselves — same primitive as a \
-        peer letter, but the routing rule keeps them on disk. Use for ideas, \
-        journal entries, future-self notes, anything to surface again at the \
-        next review session. Stamps are optional (tamper-evident self-attestation), \
-        never required. \
+        envelopes addressed to a channel the principal themselves owns — same \
+        primitive as `compose`, but the routing rule keeps them on disk (no \
+        federation). Use for ideas, journal entries, future-self notes, anything \
+        to surface again at the next review session. Stamps are optional \
+        (tamper-evident self-attestation), never required. \
         \
         The `queue` parameter is a colon-pathed handle (e.g. `triage`, \
         `pain`, `articles`, `dommage-corporel:paris-cohort`). If you \

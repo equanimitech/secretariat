@@ -20,15 +20,19 @@ use super::paths::{key_paths, load_did};
 
 #[derive(Parser, Debug)]
 pub struct Args {
-    /// Peer recipient DID. Required — for self-captures use `sec capture`.
+    /// Channel-owner DID. The envelope addresses a channel owned by
+    /// this DID (often the principal's own DID for own-org channels).
+    /// Required — for self-addressed local captures use `sec capture`.
+    /// Move 3b (substrate-for-themia, 2026-05-21) removed the DM /
+    /// peer / bilateral correspondence primitives; every compose
+    /// targets a channel.
     #[arg(long)]
     to: String,
 
-    /// Recipient queue handle on the peer's machine — a bare
-    /// slash-separated slug like `assemblee_generale` or
-    /// `dommage-corporel/paris-cohort`. Required: Move 3a removed the
-    /// implicit `inbox:default` DM handle, so every compose must name
-    /// the channel it addresses.
+    /// Channel handle on the owner's machine — a bare slash-separated
+    /// slug like `assemblee_generale` or `dommage-corporel/paris-cohort`.
+    /// Required: Move 3a removed the implicit `inbox:default` handle,
+    /// so every compose must name the channel it addresses.
     #[arg(long)]
     handle: String,
 
