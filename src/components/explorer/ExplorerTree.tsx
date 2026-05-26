@@ -17,6 +17,7 @@ import {
   PinOff,
   Archive,
   ArchiveRestore,
+  RefreshCw,
 } from 'lucide-react'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import { toast } from 'sonner'
@@ -261,16 +262,27 @@ export function ExplorerTree({
           {makeNodeRenderer({ refreshRoots, unreadByPath, activePath })}
         </Tree>
       </div>
-      <button
-        type="button"
-        className="flex h-7 shrink-0 items-center justify-center gap-2 border-t border-border bg-muted/30 px-3 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        onClick={() => setShowAll(v => !v)}
-        title={showAll ? 'Show channels only' : 'Show every file in the vault'}
-      >
-        {showAll
-          ? 'Showing all files — click to hide internals'
-          : 'Show all files'}
-      </button>
+      <div className="flex h-7 shrink-0 items-stretch border-t border-border bg-muted/30 text-[11px] text-muted-foreground">
+        <button
+          type="button"
+          className="flex flex-1 items-center justify-center gap-2 px-3 transition-colors hover:bg-muted hover:text-foreground"
+          onClick={() => setShowAll(v => !v)}
+          title={showAll ? 'Show channels only' : 'Show every file in the vault'}
+        >
+          {showAll
+            ? 'Showing all files — click to hide internals'
+            : 'Show all files'}
+        </button>
+        <button
+          type="button"
+          className="flex w-8 items-center justify-center border-l border-border transition-colors hover:bg-muted hover:text-foreground"
+          onClick={refreshRoots}
+          title="Refresh from filesystem"
+          aria-label="Refresh from filesystem"
+        >
+          <RefreshCw className="h-3 w-3" />
+        </button>
+      </div>
     </div>
   )
 }
