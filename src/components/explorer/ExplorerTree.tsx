@@ -617,20 +617,32 @@ function findNode(tree: ExplorerNode[], id: string): ExplorerNode | null {
 
 /**
  * Channel-only projection: keep private/org roots and every directory
- * that is (or contains) a channel. Inside `_self`/org we collapse the
- * `channels/` directory so the principal sees channels at the root
- * level instead of going through a `channels/` middleman.
+ * that is (or contains) a channel. Org roots have a `channels/`
+ * middleman directory (`<root>/orgs/<alias>/channels/`) whose children
+ * we lift up so the principal sees channels directly under the alias.
+ * Private roots already point at `<root>/channels/` per Move 3c — their
+ * children are leaf channels directly, no middleman to collapse.
  */
 function filterToChannels(tree: ExplorerNode[]): ExplorerNode[] {
   return tree.map(n => projectRoot(n)).filter(Boolean) as ExplorerNode[]
 }
 
 function projectRoot(n: ExplorerNode): ExplorerNode | null {
-  // Private / org roots: lift children from the `channels/` subdir
-  // so they appear directly under the root. If children haven't
-  // loaded yet, leave `children` undefined so the lazy-load fires
-  // on first expansion.
-  if (n.kind === 'private' || n.kind === 'org') {
+  // Private root: already points at `<root>/channels/` — its children
+  // are leaf channels directly. Just project them; no middleman lift.
+  if (n.kind === 'private') {
+    if (n.children === undefined) {
+      return { ...n }
+    }
+    const lifted = n.children
+      .map(projectInner)
+      .filter(Boolean) as ExplorerNode[]
+    return { ...n, children: lifted }
+  }
+  // Org root: lift children from the `channels/` subdir so they appear
+  // directly under the alias. If children haven't loaded yet, leave
+  // `children` undefined so the lazy-load fires on first expansion.
+  if (n.kind === 'org') {
     if (n.children === undefined) {
       return { ...n }
     }
