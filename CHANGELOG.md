@@ -38,6 +38,13 @@ showing raw DIDs.
   bidi/zero-width Unicode stripped, length-capped 80 / 500) as
   defense-in-depth against prompt-injection payloads riding into AI
   surfaces.
+- **Tombstone replay/forgery gate.** A tombstoned `channelDef` envelope
+  is honoured only when its `createdAt` is at least as new as the local
+  channel's `created_at`. The signer-DID gate already blocks forgery
+  by non-owners; this closes replay of a captured genuine tombstone
+  against a since-recreated channel under the same handle. Rejections
+  surface as `[sync] tombstone REJECTED …` and leave the local
+  manifest in place.
 - **Auto-register relay on settings add.** Adding a relay in the
   preferences pane registers the principal with that relay's roster
   automatically — no separate ceremony.
