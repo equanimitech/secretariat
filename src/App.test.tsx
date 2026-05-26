@@ -1,4 +1,4 @@
-import { render } from '@/test/test-utils'
+import { render, screen } from '@/test/test-utils'
 import { describe, it, expect } from 'vitest'
 import App from './App'
 
@@ -8,5 +8,19 @@ describe('App', () => {
   it('renders main window layout', () => {
     const { container } = render(<App />)
     expect(container.firstChild).toBeInTheDocument()
+  })
+
+  it('renders title bar with traffic light buttons', () => {
+    render(<App />)
+    // Find specifically the window control buttons in the title bar
+    const titleBarButtons = screen
+      .getAllByRole('button')
+      .filter(
+        button =>
+          button.getAttribute('aria-label')?.includes('window') ||
+          button.className.includes('window-control')
+      )
+    // Should have at least the window control buttons
+    expect(titleBarButtons.length).toBeGreaterThan(0)
   })
 })

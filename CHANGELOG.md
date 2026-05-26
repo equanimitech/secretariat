@@ -4,27 +4,56 @@ All notable changes to Secretariat are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased](https://github.com/equanimitech/secretariat/compare/v0.11.6...HEAD)
+## [Unreleased](https://github.com/equanimitech/secretariat/compare/v0.11.7...HEAD)
 
-Titlebar regression follow-up to v0.11.4's Things-3 integration. The
-`Overlay` style left the OS traffic lights off-screen on current Tauri
-2.10.3 (default position drifted out of the 32px React row), and the
-macOS branch's `justify-between` flex layout collapsed the Settings
-button to the left because `TitleBarLeftActions` returns `null` — a
-single flex child can't be spread.
+Revert v0.11.4's Things-3 integrated chrome. `titleBarStyle: "Overlay" +
+hiddenTitle: true` left the main window with no traffic lights (close,
+minimize, fullscreen all unreachable), and `trafficLightPosition` in
+v0.11.7 didn't bring them back on current Tauri 2.10.3 / macOS Sonoma
+— the right move is to drop the experiment and live with the cosmetic
+"two Secretariat" headers until a proper integrated-chrome path lands.
+
+In parallel: the markdown surface used to drop its `MarkdownTitlebar`
+row when rendered inside a session tab (`embedded={true}`), leaving the
+reload / reveal-in-Finder / frontmatter-sidebar / archive actions
+unreachable from the tab view. The tab strip names the document; it
+doesn't carry those actions. Render the titlebar in both modes.
+
+### Reverted
+
+- **Main window back to default `Visible` title bar.** Removed
+  `titleBarStyle`, `hiddenTitle`, and `trafficLightPosition` from
+  `tauri.conf.json` so macOS draws its standard chrome again — traffic
+  lights work, fullscreen works, the green button means what it says.
+- **`TitleBar.tsx` macOS branch restored.** Re-renders
+  `MacOSWindowControls` (custom traffic lights, hidden in native
+  fullscreen) and `TitleBarTitle` alongside the right-side action
+  cluster. The duplicated chrome is back (native bar + React row) but
+  every control is reachable.
+
+### Fixed
+
+- **`MarkdownTitlebar` renders in tab view.** Dropped the
+  `!embedded &&` gate in `MarkdownWindow.tsx`. The header (title +
+  saving indicator + reload / reveal / sidebar / archive buttons)
+  now appears whether the markdown file is opened in its own window
+  or inside a session tab.
+
+## [0.11.7](https://github.com/equanimitech/secretariat/compare/v0.11.6...v0.11.7) — 2026-05-26
+
+Failed attempt to rescue v0.11.4's integrated chrome. Reverted in
+v0.11.8 — see that entry.
 
 ### Fixed
 
 - **Traffic lights anchored in the React row.** Added
   `trafficLightPosition: {x: 16, y: 12}` to the main window in
-  `tauri.conf.json` so the OS draws the close/minimize/fullscreen
-  controls at a known location inside our 32px integrated bar. Without
-  the explicit position, current Tauri left them off-canvas under the
-  `Overlay` style.
+  `tauri.conf.json` so the OS would draw the close/minimize/fullscreen
+  controls at a known location inside the 32px integrated bar. Did
+  not produce the intended effect on Tauri 2.10.3.
 - **Settings button back on the right.** `TitleBar.tsx`'s macOS branch
   swapped `justify-between` (broken with a `null` left child) for
-  `ml-auto` on the right wrapper. Settings now anchors at the row's
-  trailing edge as intended.
+  `ml-auto` on the right wrapper.
 
 ## [0.11.6](https://github.com/equanimitech/secretariat/compare/v0.11.5...v0.11.6) — 2026-05-26
 

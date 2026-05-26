@@ -34,9 +34,10 @@ import { MarkdownTitlebar } from './MarkdownTitlebar'
 
 interface MarkdownWindowProps {
   filePath: string
-  /** When true, layout fills the parent (`h-full`) instead of `h-screen`,
-   * the titlebar is omitted (the host's tab strip names the document),
-   * and we do not mutate the webview window's title. */
+  /** When true, layout fills the parent (`h-full`) instead of `h-screen`
+   * and we do not mutate the webview window's title. The MarkdownTitlebar
+   * still renders — its reload/reveal/sidebar/archive actions are useful
+   * inside a tab, even though the tab strip already names the document. */
   embedded?: boolean
 }
 
@@ -268,15 +269,13 @@ export function MarkdownWindow({
           embedded ? 'h-full' : 'h-screen'
         )}
       >
-        {!embedded && (
-          <MarkdownTitlebar
-            title={title}
-            saving={saving}
-            filePath={filePath}
-            onReload={requestReload}
-            reloading={reloading}
-          />
-        )}
+        <MarkdownTitlebar
+          title={title}
+          saving={saving}
+          filePath={filePath}
+          onReload={requestReload}
+          reloading={reloading}
+        />
         <div className="flex-1 overflow-y-auto">
           <main>
             <CrepeEditor
