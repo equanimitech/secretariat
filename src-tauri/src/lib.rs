@@ -14,7 +14,6 @@ mod utils;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 #[cfg(target_os = "macos")]
-use tauri::ActivationPolicy;
 use tauri::{Manager, RunEvent, WindowEvent};
 
 // Re-export only what's needed externally
@@ -161,16 +160,6 @@ pub fn run() {
                 "App handle initialized for package: {}",
                 app.package_info().name
             );
-
-            // Run as a background "accessory" app on macOS — no Dock icon, no
-            // Cmd+Tab entry. The principal opens the window deliberately
-            // (tray click, deep link, or quick-pane shortcut); the rest of
-            // the time Secretariat runs like a daemon. Mirrors the
-            // docker-daemon model the principal wants.
-            #[cfg(target_os = "macos")]
-            {
-                app.set_activation_policy(ActivationPolicy::Accessory);
-            }
 
             // Tray icon — the canonical surface for opening the main window
             // when the principal wants it. Cross-platform: macOS menubar,
@@ -351,14 +340,13 @@ pub fn run() {
                     // Hide the window, not the app. app_handle.hide() calls NSApplication.hide()
                     // which sets system-level hidden state — showing an NSPanel while hidden
                     // causes macOS to unhide the entire app, including the main window.
+                    //
+                    // The dock icon stays visible — Slack/Discord shape. Cmd+Q kills the
+                    // Tauri shell entirely; daemon survives via its own launchd agent.
                     if let Some(window) = app_handle.get_webview_window("main") {
                         let _ = window.hide();
                         log::info!("Main window hidden");
                     }
-
-                    // Drop back to Accessory so the dock icon disappears with the window.
-                    // CleanMyMac pattern: dock icon tracks main-window visibility.
-                    let _ = app_handle.set_activation_policy(ActivationPolicy::Accessory);
                 }
             }
 
@@ -419,39 +407,11 @@ pub fn run() {
         });
 }
 
-/// Show + unminimize + focus the main window. On macOS, flip the activation
-/// policy to `Regular` so the dock icon appears and fullscreen works (Accessory
-/// mode breaks NSWindow fullscreen animations and menubar behavior). The dock
-/// icon goes away again when the main window is hidden — see CloseRequested.
-///
-/// The 100 ms gap between the policy change and `set_focus` is load-bearing:
-/// NSApp.setActivationPolicy from Accessory → Regular needs a Cocoa runloop
-/// tick before NSApp.activate (which `set_focus` invokes) will actually
-/// refresh the dock state. Without the delay, the policy change "takes" but
-/// the dock icon never appears. See:
-///   https://steipete.me/posts/2025/showing-settings-from-macos-menu-bar-items
+/// Show + unminimize + focus the main window. The Tauri shell runs with
+/// `NSApplicationActivationPolicy.regular` throughout (dock icon always
+/// visible, normal cmd+tab behavior). Window hide on red-X close gives the
+/// "background app" feel without the Cocoa policy-flip gymnastics.
 fn surface_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
-    #[cfg(target_os = "macos")]
-    {
-        let _ = app.set_activation_policy(ActivationPolicy::Regular);
-
-        let app_handle = app.clone();
-        std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(100));
-            let app_for_show = app_handle.clone();
-            let _ = app_handle.run_on_main_thread(move || {
-                show_and_focus_main(&app_for_show);
-            });
-        });
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    {
-        show_and_focus_main(app);
-    }
-}
-
-fn show_and_focus_main<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     if let Some(window) = app.get_webview_window("main") {
         let was_hidden = !window.is_visible().unwrap_or(true);
         let _ = window.show();

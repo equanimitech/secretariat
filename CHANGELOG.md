@@ -4,7 +4,41 @@ All notable changes to Secretariat are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased](https://github.com/equanimitech/secretariat/compare/v0.11.2...HEAD)
+## [Unreleased](https://github.com/equanimitech/secretariat/compare/v0.11.3...HEAD)
+
+## [0.11.3](https://github.com/equanimitech/secretariat/compare/v0.11.2...v0.11.3) — 2026-05-26
+
+Drops the runtime activation-policy flip entirely. v0.11.1 introduced it
+to hide the dock icon while the main window was hidden; v0.11.2 added a
+100 ms runloop-tick workaround for the dock icon not refreshing on the
+Accessory → Regular transition. The flip itself was the wrong choice —
+CleanMyMac (which we benchmarked against) ships **separate binaries**
+with each binary holding one fixed activation policy, not a single
+process flipping at runtime. Single-process runtime flipping is
+workaround territory and fragile around fullscreen, cmd+tab, and Cocoa
+event-loop timing.
+
+The Tauri shell now runs as a normal Regular app (dock icon always
+visible, cmd+tab always working). Red-X still hides the window instead
+of quitting (Slack/Discord shape); cmd+Q kills the shell entirely. The
+daemon (`sec daemon serve`) runs as its own launchd-managed process and
+is unaffected by Tauri shell lifecycle — same survival model as before,
+without the policy gymnastics.
+
+When the tray earns its own bounded context (own state, own update
+cadence, beyond show/quit), the path forward is to split the tray into
+a separate binary with `Accessory` policy at compile time, matching
+CleanMyMac's actual architecture. Not today.
+
+### Changed
+
+- **Tauri shell stays in `Regular` activation policy.** Removed the
+  startup `Accessory` set, the runtime flip in `surface_main_window`,
+  the 100 ms delay thread, and the policy drop in the close handler.
+  `surface_main_window` simplifies to show + restore-state + focus.
+  `tauri.conf.json` flips main window `visible: true` so first launch
+  shows the window normally (the previous `visible: false` made sense
+  only under the Accessory model).
 
 ## [0.11.2](https://github.com/equanimitech/secretariat/compare/v0.11.1...v0.11.2) — 2026-05-26
 
