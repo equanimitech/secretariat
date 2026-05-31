@@ -195,9 +195,11 @@ fn capture_to_queue_inner(
         }
     })?;
 
+    let envelope_value =
+        serde_yaml::to_value(&envelope).map_err(|e| CaptureError::Markdown(MarkdownError::YamlEmit(e.to_string())))?;
     let content = embed_frontmatter_with_extra(
         &lifted.body,
-        Some(&envelope),
+        Some(&envelope_value),
         None,
         None,
         lifted.extra,
@@ -324,7 +326,7 @@ mod tests {
         assert!(parsed.stamp.is_none(), "captures start unstamped");
         assert!(parsed.body.contains("chapter 3"));
 
-        let env = parsed.envelope.unwrap();
+        let env: Envelope = serde_yaml::from_value(parsed.envelope.unwrap()).unwrap();
         assert_eq!(env.recipient.handle.as_str(), "triage");
         // Captures are always self-addressed — owner DID is the principal.
         assert_eq!(env.recipient.owner, rafa());

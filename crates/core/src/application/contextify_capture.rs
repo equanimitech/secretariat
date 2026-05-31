@@ -115,7 +115,9 @@ pub async fn contextify_capture<P: CognitionRouting>(
         source: e,
     })?;
     let parsed = parse_document(&raw)?;
-    let envelope = parsed.envelope.clone().ok_or(ContextifyError::NoEnvelope)?;
+    let envelope_value = parsed.envelope.clone().ok_or(ContextifyError::NoEnvelope)?;
+    let envelope: Envelope =
+        serde_yaml::from_value(envelope_value).map_err(|_| ContextifyError::NoEnvelope)?;
     if parsed.stamp.is_some() {
         return Err(ContextifyError::AlreadyStamped);
     }
@@ -377,7 +379,9 @@ fn relocate(
     // Rewrite envelope to point at the new queue.
     let mut updated_envelope = envelope.clone();
     updated_envelope.recipient = Recipient::new(envelope.from.clone(), new_queue.clone());
-    let new_content = embed_stamp(body, Some(&updated_envelope), None)?;
+    let updated_value = serde_yaml::to_value(&updated_envelope)
+        .map_err(|e| ContextifyError::Markdown(MarkdownError::YamlEmit(e.to_string())))?;
+    let new_content = embed_stamp(body, Some(&updated_value), None)?;
     std::fs::write(&final_path, new_content).map_err(|e| ContextifyError::Io {
         path: final_path.clone(),
         source: e,
@@ -452,6 +456,7 @@ mod tests {
             .join("06");
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("20260506T120000Z-abcdef.md");
+        let envelope = serde_yaml::to_value(&envelope).unwrap();
         let content = embed_stamp(body, Some(&envelope), None).unwrap();
         std::fs::write(&path, content).unwrap();
         path
@@ -568,6 +573,7 @@ mod tests {
             .join("06");
         std::fs::create_dir_all(&target_dir).unwrap();
         let capture_path = target_dir.join("20260506T120000Z-abcdef.md");
+        let envelope = serde_yaml::to_value(&envelope).unwrap();
         let content = embed_stamp("morning walk", Some(&envelope), None).unwrap();
         std::fs::write(&capture_path, content).unwrap();
 
@@ -615,7 +621,7 @@ mod tests {
         assert!(outcome.applied);
         let raw = std::fs::read_to_string(&outcome.final_path).unwrap();
         let parsed = parse_document(&raw).unwrap();
-        let env = parsed.envelope.unwrap();
+        let env: Envelope = serde_yaml::from_value(parsed.envelope.unwrap()).unwrap();
         assert_eq!(env.recipient.handle.as_str(), "inbox:idea");
     }
 

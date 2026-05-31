@@ -8,15 +8,17 @@
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
-use super::{DocHash, Envelope, Stamp};
+use super::{DocHash, Stamp};
 
 /// The aggregate. Once constructed, `stamp.doc_hash` is guaranteed to match
 /// the hash of `body` under the canonicalization rules.
+///
+/// The aggregate is intentionally envelope-free: stamp verification depends
+/// only on `(stamp, body)`. The advisory `$envelope` routing block (when
+/// present in a file) is not part of the cryptographic invariant and is
+/// parsed opaquely upstream — see `infrastructure::markdown`.
 #[derive(Debug, Clone)]
 pub struct AttestedDocument {
-    /// The advisory routing metadata. May be `None` for stamps applied to raw
-    /// documents that were not composed via `sec compose`.
-    pub envelope: Option<Envelope>,
     pub stamp: Stamp,
     pub body: String,
 }
@@ -31,11 +33,7 @@ impl AttestedDocument {
     /// Build an attested document from parts. Verifies the body hash matches
     /// the stamp's claim. Does NOT verify the signature against the signer's
     /// public key — that is the application layer's job.
-    pub fn new(
-        envelope: Option<Envelope>,
-        stamp: Stamp,
-        body: String,
-    ) -> Result<Self, DocumentInvariantError> {
+    pub fn new(stamp: Stamp, body: String) -> Result<Self, DocumentInvariantError> {
         let computed = canonical_body_hash(&body);
         if stamp.doc_hash != computed {
             return Err(DocumentInvariantError::HashMismatch {
@@ -43,11 +41,7 @@ impl AttestedDocument {
                 computed,
             });
         }
-        Ok(AttestedDocument {
-            envelope,
-            stamp,
-            body,
-        })
+        Ok(AttestedDocument { stamp, body })
     }
 
     /// The bytes the signer signed (the doc hash).
@@ -132,7 +126,7 @@ mod tests {
         let body = "# Hello\n".to_string();
         let h = canonical_body_hash(&body);
         let s = stamp_for(h);
-        assert!(AttestedDocument::new(None, s, body).is_ok());
+        assert!(AttestedDocument::new(s, body).is_ok());
     }
 
     #[test]
@@ -140,7 +134,7 @@ mod tests {
         let body = "# Hello\n".to_string();
         let wrong = DocHash::from_bytes([0xff; 32]);
         let s = stamp_for(wrong);
-        let r = AttestedDocument::new(None, s, body);
+        let r = AttestedDocument::new(s, body);
         assert!(matches!(
             r,
             Err(DocumentInvariantError::HashMismatch { .. })

@@ -188,8 +188,10 @@ fn compose_envelope_inner(
         signer.signing_key,
     );
 
+    let envelope_value = serde_yaml::to_value(&envelope)
+        .map_err(|e| ComposeError::Markdown(MarkdownError::YamlEmit(e.to_string())))?;
     let content =
-        embed_frontmatter_with_extra(body, Some(&envelope), Some(&signature), None, extra)?;
+        embed_frontmatter_with_extra(body, Some(&envelope_value), Some(&signature), None, extra)?;
 
     fs::write(&target_path, content).map_err(|e| ComposeError::Io {
         path: target_path.clone(),
@@ -416,7 +418,9 @@ mod tests {
         assert_eq!(sig.signer_role, SignerRole::Principal);
         assert!(sig.verify_body(&parsed.body, &key.verifying_key()));
         // Absence of `delivered:` is the draft signal — never set at compose.
-        assert!(parsed.envelope.as_ref().unwrap().delivered.is_none());
+        let env: Envelope =
+            serde_yaml::from_value(parsed.envelope.clone().unwrap()).unwrap();
+        assert!(env.delivered.is_none());
         assert!(parsed.body.contains("Body."));
     }
 

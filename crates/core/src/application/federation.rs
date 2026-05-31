@@ -28,7 +28,7 @@ use std::path::{Path, PathBuf};
 use ed25519_dalek::SigningKey;
 use thiserror::Error;
 
-use crate::domain::Did;
+use crate::domain::{Did, Envelope};
 use crate::infrastructure::keys::KeyPaths;
 use crate::infrastructure::markdown::{embed_frontmatter_with_extra, parse_document, MarkdownError};
 use crate::infrastructure::membership_store::{load_membership, MEMBERSHIP_FILENAME};
@@ -127,12 +127,14 @@ async fn federate_one(client: &RelayClient<'_>, path: &Path) -> Result<String, F
         .map_err(|e| FederationLocal::Soft(format!("read {}: {e}", path.display())))?;
     let parsed = parse_document(&raw)
         .map_err(|e| FederationLocal::Soft(format!("parse {}: {e}", path.display())))?;
-    let Some(envelope) = parsed.envelope else {
+    let Some(envelope_value) = parsed.envelope else {
         return Err(FederationLocal::Soft(format!(
             "no $envelope frontmatter at {}",
             path.display()
         )));
     };
+    let envelope: Envelope = serde_yaml::from_value(envelope_value)
+        .map_err(|e| FederationLocal::Soft(format!("malformed $envelope at {}: {e}", path.display())))?;
     if envelope.delivered.is_some() {
         return Err(FederationLocal::Soft(format!(
             "race: {} already delivered before we got to it",
@@ -182,16 +184,20 @@ fn mark_delivered(path: &Path, marker: &str) -> Result<(), std::io::Error> {
             ));
         }
     };
-    let mut envelope = parsed
+    let envelope_value = parsed
         .envelope
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "no $envelope"))?;
+    let mut envelope: Envelope = serde_yaml::from_value(envelope_value)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
     if envelope.delivered.is_some() {
         return Ok(()); // idempotent
     }
     envelope.delivered = Some(marker.to_string());
+    let envelope_value = serde_yaml::to_value(&envelope)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
     let rebuilt = embed_frontmatter_with_extra(
         &parsed.body,
-        Some(&envelope),
+        Some(&envelope_value),
         parsed.signature.as_ref(),
         parsed.stamp.as_ref(),
         parsed.extra,
@@ -219,6 +225,7 @@ fn collect_undelivered_under(channels_root: &Path) -> Vec<PathBuf> {
         Some(raw) => match parse_document(&raw) {
             Ok(d) => d
                 .envelope
+                .and_then(|v| serde_yaml::from_value::<Envelope>(v).ok())
                 .map(|e| e.delivered.is_none())
                 .unwrap_or(false),
             Err(_) => false,

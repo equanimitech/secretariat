@@ -140,7 +140,7 @@ pub fn verify_document<R: DidResolver>(
     };
 
     // Aggregate invariant: doc hash matches body.
-    let aggregate = match AttestedDocument::new(parsed.envelope, stamp.clone(), parsed.body) {
+    let aggregate = match AttestedDocument::new(stamp.clone(), parsed.body) {
         Ok(a) => a,
         Err(DocumentInvariantError::HashMismatch { claimed, computed }) => {
             return Ok(VerifyOutcome::Tampered {
@@ -219,7 +219,7 @@ pub fn verify_document_layered<R: DidResolver>(
     // invariant for the stamp; we don't want to re-read the file.
     let stamp_outcome = match parsed.stamp {
         None => VerifyOutcome::Unsigned,
-        Some(stamp) => match AttestedDocument::new(parsed.envelope, stamp.clone(), body) {
+        Some(stamp) => match AttestedDocument::new(stamp.clone(), body) {
             Err(DocumentInvariantError::HashMismatch { claimed, computed }) => {
                 VerifyOutcome::Tampered {
                     claimed_hash: claimed,

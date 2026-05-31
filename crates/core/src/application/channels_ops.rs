@@ -315,7 +315,11 @@ fn read_one(path: &Path) -> Result<ChannelEnvelope, ChannelOpError> {
         path: path.to_path_buf(),
         source,
     })?;
-    let (from, source, encrypted, title, lede, summary) = match &parsed.envelope {
+    let typed = parsed
+        .envelope
+        .as_ref()
+        .and_then(|v| serde_yaml::from_value::<crate::domain::Envelope>(v.clone()).ok());
+    let (from, source, encrypted, title, lede, summary) = match &typed {
         Some(e) => (
             Some(e.from.as_str().to_string()),
             e.source.clone(),

@@ -225,8 +225,9 @@ pub fn emit_channel_def_envelope(
         extra.insert("tombstoned".to_string(), YamlValue::Bool(true));
     }
 
+    let envelope_value = serde_yaml::to_value(&envelope)?;
     let content =
-        embed_frontmatter_with_extra(body, Some(&envelope), Some(&signature), None, extra)?;
+        embed_frontmatter_with_extra(body, Some(&envelope_value), Some(&signature), None, extra)?;
 
     let meta_dir = org_channels_root(orgs_root, org_alias).join(META_HANDLE);
     let day_shard = meta_dir
@@ -668,9 +669,14 @@ mod tests {
         let body = "hello\n";
         let sig =
             EnvelopeSignature::sign_body(did, SignerRole::Principal, body, Utc::now(), &key);
-        let raw =
-            crate::infrastructure::markdown::embed_frontmatter(body, Some(&envelope), Some(&sig), None)
-                .unwrap();
+        let envelope_value = serde_yaml::to_value(&envelope).unwrap();
+        let raw = crate::infrastructure::markdown::embed_frontmatter(
+            body,
+            Some(&envelope_value),
+            Some(&sig),
+            None,
+        )
+        .unwrap();
         match parse_channel_def_from_envelope(&raw) {
             Err(ChannelDefEnvelopeError::NotAChannelDef) => {}
             other => panic!("expected NotAChannelDef, got: {other:?}"),

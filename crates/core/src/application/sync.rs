@@ -341,7 +341,9 @@ fn file_inbound(
     let body_str = std::str::from_utf8(&env.body).ok();
     let recipient = body_str
         .and_then(|s| parse_document(s).ok())
-        .and_then(|d| d.envelope.map(|e| e.recipient));
+        .and_then(|d| d.envelope)
+        .and_then(|v| serde_yaml::from_value::<crate::domain::Envelope>(v).ok())
+        .map(|e| e.recipient);
 
     let target_dir = match recipient {
         Some(r) => {
@@ -438,7 +440,10 @@ fn derive_org_alias_from_body(
     let Ok(parsed) = parse_document(body) else {
         return Ok(None);
     };
-    let Some(env) = parsed.envelope else {
+    let Some(env_value) = parsed.envelope else {
+        return Ok(None);
+    };
+    let Ok(env) = serde_yaml::from_value::<crate::domain::Envelope>(env_value) else {
         return Ok(None);
     };
     let to_did = env.recipient.owner.as_str().to_string();

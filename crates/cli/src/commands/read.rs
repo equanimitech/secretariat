@@ -42,9 +42,14 @@ pub fn run(args: Args) -> Result<()> {
         .with_context(|| format!("reading {}", args.file.display()))?;
     let parsed = parse_document(&raw).context("parsing envelope")?;
 
-    let envelope = parsed
+    // `$envelope` is parsed opaquely by the markdown layer (git-native
+    // teardown); deserialize the typed view here to read the encryption
+    // scheme that drives the decrypt branch.
+    let envelope_value = parsed
         .envelope
         .ok_or_else(|| anyhow!("envelope frontmatter missing"))?;
+    let envelope: secretariat_core::domain::Envelope =
+        serde_yaml::from_value(envelope_value).context("parsing $envelope block")?;
 
     match envelope.encryption {
         None => {

@@ -98,8 +98,11 @@ fn compose_and_stamp_with_handle(
     .encryption(EncryptionScheme::X25519XChaCha20Poly1305)
     .build();
 
-    // Embed envelope (no stamp yet) into markdown.
-    let unstamped = embed_stamp(&body_wire, Some(&envelope), None).unwrap();
+    // Embed envelope (no stamp yet) into markdown. The markdown layer
+    // takes the `$envelope` block opaquely now (git-native teardown), so
+    // serialize the typed envelope to a YAML value first.
+    let envelope_value = serde_yaml::to_value(&envelope).unwrap();
+    let unstamped = embed_stamp(&body_wire, Some(&envelope_value), None).unwrap();
 
     // Write to outbox; stamp_document operates on the file in place.
     let recipient_dir = outbox_root.join(marcelo_did.as_str().replace([':', '/'], "_"));
@@ -187,7 +190,10 @@ async fn rafa_to_marcelo_full_correspondence_loop() {
     // 8. Marcelo reads the inbox file: parse + verify hash + decrypt.
     let raw_str = std::fs::read_to_string(&inbox_path).unwrap();
     let parsed = parse_document(&raw_str).unwrap();
-    let envelope = parsed.envelope.expect("envelope present after transit");
+    let envelope: Envelope = serde_yaml::from_value(
+        parsed.envelope.expect("envelope present after transit"),
+    )
+    .unwrap();
     assert_eq!(envelope.from, rafa_did);
     assert_eq!(envelope.recipient.owner, marcelo_did);
     assert!(envelope.is_encrypted());
@@ -348,7 +354,8 @@ async fn dm_with_non_default_handle_round_trips() {
 
     let raw_str = std::str::from_utf8(&inbound[0].body).unwrap();
     let parsed = parse_document(raw_str).unwrap();
-    let envelope = parsed.envelope.expect("envelope present");
+    let envelope: Envelope =
+        serde_yaml::from_value(parsed.envelope.expect("envelope present")).unwrap();
     assert_eq!(envelope.recipient.owner, marcelo_did);
     assert_eq!(
         envelope.recipient.handle.as_str(),

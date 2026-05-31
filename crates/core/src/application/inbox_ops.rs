@@ -20,10 +20,19 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use thiserror::Error;
 
-use crate::domain::{Did, QueueHandle};
+use crate::domain::{Did, Envelope, QueueHandle};
 use crate::infrastructure::crypto::sealed::{open, signing_to_x25519, OpenError, SealedBox};
 use crate::infrastructure::keys::{load_signing_key, KeyError};
 use crate::infrastructure::markdown::{parse_document, MarkdownError};
+
+/// Deserialize the opaque `$envelope` YAML value (carried by
+/// [`crate::infrastructure::markdown::ParsedDocument`]) into the typed
+/// [`Envelope`]. The markdown layer is envelope-schema-agnostic post
+/// git-native teardown; the read/decrypt path reconstitutes the type here,
+/// where it needs `from` / recipient / `encryption`.
+fn typed_envelope(value: serde_yaml::Value) -> Result<Envelope, InboxOpError> {
+    serde_yaml::from_value(value).map_err(MarkdownError::from).map_err(InboxOpError::from)
+}
 
 #[derive(Debug, Error)]
 pub enum InboxOpError {
@@ -171,7 +180,8 @@ pub fn read_envelope(
         source: e,
     })?;
     let parsed = parse_document(&raw)?;
-    let envelope = parsed.envelope.ok_or(InboxOpError::NoEnvelope)?;
+    let envelope_value = parsed.envelope.ok_or(InboxOpError::NoEnvelope)?;
+    let envelope = typed_envelope(envelope_value)?;
 
     let envelope_to = Some(envelope.recipient.owner.clone());
     let envelope_queue = Some(envelope.recipient.handle.clone());
@@ -231,7 +241,13 @@ fn push_envelope(out: &mut Vec<ListedEnvelope>, path: &Path) -> Result<(), Inbox
         source: e,
     })?;
     let parsed = parse_document(&raw)?;
-    let (from, to, queue, encrypted, delivered) = match &parsed.envelope {
+    // Deserialize the opaque `$envelope` value on demand. A value that
+    // fails to typecheck is treated as "no envelope fields" — the same
+    // shape the listing produced for a frontmatter-less file pre-teardown.
+    let typed = parsed
+        .envelope
+        .and_then(|v| serde_yaml::from_value::<Envelope>(v).ok());
+    let (from, to, queue, encrypted, delivered) = match typed {
         Some(e) => (
             Some(e.from.as_str().to_string()),
             Some(e.recipient.owner.as_str().to_string()),
@@ -268,6 +284,13 @@ mod tests {
         Recipient::new(rafa_did(), QueueHandle::parse("inbox:default").unwrap())
     }
 
+    /// Self-addressed envelope as the opaque YAML value `embed_stamp` now
+    /// takes (the markdown layer no longer knows the `Envelope` type).
+    fn self_envelope_value() -> serde_yaml::Value {
+        let env = EnvelopeBuilder::new(rafa_did(), self_recipient()).build();
+        serde_yaml::to_value(&env).unwrap()
+    }
+
     #[test]
     fn list_inbox_walks_alias_namespace_segments_tree() {
         let root = TempDir::new().unwrap();
@@ -276,7 +299,7 @@ mod tests {
             .path()
             .join("channels/inbox/default/envelopes/2026/05/12");
         std::fs::create_dir_all(&nested).unwrap();
-        let env = EnvelopeBuilder::new(rafa_did(), self_recipient()).build();
+        let env = self_envelope_value();
         let body = "hello\n";
         let content = embed_stamp(body, Some(&env), None).unwrap();
         std::fs::write(nested.join("a.md"), content).unwrap();
@@ -295,7 +318,7 @@ mod tests {
     #[test]
     fn list_inbox_skips_deferred_and_archived_siblings() {
         let root = TempDir::new().unwrap();
-        let env = EnvelopeBuilder::new(rafa_did(), self_recipient()).build();
+        let env = self_envelope_value();
         let body = "active\n";
         let active_dir = root
             .path()
@@ -326,7 +349,7 @@ mod tests {
     #[test]
     fn read_plaintext_envelope_returns_body() {
         let dir = TempDir::new().unwrap();
-        let env = EnvelopeBuilder::new(rafa_did(), self_recipient()).build();
+        let env = self_envelope_value();
         let body = "the body content\n";
         let content = embed_stamp(body, Some(&env), None).unwrap();
         let path = dir.path().join("envelope.md");
