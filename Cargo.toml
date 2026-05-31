@@ -35,10 +35,6 @@ toml = "0.8"
 rmcp = { version = "0.8", features = ["server", "macros", "schemars", "transport-io"] }
 schemars = "1.0"
 
-# dev only — pulled into individual crates' [dev-dependencies] by name
-assert_cmd = "2"
-predicates = "3"
-
 # Dev profile tuned for disk usage. Full debuginfo + incremental compilation
 # pushed target/debug past 16 GB during normal tauri:dev work. Trade:
 #  - `debug = "line-tables-only"` keeps backtrace file:line, drops the rest.
