@@ -4,7 +4,7 @@ version = "0.11.9"
 edition = "2021"
 authors = ["Rafa Ballestiero"]
 license = "MIT"
-description = "Long-running local orchestrator for Secretariat: relay poll, envelope drain (stamped self-authored envelopes pending send), LaunchAgent supervision. Evolves into the v0.3+ local nervous system (RelayServer, RelayClient, EnvelopeWatcher, InboxWriter, MetaResolver, AgentSupervisor, RoutingEngine, ScheduleTicker, IPC)."
+description = "Local supervision surface for Secretariat: macOS LaunchAgent install/uninstall/status plus a keepalive serve entry point. The federation/relay/sync column was removed in the git-native teardown; real subsystems re-land here when the git-native substrate grows its own delivery path."
 
 [lib]
 name = "secretariat_daemon"
@@ -13,15 +13,11 @@ path = "src/lib.rs"
 [dependencies]
 secretariat-core = { path = "../core" }
 anyhow.workspace = true
-chrono.workspace = true
 ed25519-dalek.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 dirs.workspace = true
-serde.workspace = true
-serde_json.workspace = true
-notify = "8"
 
 [dev-dependencies]
 tempfile.workspace = true

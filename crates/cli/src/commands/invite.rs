@@ -280,26 +280,11 @@ fn run_claim(url: &str, _name_override: Option<&str>) -> Result<()> {
         // gate on it.
         let _ = stash_scope_intent(&paths, &outcome.alias, claimed.scope_intent.as_ref());
 
-        // Slice A' eager bootstrap: kick a one-shot sync_now tick so
-        // the `<alias>:_meta` queue history is pulled NOW, not on the
-        // next 15-min poll cycle. Each historical channelDef envelope
-        // streams through the ingest hook → local channel.md materialises
-        // → sidebar populates "on first connect" per the pitch.
-        eprintln!();
-        eprintln!("[sec] eager bootstrap: pulling `_meta` queue history…");
-        match eager_bootstrap_sync(&paths, &did, &key) {
-            Ok(SyncSummary { channels, warnings }) => {
-                eprintln!(
-                    "[sec]   bootstrap done — {channels} channel(s) materialised, {warnings} warning(s)"
-                );
-            }
-            Err(e) => {
-                eprintln!(
-                    "[sec]   bootstrap failed: {e} \
-                     (the channels will appear on the next regular poll cycle)"
-                );
-            }
-        }
+        // The eager-bootstrap `sync_now` tick that used to pull the
+        // `<alias>:_meta` queue history here was removed in the git-native
+        // teardown (cut A) — the federation/sync column is gone. The
+        // channel tree now materialises via the git-native substrate's own
+        // ingest path rather than a relay poll.
     }
 
     Ok(())
@@ -329,48 +314,6 @@ fn stash_scope_intent(
     let mut f = std::fs::File::create(&path)?;
     writeln!(f, "{}", scope.to_wire_string())?;
     Ok(())
-}
-
-/// Bootstrap sync summary surfaced to the principal after claim.
-struct SyncSummary {
-    channels: usize,
-    warnings: usize,
-}
-
-/// Run one `sync_now` cycle in a temporary current-thread tokio runtime
-/// so the CLI's sync `run_claim` can drive the inbound poll right after
-/// persisting org membership. Idempotent with the daemon's poll loop —
-/// the global `tick_lock` (held inside `sync_now`) serialises against
-/// any running daemon's concurrent tick.
-fn eager_bootstrap_sync(
-    paths: &secretariat_core::infrastructure::keys::KeyPaths,
-    did: &secretariat_core::Did,
-    key: &ed25519_dalek::SigningKey,
-) -> Result<SyncSummary> {
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .context("building tokio runtime for eager bootstrap")?;
-    let outcome = runtime
-        .block_on(secretariat_core::application::sync_now(paths, did, key))
-        .context("sync_now during eager bootstrap")?;
-    // Count derived channels: walk the channels tree for every org that
-    // now has a membership. The pre-claim baseline is "0 channels" for
-    // a freshly-claimed org, so listing post-tick gives us the count.
-    let mut channels = 0usize;
-    if let Ok(orgs) = secretariat_core::application::list_orgs(&paths.orgs_root) {
-        for org in orgs {
-            let root = secretariat_core::infrastructure::org_store::org_channels_root(
-                &paths.orgs_root,
-                &org.alias,
-            );
-            if let Ok(list) = secretariat_core::application::list_channels(&root) {
-                channels += list.len();
-            }
-        }
-    }
-    let warnings: usize = outcome.per_relay.iter().map(|r| r.warnings.len()).sum();
-    Ok(SyncSummary { channels, warnings })
 }
 
 /// Parse a `--channels` argument into `(ScopeIntent, channel_handles)`.

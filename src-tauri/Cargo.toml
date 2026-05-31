@@ -20,7 +20,6 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 secretariat-core = { path = "../crates/core" }
-secretariat-daemon = { path = "../crates/daemon" }
 tauri = { version = "2", features = ["macos-private-api", "tray-icon"] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }

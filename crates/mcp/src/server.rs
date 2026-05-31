@@ -385,33 +385,6 @@ pub struct StampOutput {
     pub doc_hash: String,
 }
 
-#[derive(Debug, Serialize, JsonSchema)]
-pub struct DaemonTickOutput {
-    pub note: String,
-}
-
-#[derive(Debug, Serialize, JsonSchema)]
-pub struct DaemonStatusOutput {
-    /// True when the daemon's IPC socket is reachable. False means
-    /// either no daemon is running, or it crashed and didn't clean up.
-    pub daemon_reachable: bool,
-    /// Every relay this principal has registered with, in the order
-    /// they were added. Cursor advances as inbound envelopes are
-    /// filed; mismatched cursors across machines indicate a sync gap.
-    pub relays: Vec<DaemonRelayStatus>,
-}
-
-#[derive(Debug, Serialize, JsonSchema)]
-pub struct DaemonRelayStatus {
-    pub endpoint: String,
-    pub registered: bool,
-    /// Number of `(owner, handle)` queues this relay is tracking for the
-    /// principal. v0.8+ per-queue cursor model.
-    pub queues_tracked: usize,
-    /// Maximum cursor across all tracked queues — a summary for at-a-glance
-    /// "is the daemon making progress" reads. `0` if no queues tracked.
-    pub max_cursor: u64,
-}
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct VerifyParams {
@@ -2133,75 +2106,6 @@ impl SecretariatServer {
             alias.as_str().to_string(),
             view,
         )))
-    }
-
-    #[tool(
-        name = "daemon_tick",
-        annotations(
-            destructive_hint = false,
-            idempotent_hint = true,
-            open_world_hint = true
-        ),
-        description = "Run one sync cycle against every registered relay: poll inbound \
-        envelopes on the principal's subscribed org channels. Idempotent and safe to \
-        call repeatedly. \
-        \
-        Prefers the running daemon's IPC socket so it doesn't race the daemon's own poll \
-        loop on `RelayState` saves; falls back to running the cycle in-proc when no \
-        daemon is reachable (same fallback the CLI's `sec daemon tick` uses)."
-    )]
-    async fn daemon_tick(&self) -> Result<Json<DaemonTickOutput>, ErrorData> {
-        let did = load_principal_did(&self.paths)?;
-        let key = load_signing_key(&self.paths.signing_key).map_err(|e| {
-            invalid_request(format!(
-                "loading signing key from {}: {e}",
-                self.paths.signing_key.display()
-            ))
-        })?;
-        secretariat_daemon::ipc::tick_via_ipc_or_inproc(&self.paths, &did, &key)
-            .await
-            .map_err(|e| invalid_request(format!("daemon tick: {e}")))?;
-        Ok(Json(DaemonTickOutput {
-            note: "tick completed; new envelopes (if any) have landed under their \
-                   target queues — surface them via `/review` or `secretariat://orgs`"
-                .to_string(),
-        }))
-    }
-
-    #[tool(
-        name = "daemon_status",
-        annotations(
-            destructive_hint = false,
-            idempotent_hint = true,
-            open_world_hint = false
-        ),
-        description = "Report whether the long-running daemon is reachable on its IPC \
-        socket and list the registered relays + their cursor positions. Useful for \
-        diagnosing 'why hasn't my message arrived' before falling back to `daemon_tick`. \
-        \
-        Read-only — doesn't trigger sync."
-    )]
-    async fn daemon_status(&self) -> Result<Json<DaemonStatusOutput>, ErrorData> {
-        let running = secretariat_daemon::ipc::is_running(&self.paths).await;
-        let state = RelayState::load(&self.paths.relay_state).map_err(|e| {
-            invalid_request(format!(
-                "loading relay state from {}: {e}",
-                self.paths.relay_state.display()
-            ))
-        })?;
-        let relays = state
-            .iter()
-            .map(|r| DaemonRelayStatus {
-                endpoint: r.endpoint.clone(),
-                registered: r.registered,
-                queues_tracked: r.queue_cursors.len(),
-                max_cursor: r.queue_cursors.iter().map(|q| q.cursor).max().unwrap_or(0),
-            })
-            .collect();
-        Ok(Json(DaemonStatusOutput {
-            daemon_reachable: running,
-            relays,
-        }))
     }
 }
 

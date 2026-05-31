@@ -13,8 +13,7 @@ use std::path::PathBuf;
 use secretariat_core::application::{
     archive_envelope as core_archive_envelope, defer_envelope as core_defer_envelope,
     list_inbox_files, list_review_queue as core_list_review_queue,
-    read_envelope as core_read_envelope, sync_now as core_sync_now,
-    unarchive_envelope as core_unarchive_envelope, SyncOutcome as CoreSyncOutcome,
+    read_envelope as core_read_envelope, unarchive_envelope as core_unarchive_envelope,
 };
 use secretariat_core::domain::DisplayName;
 use secretariat_core::infrastructure::keys::{
@@ -338,60 +337,6 @@ pub async fn read_envelope(file_path: String) -> Result<EnvelopeRead, String> {
         to: res.envelope_to.map(|d| d.as_str().to_string()),
         queue: res.envelope_queue.map(|h| h.as_str().to_string()),
         was_encrypted: res.was_encrypted,
-    })
-}
-
-#[derive(Debug, Serialize, Deserialize, specta::Type)]
-pub struct RelaySyncReport {
-    pub endpoint: String,
-    pub inbound_count: u32,
-    pub warnings: Vec<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize, specta::Type)]
-pub struct SyncReport {
-    pub per_relay: Vec<RelaySyncReport>,
-}
-
-/// Run one sync cycle against every registered relay. Pulls inbound
-/// envelopes on the principal's subscribed org channels. Principal-
-/// initiated per the review-session model — no background push.
-///
-/// Idempotent and safe to call repeatedly. Returns a report the UI can
-/// surface (counts + non-fatal warnings).
-#[tauri::command]
-#[specta::specta]
-pub async fn sync_now() -> Result<SyncReport, String> {
-    let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
-
-    // Prefer the running daemon's IPC socket so we don't race against
-    // its `RelayState` saves. Fall back to running the cycle in-proc
-    // when no daemon is reachable — same shape as the CLI's
-    // `sec daemon tick` (Slice 1, see daemon-evolution doc).
-    let outcome: CoreSyncOutcome = if secretariat_daemon::ipc::is_running(&paths).await {
-        let value = secretariat_daemon::ipc::call(&paths, "tick", None)
-            .await
-            .map_err(|e| format!("ipc tick: {e}"))?;
-        serde_json::from_value(value).map_err(|e| format!("decoding outcome: {e}"))?
-    } else {
-        let did = load_self_did(&paths)?;
-        let key = load_signing_key(&paths.signing_key)
-            .map_err(|e| format!("loading signing key: {e}"))?;
-        core_sync_now(&paths, &did, &key)
-            .await
-            .map_err(|e| format!("sync_now: {e}"))?
-    };
-
-    Ok(SyncReport {
-        per_relay: outcome
-            .per_relay
-            .into_iter()
-            .map(|r| RelaySyncReport {
-                endpoint: r.endpoint,
-                inbound_count: r.inbound_count as u32,
-                warnings: r.warnings,
-            })
-            .collect(),
     })
 }
 
