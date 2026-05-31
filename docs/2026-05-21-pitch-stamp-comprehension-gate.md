@@ -1,0 +1,115 @@
+---
+migrated_from: equanimi.tech/project/secretariat/dev/20260521T160854Z-o3y7wo.md
+---
+# Pitch — Stamp comprehension gate
+
+Pitch — 2026-05-21. Tag: `pitch`. Source: conversation 2026-05-21 (no captured idea file; arose from Rafa's reaction to Manu-handoff draft).
+
+**Hard dependency:** substrate model where every envelope is signed + synced automatically (AI-volume flow, no human gate), and stamp is decoupled from send — applied only to specific envelopes the principal elects to elevate. This pitch sits on top of that substrate state. If the substrate hasn't shifted yet, the gate has nothing meaningful to gate.
+
+## Boundaries
+
+### Job to be done
+
+When the principal is about to stamp (= elevate) a specific envelope, I want the ceremony to force a brief act of comprehension — distinct from the Touch ID reflex — so the stamped subset of traffic actually represents *attested meaning* and not muscle-memory clicks. Baseline once the substrate decouples stamp from send: Touch ID + headline-in-dialog + show-body-first contract (AGENTS.md rule #4). That contract defeats phishing (Claude shows X, stamps Y) but is silent on self-deception (principal sees body, eyes glaze, finger presses). With stamp now a pure curation act on a high-volume signed-and-synced stream, the threat of reflexive stamping isn't theoretical — it scales directly with traffic.
+
+### Appetite
+
+`small`
+
+> Appetite picked: `small` — scarcity is structural (delivered by the substrate shift in the Hard dependency line). This pitch is just the comprehension gate on the elevation act. Two surfaces (cognition port + MCP/Tauri stamp confirmation), no lexicon edit, no domain change.
+
+## Elements
+
+All client-side. **No lexicon edit, no on-wire change.** The stamp record (`tech.equanimi.secretariat.stamp`) is unchanged; comprehension is a property of the stamping ceremony, not of the record.
+
+* **Place:** stamp confirmation surface (MCP `stamp` tool + Tauri stamp button).
+
+  * **Affordance:** read-back probe — after the body is shown, the surface asks ONE open question requiring re-reading (e.g. *"In your own words, what are you vouching for here?"*). Free-text answer routed through `CognitionPort` for semantic match against the body. Match → Touch ID fires. Mismatch → re-display body next to *what the principal said*, principal re-reads and retries or aborts.
+
+  * **Connection:** principal types → cognition adapter judges → on-pass, Touch ID dialog opens with the existing headline+hash. Probe phrasing invokes BCT 13.4 (Valued self-identity) by anchoring the act as *vouching*, not as comprehension testing.
+
+* **Place:** stamp button affordance (Tauri envelope view; MCP `stamp` prompt at `crates/mcp/src/server.rs:230`).
+
+  * **Affordance:** **consequences copy** above the stamp button: *"signed only is enough for most messages. stamping will lock the content (no editing after) and commit your voice to it."* The copy fades in over ~1.2s when the stamp affordance becomes available — render-dwell (eye lands on warning) not body-dwell (forced wait on the envelope itself). The stamp affordance is non-interactive during the reveal.
+
+  * **Connection:** anchors anticipated regret (BCT 5.5) and salience of consequences (BCT 5.2) in *concrete material irreversibility* (no editing after stamp) rather than abstract ledger weight. Scarcity is already structural — this copy reinforces, doesn't impose, the rarity.
+
+* **Place:** probe input field (MCP `stamp` flow + Tauri probe modal).
+
+  * **Affordance:** **anti-circumvention constraints** — paste is disabled in the answer field; copy from the envelope body is disabled while the probe is active; the probe modal is focus-locked (tab-switch / app-switch → probe invalidates, body re-displays, principal restarts). Goal: force the answer to be typed from the principal's own head, not laundered through another Claude/LLM session.
+
+  * **Connection:** these are *soft* gates — defense in depth, not absolute. A determined principal can always look at the screen and dictate to a phone. The point is to remove the *frictionless* circumvention paths so the easy thing is the honest thing. Residual risk acknowledged.
+
+* **Place:** CLI `sec stamp` (no cognition session available).
+
+  * **Affordance:** **dwell-time fallback** — stamp button (Touch ID prompt) disabled for `max(5s, body_word_count / 4 wps)`. Weaker than the probe but cheap; reflects evidence from consent-dwell-time research. CLI is the power-user surface; weaker gate is acceptable there.
+
+## Risks
+
+### 🐇 Rabbit holes
+
+* **Semantic match judgment quality.** What's the threshold for "the principal's answer reflects the body"? Too strict → users frustrated. Too loose → reflex answers slip through. Need a calibration set of {body, good-answer, lazy-answer} triples. **Figureoutable** — Claude can self-evaluate against a held-out set; if false-positive rate > 20% in pilot, fall back to a checklist-style probe (3 dynamic multi-choice generated by Claude from the body).
+
+* **Where the probe lives in the cognition layer.** `CognitionPort` exists but is currently shaped around routing/launching/session (per recent `refactor(ports/cognition)` commit `c4651ee`). The probe is a synchronous in-line LLM call. May need a new `comprehension_check` method on the port, or it threads through the existing session.
+
+* **LLM-laundering the probe.** The principal can paste the body into a different Claude session and paste the answer back. Mitigations in element 3 close obvious vectors but not screen-reading + second-device. **Partially figureoutable** — soft gates ship in v1; the residual gap is a *trust contract* with the principal, not a technical control. If pilot reveals natural reach for a second LLM, the pitch has failed and we re-shape (likely voice-only).
+
+* **Probe-as-accusation drift.** Mismatch rendering must read as neutral arbitration (*"here's what you said, here's the passage — does that match?"*) and NOT as accusation (*"you didn't read it"*). Behavioral analysis flagged this as the single largest UX risk. Copy review with Rafa during build; pilot the mismatch flow with a deliberately vague answer to feel the tone.
+
+### 🏴 Off-sides called
+
+* **Scarcity-by-default UI nudge.** Cut: there is no separate signed-only send verb in the current substrate; signed+synced is automatic per the Hard dependency. Scarcity is structural, not UI.
+
+* **Stamp tiers / new `act: ceremony` lexicon value.** Cut: ceremony is HOW the stamp is gated, not WHAT it records. The on-wire act stays `attest`.
+
+* **Stamp budget / running ledger UI.** *"12th stamp this week"* visibility — separate concern, belongs in a later pitch on stamp inflation visibility.
+
+* **`stamp-tier.md` self-authored manifesto.** Behavioral analysis flagged the need for a principal-defined boundary. Cut from THIS pitch — likely its own small prerequisite pitch if pilot demands it.
+
+* **Counter-stamp ceremony.** Out of scope per AGENTS.md rule #4 — v0.4+ (m.3 process-verbaux).
+
+### 🥩 Fat cut
+
+* **Body-dwell on MCP/Tauri.** Drop. Only CLI uses it. Layering body-dwell + probe is friction theater. Render-dwell on consequences copy (~1.2s) is kept — distinct mechanism.
+
+* **Configurable probe prompt template.** Drop for v1. Ship one Claude-authored probe.
+
+* **A/B test the probe wording.** Drop. Test in-vivo with conversation, not telemetry.
+
+### 🧪 Domain knowledge
+
+* **Verify the Hard dependency is real before building.** If the substrate shift hasn't landed, this pitch is premature.
+
+* **Verify with Marcelo (book): does "comprehension gate" map onto a named pattern in the Autonomous Enterprise framework?** Vocabulary alignment between book and tool.
+
+* **Pilot with one real stamp moment, not a synthetic one.** Next time Rafa stamps an envelope to Marcelo for real, run the probe manually and see whether the answer feels like meaningful re-reading or like a hoop. Anecdote first; ship second.
+
+## Pitch
+
+### Problem
+
+Once the substrate decouples stamp from send — everything signed + synced automatically, stamp reserved for the curation act — the cryptographic gate (Touch ID, biometric, key never leaves device) and the anti-phishing gate (headline-in-dialog + show-body-first) are both strong. There is *no* comprehension gate. The principal-side failure mode isn't *"Claude tricked me"* — it's *"I scrolled past the body, the dialog popped, my finger went to the sensor, done."* This is the T&C problem: every gate designed as a checkbox eventually becomes a reflex.
+
+The stamped subset is the *authoritative decision ledger* (rule #4). Its evidential weight depends entirely on each stamp representing a moment the principal meant. If stamps inflate because the substrate makes everything else free, the architectural moat erodes from inside. Phishing is a smaller threat than the principal's own reflex.
+
+The fix is not more friction on each stamp; more friction becomes its own reflex. The fix is a *probe whose answer space is too large to reflex through*, combined with anti-circumvention soft gates and consequences copy anchored in material irreversibility ("locks content, commits voice"). Scarcity is already delivered by the substrate; this pitch covers what happens at the moments when the principal *does* elect to stamp.
+
+### The bet
+
+Small appetite. Ship the read-back probe + anti-circumvention + consequences copy, behind a single flag for pilot. Two weeks of dogfood (Rafa + Marcelo correspondence on the book). Success metric is qualitative: at the end of two weeks, does Rafa feel his stamps represent *moments he meant*, vs. the baseline where stamp feels like a step in send flow? If yes — promote. If the probe feels like a hoop — re-pitch (likely the checklist variant).
+
+The bet pays off because it strengthens the *only* property of Secretariat that matters at scale: *attested meaning is rare and trustworthy*. Every other invariant protects against external threats. This is the only one protecting against the principal's own reflexes — the threat that grows the most with use.
+
+### No-gos
+
+* No attempt to airtight-defend against second-device LLM-laundering of the probe (acknowledged residual risk; soft gates only).
+* No lexicon edit. The on-wire stamp record stays exactly as it is.
+* No domain change in `crates/core/src/domain/stamp.rs`. Comprehension is client-layer.
+* No new `StampAct` variant. The act recorded is still `attest`.
+* No `send_signed` verb — that's the Hard dependency, not this pitch.
+* No `stamp-tier.md` manifesto — separate small pitch, prerequisite if pilot demands it.
+* No retroactive comprehension on past stamps.
+* No counter-stamp / multi-party machinery (v0.4+, separate pitch).
+* No telemetry on probe pass/fail rates.
+* No configurable probe prompt in v1 — ship one and learn.
