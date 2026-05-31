@@ -3,16 +3,10 @@
 //! Each command exposes an `Args` struct (clap-derived) and a `run(Args)` entrypoint.
 
 pub mod agent;
-pub mod capture;
-pub mod channels;
-pub mod compose;
 pub mod daemon;
 pub mod init;
-pub mod invite;
 pub mod launch;
-pub mod list;
 pub mod mcp;
-pub mod orgs;
 pub mod profile;
 pub mod read;
 pub mod stamp;

@@ -10,11 +10,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-use secretariat_core::application::{
-    archive_envelope as core_archive_envelope, defer_envelope as core_defer_envelope,
-    list_inbox_files, list_review_queue as core_list_review_queue,
-    read_envelope as core_read_envelope, unarchive_envelope as core_unarchive_envelope,
-};
+use secretariat_core::application::read_envelope as core_read_envelope;
 use secretariat_core::domain::DisplayName;
 use secretariat_core::infrastructure::keys::{
     generate_keypair, load_signing_key, save_signing_key, KeyPaths,
@@ -138,177 +134,13 @@ pub async fn secretariat_root() -> Result<String, String> {
     Ok(paths.root.display().to_string())
 }
 
-#[derive(Debug, Serialize, Deserialize, specta::Type)]
-pub struct InviteClaimReport {
-    pub inviter_did: String,
-    pub claimant_did: String,
-    pub claimed_at: String,
-    /// True when the relay registered this principal as part of the claim
-    /// (first-time onboarding). False when the principal was already a tenant.
-    pub registered: bool,
-}
-
-/// Claim a correspondence invite from a deep link or HTTPS URL.
-///
-/// Accepts either form:
-/// - `secretariat://<host>/v0/invite/<token>` (deep link from landing page)
-/// - `https://<host>/v0/invite/<token>` (raw HTTPS URL the inviter shared)
-///
-/// Generates a fresh identity if none exists yet (so a deep link click is
-/// the only step a first-time recipient needs). Maps to the existing
-/// `secretariat-core::application::claim_invite` use case.
-#[tauri::command]
-#[specta::specta]
-pub async fn claim_invite_url(deep_link_or_url: String) -> Result<InviteClaimReport, String> {
-    use secretariat_core::application::claim_invite;
-    use secretariat_core::infrastructure::keys::load_signing_key;
-
-    let claim_url = normalize_invite_url(&deep_link_or_url)
-        .ok_or_else(|| format!("URL is not a recognizable invite URL: {deep_link_or_url}"))?;
-
-    // Ensure identity exists. First-time recipients land here with no
-    // signing key; auto-init keeps the deep link click as the only step.
-    let _ = init_identity().await?;
-
-    let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
-    let claimant_did = load_self_did(&paths)?;
-    let key =
-        load_signing_key(&paths.signing_key).map_err(|e| format!("loading signing key: {e}"))?;
-
-    // claim_invite is sync (uses reqwest::blocking). Call via Tauri's
-    // bundled tokio so we don't block the runtime thread.
-    let result =
-        tauri::async_runtime::spawn_blocking(move || claim_invite(&claim_url, &claimant_did, &key))
-            .await
-            .map_err(|e| format!("join error: {e}"))?
-            .map_err(|e| format!("claim failed: {e}"))?;
-
-    log::info!(
-        "claim_invite_url succeeded; inviter = {}",
-        result.inviter_did
-    );
-
-    Ok(InviteClaimReport {
-        inviter_did: result.inviter_did.as_str().to_string(),
-        claimant_did: result.claimant_did.as_str().to_string(),
-        claimed_at: result.claimed_at.to_rfc3339(),
-        registered: result.registered,
-    })
-}
-
-/// Convert `secretariat://<host>/v0/invite/<token>` (deep link from the
-/// landing page) into the HTTPS form that
-/// `secretariat-core::application::claim_invite` expects. Pass-through
-/// for already-HTTPS URLs. Returns `None` when the URL doesn't look like
-/// an invite at all.
-fn normalize_invite_url(input: &str) -> Option<String> {
-    let trimmed = input.trim();
-    if trimmed.starts_with("https://") || trimmed.starts_with("http://") {
-        return Some(trimmed.to_string());
-    }
-    if let Some(rest) = trimmed.strip_prefix("secretariat://") {
-        return Some(format!("https://{rest}"));
-    }
-    None
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn normalize_https_passthrough() {
-        let url = "https://secretariat.equanimi.tech/v0/invite/abc";
-        assert_eq!(normalize_invite_url(url), Some(url.to_string()));
-    }
-
-    #[test]
-    fn normalize_deep_link_to_https() {
-        let url = "secretariat://secretariat.equanimi.tech/v0/invite/abc";
-        assert_eq!(
-            normalize_invite_url(url),
-            Some("https://secretariat.equanimi.tech/v0/invite/abc".to_string())
-        );
-    }
-
-    #[test]
-    fn normalize_unknown_returns_none() {
-        assert_eq!(normalize_invite_url("ftp://nope.example/x"), None);
-        assert_eq!(normalize_invite_url("just-a-token"), None);
-    }
-}
-
 // ---------------------------------------------------------------------------
-// Review surface — inbox + drafts queue + envelope read
+// Review surface — envelope read
 // ---------------------------------------------------------------------------
 //
-// Per the review-session model (memory/feedback_review_session_model.md),
-// the Tauri app surfaces two collections to the principal: received
-// envelopes (inbox) and unstamped drafts awaiting review (drafts queue).
-// The principal opens the app at a chosen time, reads bodies, stamps
-// approved drafts. No notifications, no push.
-
-#[derive(Debug, Serialize, Deserialize, specta::Type)]
-pub struct EnvelopeListing {
-    pub file_path: String,
-    pub from: Option<String>,
-    /// DID of the queue *owner* (recipient). Always set on well-formed
-    /// envelopes. UI compares to the principal's own DID to discriminate
-    /// local capture (`to == self`) from peer/channel post (`to != self`).
-    pub to: Option<String>,
-    /// Queue handle on the owner's machine (`<namespace>:<slug>`). Always
-    /// set on well-formed envelopes alongside `to`. Direct messages
-    /// conventionally use `inbox:default`.
-    pub queue: Option<String>,
-    pub stamped: bool,
-    pub encrypted: bool,
-    /// Delivery state marker from envelope frontmatter. `None` = draft
-    /// / undelivered (substrate-for-themia Move 4). `Some("<relay-seq-id>")`
-    /// = federated. `Some("local")` = self-owned channel that never
-    /// federates.
-    pub delivered: Option<String>,
-}
-
-impl From<secretariat_core::application::ListedEnvelope> for EnvelopeListing {
-    fn from(e: secretariat_core::application::ListedEnvelope) -> Self {
-        Self {
-            file_path: e.file_path,
-            from: e.from,
-            to: e.to,
-            queue: e.queue,
-            stamped: e.stamped,
-            encrypted: e.encrypted,
-            delivered: e.delivered,
-        }
-    }
-}
-
-/// List received envelopes — walks the v0.3 substrate tree under
-/// `~/.secretariat/` for every `envelopes/` directory and collects
-/// the `.md` leaves.
-#[tauri::command]
-#[specta::specta]
-pub async fn list_inbox() -> Result<Vec<EnvelopeListing>, String> {
-    let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
-    let listed = list_inbox_files(&paths.root).map_err(|e| format!("list_inbox: {e}"))?;
-    Ok(listed.into_iter().map(EnvelopeListing::from).collect())
-}
-
-/// List the principal's review queue — every envelope on disk under
-/// any queue's `envelopes/YYYY/MM/DD/` tree. Post-Move 4 (substrate-
-/// for-themia) drafts and federated envelopes share that tree; the
-/// envelope frontmatter's `delivered:` field (absent = draft) is the
-/// disambiguator. Both `to` and `queue` are populated on every
-/// entry — discriminate local vs peer by comparing `to` to the
-/// principal's own DID.
-#[tauri::command]
-#[specta::specta]
-pub async fn list_review_queue() -> Result<Vec<EnvelopeListing>, String> {
-    let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
-    let listed =
-        core_list_review_queue(&paths.root).map_err(|e| format!("list_review_queue: {e}"))?;
-    Ok(listed.into_iter().map(EnvelopeListing::from).collect())
-}
+// The cross-queue inbox / review-queue listing surfaces were removed in the
+// git-native teardown (cut B). What the Tauri shell keeps is the read +
+// stamp path: open a file the explorer surfaced, decrypt it, stamp it.
 
 #[derive(Debug, Serialize, Deserialize, specta::Type)]
 pub struct EnvelopeRead {
@@ -338,39 +170,6 @@ pub async fn read_envelope(file_path: String) -> Result<EnvelopeRead, String> {
         queue: res.envelope_queue.map(|h| h.as_str().to_string()),
         was_encrypted: res.was_encrypted,
     })
-}
-
-/// Move an inbox envelope to `inbox/deferred/` — "remind me later".
-/// Returns the new path. Idempotent.
-#[tauri::command]
-#[specta::specta]
-pub async fn defer_inbox_envelope(file_path: String) -> Result<String, String> {
-    let _paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
-    let p = std::path::PathBuf::from(file_path);
-    let dest = core_defer_envelope(&p).map_err(|e| format!("defer_envelope: {e}"))?;
-    Ok(dest.display().to_string())
-}
-
-/// Move an inbox envelope to `inbox/archived/` — "ignore / handled".
-/// Returns the new path. Idempotent.
-#[tauri::command]
-#[specta::specta]
-pub async fn archive_inbox_envelope(file_path: String) -> Result<String, String> {
-    let _paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
-    let p = std::path::PathBuf::from(file_path);
-    let dest = core_archive_envelope(&p).map_err(|e| format!("archive_envelope: {e}"))?;
-    Ok(dest.display().to_string())
-}
-
-/// Reverse of `archive_inbox_envelope` — move a file from
-/// `<queue>/archived/` back to `<queue>/envelopes/` (flat).
-#[tauri::command]
-#[specta::specta]
-pub async fn unarchive_inbox_envelope(file_path: String) -> Result<String, String> {
-    let _paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
-    let p = std::path::PathBuf::from(file_path);
-    let dest = core_unarchive_envelope(&p).map_err(|e| format!("unarchive_envelope: {e}"))?;
-    Ok(dest.display().to_string())
 }
 
 /// Stamp a draft. Touch ID fires from the app's window context. The
@@ -443,55 +242,6 @@ pub async fn stamp_envelope(file_path: String) -> Result<StampReport, String> {
         relay_assigned_id: None,
         delivery_warning: None,
     })
-}
-
-/// Create an invite at the principal's first registered relay. Returns
-/// the HTTPS claim URL the inviter shares (recipient's HTML landing
-/// page lives at the same URL with `Accept: text/html`). Optional
-/// `purpose` becomes the suggested contact name on the receiving side.
-#[tauri::command]
-#[specta::specta]
-pub async fn create_invite(purpose: Option<String>) -> Result<String, String> {
-    use secretariat_core::application::{
-        create_invite as core_create_invite, DEFAULT_INVITE_TTL_HOURS,
-    };
-    use secretariat_core::infrastructure::transport::RelayState;
-
-    let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
-    let did = load_self_did(&paths)?;
-    let key =
-        load_signing_key(&paths.signing_key).map_err(|e| format!("loading signing key: {e}"))?;
-
-    let state =
-        RelayState::load(&paths.relay_state).map_err(|e| format!("loading relay state: {e}"))?;
-    let endpoint = state
-        .iter()
-        .find(|r| r.registered)
-        .map(|r| r.endpoint.clone())
-        .ok_or_else(|| {
-            "no registered relay yet. Use Settings → Transports to register first.".to_string()
-        })?;
-
-    // create_invite is sync (reqwest::blocking).
-    let purpose_clone = purpose.clone();
-    let endpoint_clone = endpoint.clone();
-    let did_clone = did.clone();
-    let key_clone = key.clone();
-    let result = tauri::async_runtime::spawn_blocking(move || {
-        core_create_invite(
-            &endpoint_clone,
-            &did_clone,
-            &key_clone,
-            purpose_clone.as_deref(),
-            Some(DEFAULT_INVITE_TTL_HOURS),
-            None,
-        )
-    })
-    .await
-    .map_err(|e| format!("join error: {e}"))?
-    .map_err(|e| format!("create_invite: {e}"))?;
-
-    Ok(result.claim_url)
 }
 
 // ---------------------------------------------------------------------------
@@ -728,190 +478,9 @@ pub async fn launch_assistant(
     launch_macos(target, cmd)
 }
 
-/// A reviewable organization the principal can dispatch a review session into.
-#[derive(Debug, Serialize, Deserialize, specta::Type)]
-pub struct ReviewableOrg {
-    /// `_self` for the private vault (UI-layer sentinel — the on-disk
-    /// `_self/` wrapper is gone post-Move-3c), alias DNS-label for orgs.
-    pub alias: String,
-    /// Human-readable label rendered on the button.
-    pub display_name: String,
-    /// Resolved working directory the review session will cd into.
-    pub root_path: String,
-}
-
-/// List every vault the principal can review — orgs + Private.
-/// Backs the simplified main-window org picker.
-#[tauri::command]
-#[specta::specta]
-pub async fn list_reviewable_orgs() -> Result<Vec<ReviewableOrg>, String> {
-    use secretariat_core::application::list_orgs;
-    use secretariat_core::infrastructure::org_store::org_dir;
-
-    let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
-    let mut out = vec![ReviewableOrg {
-        alias: "_self".to_string(),
-        display_name: "Private".to_string(),
-        root_path: paths.root.to_string_lossy().to_string(),
-    }];
-    let orgs = list_orgs(&paths.orgs_root).map_err(|e| format!("list_orgs: {e}"))?;
-    for o in orgs {
-        let dir = org_dir(&paths.orgs_root, &o.alias);
-        out.push(ReviewableOrg {
-            alias: o.alias.as_str().to_string(),
-            display_name: o.name.clone(),
-            root_path: dir.to_string_lossy().to_string(),
-        });
-    }
-    Ok(out)
-}
-
-/// Launch a review session in the principal's chosen terminal, with
-/// cwd set to the org's substrate root (or `~/.secretariat` for
-/// Private). Passes `--agent review` to surface the org-local review
-/// agent if one exists under `<org-root>/.claude/agents/review.md`.
-///
-/// `alias` is `_self` for Private, or the org's DNS-label alias.
-#[tauri::command]
-#[specta::specta]
-pub async fn review_org(
-    alias: String,
-    terminal: Option<String>,
-    command: Option<String>,
-) -> Result<(), String> {
-    use secretariat_core::domain::OrgAlias;
-    use secretariat_core::infrastructure::org_store::org_dir;
-
-    let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
-    let cwd = if alias == "_self" {
-        paths.root.clone()
-    } else {
-        let parsed =
-            OrgAlias::parse(&alias).map_err(|e| format!("invalid alias `{alias}`: {e}"))?;
-        org_dir(&paths.orgs_root, &parsed)
-    };
-    if !cwd.is_dir() {
-        return Err(format!(
-            "vault `{alias}` has no directory at {} — has the org been initialised?",
-            cwd.display()
-        ));
-    }
-
-    let target = AssistantTarget::from_pref(terminal.as_deref());
-    let base_cmd = command.as_deref().unwrap_or("claude");
-    // `--agent review` selects a per-vault subagent if one exists; if not,
-    // Claude Code falls back gracefully to the default conversation.
-    let cmd = format!("{base_cmd} --agent review");
-    launch_macos_in(target, &cmd, Some(&cwd))
-}
-
 // ---------------------------------------------------------------------------
 // Quick-pane launcher commands
 // ---------------------------------------------------------------------------
-
-/// A channel the principal can launch into from the quick-pane typeahead.
-#[derive(Debug, Serialize, Deserialize, specta::Type)]
-pub struct LaunchableChannel {
-    pub handle: String,
-    pub org: Option<String>,
-    pub name: String,
-    pub root_path: String,
-    pub has_cognition_override: bool,
-}
-
-/// List every channel the principal can launch into.
-#[tauri::command]
-#[specta::specta]
-pub async fn list_launchable_channels() -> Result<Vec<LaunchableChannel>, String> {
-    use secretariat_core::application::{list_channels, list_orgs};
-    use secretariat_core::domain::QueueHandle;
-    use secretariat_core::infrastructure::channel_def_store::channel_dir;
-    use secretariat_core::infrastructure::{load_channel_binding, org_store::org_channels_root};
-
-    let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
-    let mut out: Vec<LaunchableChannel> = Vec::new();
-
-    let self_channels = paths.personal_channels_root();
-    if self_channels.is_dir() {
-        for ch in list_channels(&self_channels).map_err(|e| format!("list_channels: {e}"))? {
-            let parsed = match QueueHandle::parse(&ch.handle) {
-                Ok(h) => h,
-                Err(_) => continue,
-            };
-            let default = channel_dir(&self_channels, &parsed);
-            let binding = load_channel_binding(&default).unwrap_or_default();
-            let root = binding
-                .root_path
-                .clone()
-                .unwrap_or(default)
-                .to_string_lossy()
-                .to_string();
-            let has_override = binding.launch_command.is_some()
-                || !binding.launch_args.is_empty()
-                || !binding.launch_env.is_empty();
-            out.push(LaunchableChannel {
-                handle: ch.handle,
-                org: None,
-                name: ch.name,
-                root_path: root,
-                has_cognition_override: has_override,
-            });
-        }
-    }
-
-    for o in list_orgs(&paths.orgs_root).map_err(|e| format!("list_orgs: {e}"))? {
-        let root = org_channels_root(&paths.orgs_root, &o.alias);
-        if !root.is_dir() {
-            continue;
-        }
-        for ch in list_channels(&root).map_err(|e| format!("list_channels: {e}"))? {
-            let parsed = match QueueHandle::parse(&ch.handle) {
-                Ok(h) => h,
-                Err(_) => continue,
-            };
-            let default = channel_dir(&root, &parsed);
-            let binding = load_channel_binding(&default).unwrap_or_default();
-            let resolved = binding
-                .root_path
-                .clone()
-                .unwrap_or(default)
-                .to_string_lossy()
-                .to_string();
-            let has_override = binding.launch_command.is_some()
-                || !binding.launch_args.is_empty()
-                || !binding.launch_env.is_empty();
-            out.push(LaunchableChannel {
-                handle: ch.handle,
-                org: Some(o.alias.as_str().to_string()),
-                name: ch.name,
-                root_path: resolved,
-                has_cognition_override: has_override,
-            });
-        }
-    }
-    Ok(out)
-}
-
-/// Delete a channel hard-tree. Idempotent (no-ops if absent).
-#[tauri::command]
-#[specta::specta]
-pub async fn delete_channel(handle: String, org: Option<String>) -> Result<(), String> {
-    use secretariat_core::application::delete_channel as app_delete_channel;
-    use secretariat_core::domain::{OrgAlias, QueueHandle};
-    use secretariat_core::infrastructure::org_store::org_channels_root;
-
-    let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
-    let parsed_handle =
-        QueueHandle::parse(&handle).map_err(|e| format!("invalid handle `{handle}`: {e}"))?;
-    let channels_root = match org.as_deref() {
-        None => paths.personal_channels_root(),
-        Some(s) => {
-            let alias = OrgAlias::parse(s).map_err(|e| format!("invalid org alias `{s}`: {e}"))?;
-            org_channels_root(&paths.orgs_root, &alias)
-        }
-    };
-    app_delete_channel(&channels_root, &parsed_handle).map_err(|e| format!("delete_channel: {e}"))
-}
 
 /// Launch Claude at the channel-dir enclosing the given path. Walks up
 /// until it finds the nearest `channel.md`; derives handle + org from
@@ -975,64 +544,6 @@ fn derive_org_and_handle(channel_dir: &std::path::Path) -> Option<(Option<String
     }
 }
 
-/// Create a new channel. Private (self channels root) when `org` is None;
-/// org-scoped when supplied. Returns the resolved channel root path so
-/// the caller can pop it open as a session tab immediately.
-#[tauri::command]
-#[specta::specta]
-pub async fn create_channel(
-    handle: String,
-    name: String,
-    description: String,
-    org: Option<String>,
-) -> Result<LaunchableChannel, String> {
-    use chrono::Utc;
-    use secretariat_core::application::create_channel as app_create_channel;
-    use secretariat_core::domain::{OrgAlias, QueueHandle};
-    use secretariat_core::infrastructure::channel_def_store::channel_dir;
-    use secretariat_core::infrastructure::{load_channel_binding, org_store::org_channels_root};
-
-    let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
-    let parsed_handle =
-        QueueHandle::parse(&handle).map_err(|e| format!("invalid handle `{handle}`: {e}"))?;
-    let channels_root = match org.as_deref() {
-        None => paths.personal_channels_root(),
-        Some(s) => {
-            let alias = OrgAlias::parse(s).map_err(|e| format!("invalid org alias `{s}`: {e}"))?;
-            org_channels_root(&paths.orgs_root, &alias)
-        }
-    };
-    let def = app_create_channel(
-        &channels_root,
-        parsed_handle.clone(),
-        name.clone(),
-        description,
-        Utc::now(),
-        None,
-    )
-    .map_err(|e| format!("create_channel: {e}"))?;
-
-    let resolved_dir = channel_dir(&channels_root, &def.handle);
-    let binding = load_channel_binding(&resolved_dir).unwrap_or_default();
-    let root = binding
-        .root_path
-        .clone()
-        .unwrap_or(resolved_dir)
-        .to_string_lossy()
-        .to_string();
-    let has_override = binding.launch_command.is_some()
-        || !binding.launch_args.is_empty()
-        || !binding.launch_env.is_empty();
-
-    Ok(LaunchableChannel {
-        handle: def.handle.as_str().to_string(),
-        org,
-        name,
-        root_path: root,
-        has_cognition_override: has_override,
-    })
-}
-
 /// Launch a channel from the quick-pane via `sec launch` semantics
 /// (binding-aware cwd + per-channel cognition overrides applied).
 #[tauri::command]
@@ -1084,35 +595,6 @@ pub async fn launch_channel_from_pane(
     }
     let target = AssistantTarget::from_pref(terminal.as_deref());
     launch_macos_in(target, &shell, Some(&plan.cwd))
-}
-
-/// Capture an arbitrary blob of text to the `triage` queue from the quick-pane.
-#[tauri::command]
-#[specta::specta]
-pub async fn quick_capture(text: String) -> Result<String, String> {
-    use chrono::Utc;
-    use secretariat_core::application::{capture_to_queue, CaptureRequest};
-    use secretariat_core::domain::{QueueHandle, Root};
-
-    if text.trim().is_empty() {
-        return Err("text is empty".to_string());
-    }
-    let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
-    paths.ensure_dirs().map_err(|e| format!("{e}"))?;
-    let did = load_self_did(&paths)?;
-    let queue = QueueHandle::parse("triage").map_err(|e| format!("invalid queue: {e}"))?;
-    let req = CaptureRequest {
-        from: did,
-        queue,
-        body: text,
-        source: "quick-pane".to_string(),
-        title: None,
-        lede: None,
-        summary: None,
-    };
-    let path = capture_to_queue(req, &paths.root, &Root::Self_, Utc::now())
-        .map_err(|e| format!("capture failed: {e}"))?;
-    Ok(path.to_string_lossy().to_string())
 }
 
 fn load_self_did(paths: &KeyPaths) -> Result<Did, String> {
