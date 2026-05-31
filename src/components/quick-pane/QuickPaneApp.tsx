@@ -1,36 +1,14 @@
-// QuickPaneApp — cmdk launcher with capture fallback.
+// QuickPaneApp — placeholder pane.
 //
-// Type → matches against every launchable channel in the substrate
-// (personal + every org's channel tree, with per-channel cognition
-// overrides surfaced via a tiny badge). Enter on a Launch row fires
-// `sec launch <handle> --org <alias>` semantics via the Tauri
-// `launchChannelFromPane` command — applies the channel's
-// `root_path` and `launch_env` (LM Studio routing, custom model args)
-// transparently.
-//
-// Capture stays as the bottom row of the list: Enter when no Launch
-// row is selected drops the typed text into `inbox:triage` via
-// `quickCapture`, matching today's quick-pane muscle memory.
-//
-// Dismiss on submit, blur, or Escape — same window-management
-// contract as the legacy single-input form.
+// The channel-launch + capture flow this pane used to host was removed in
+// the git-native cut (its backing Tauri commands are gone). The pane
+// window itself is still created by the Rust shell + global shortcut, so
+// this component stays as a minimal, dismissable surface to keep that
+// window valid. It carries no removed-command wiring.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window'
-import { listen } from '@tauri-apps/api/event'
-import {
-  Command,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-  CommandSeparator,
-} from '@/components/ui/command'
-import {
-  commands,
-  type AppPreferences,
-  type LaunchableChannel,
-} from '@/lib/bindings'
+import { useEffect } from 'react'
+import { getCurrentWindow } from '@tauri-apps/api/window'
+import { commands } from '@/lib/bindings'
 import { logger } from '@/lib/logger'
 
 async function dismissQuickPane() {
@@ -55,41 +33,12 @@ function applyTheme() {
 }
 
 export default function QuickPaneApp() {
-  const [text, setText] = useState('')
-  const [channels, setChannels] = useState<LaunchableChannel[]>([])
-  const [prefs, setPrefs] = useState<AppPreferences | null>(null)
-  const [busy, setBusy] = useState(false)
-  const inputRef = useRef<HTMLInputElement>(null)
-
-  // Theme + initial data on mount.
   useEffect(() => {
     applyTheme()
-    void (async () => {
-      const [chRes, prefRes] = await Promise.all([
-        commands.listLaunchableChannels(),
-        commands.loadPreferences(),
-      ])
-      if (chRes.status === 'ok') setChannels(chRes.data)
-      if (prefRes.status === 'ok') setPrefs(prefRes.data)
-    })()
-
-    const unlistenTheme = listen('theme-changed', applyTheme)
-    return () => {
-      unlistenTheme.then(fn => fn())
-    }
-  }, [])
-
-  // Focus on appear; dismiss on blur.
-  useEffect(() => {
     const w = getCurrentWindow()
     const off = w.onFocusChanged(async ({ payload: focused }) => {
       if (focused) {
         applyTheme()
-        // Refresh on every appearance — new channels may have shown up.
-        void commands.listLaunchableChannels().then(r => {
-          if (r.status === 'ok') setChannels(r.data)
-        })
-        inputRef.current?.focus()
       } else {
         await dismissQuickPane()
       }
@@ -99,7 +48,6 @@ export default function QuickPaneApp() {
     }
   }, [])
 
-  // Escape — dismiss without action.
   useEffect(() => {
     const onKey = async (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -111,160 +59,11 @@ export default function QuickPaneApp() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  const handleLaunch = useCallback(
-    async (channel: LaunchableChannel) => {
-      if (busy) return
-      setBusy(true)
-      try {
-        const result = await commands.launchChannelFromPane(
-          channel.handle,
-          channel.org,
-          prefs?.assistant_terminal ?? null
-        )
-        if (result.status === 'error') {
-          logger.error('Launch failed', { error: result.error })
-        }
-      } finally {
-        setBusy(false)
-        setText('')
-        await dismissQuickPane()
-      }
-    },
-    [busy, prefs]
-  )
-
-  const handleCapture = useCallback(async () => {
-    if (busy) return
-    const body = text.trim()
-    if (!body) return
-    setBusy(true)
-    try {
-      const result = await commands.quickCapture(body)
-      if (result.status === 'error') {
-        logger.error('Capture failed', { error: result.error })
-      }
-    } finally {
-      setBusy(false)
-      setText('')
-      await dismissQuickPane()
-    }
-  }, [text, busy])
-
-  // Filter channels by query — cmdk's built-in filter handles ranking;
-  // we hand it raw rows and let it score against the user's typing.
-  const channelRows = useMemo(() => channels, [channels])
-
-  // Resize the window to fit content. The pane is anchored on show; we
-  // just shrink/grow its height so there's no dead space below the last
-  // row and no clipping when many rows match. Capped to keep the pane
-  // from running off-screen.
-  const contentRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    const el = contentRef.current
-    if (!el) return
-    const MIN_H = 140
-    const MAX_H = 600
-    const apply = () => {
-      const measured = Math.ceil(el.scrollHeight)
-      const next = Math.max(MIN_H, Math.min(MAX_H, measured))
-      void getCurrentWindow().setSize(new LogicalSize(620, next))
-    }
-    apply()
-    const ro = new ResizeObserver(apply)
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [channels, text])
-
   return (
-    <div
-      ref={contentRef}
-      className="flex w-screen flex-col overflow-hidden rounded-[var(--app-corner-radius)] border border-border bg-background shadow-lg"
-    >
-      <Command
-        className={
-          'flex h-full flex-col ' +
-          // Larger, less-crowded affordances. cmdk renders its primitives
-          // via data attributes; we override them here without touching
-          // the shared shadcn `command.tsx` (used elsewhere at default size).
-          '[&_[data-slot=command-input-wrapper]]:h-14 [&_[data-slot=command-input-wrapper]]:gap-3 [&_[data-slot=command-input-wrapper]]:px-4 ' +
-          '[&_[data-slot=command-input-wrapper]_svg]:size-5 ' +
-          '[&_[cmdk-input]]:h-14 [&_[cmdk-input]]:text-base ' +
-          '[&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:py-2 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-wider ' +
-          '[&_[cmdk-group]]:px-2 ' +
-          '[&_[cmdk-item]]:px-3 [&_[cmdk-item]]:py-3 [&_[cmdk-item]]:text-base [&_[cmdk-item]]:gap-3 ' +
-          '[&_[cmdk-list]]:scroll-py-2'
-        }
-        loop
-      >
-        <CommandInput
-          ref={inputRef}
-          value={text}
-          onValueChange={setText}
-          placeholder="Channel to launch or thought to capture…"
-          autoFocus
-        />
-        <CommandList className="flex-1">
-          {channelRows.length > 0 && (
-            <CommandGroup heading="Launch">
-              {channelRows.map(ch => (
-                <CommandItem
-                  key={`${ch.org ?? '_self'}/${ch.handle}`}
-                  value={`${ch.handle} ${ch.org ?? ''} ${ch.name} ${ch.root_path}`}
-                  onSelect={() => handleLaunch(ch)}
-                  className="flex items-center gap-3"
-                >
-                  <span className="flex flex-1 flex-col gap-0.5 overflow-hidden">
-                    <span className="flex items-center gap-2">
-                      <span className="text-base font-medium leading-tight">
-                        {ch.handle}
-                      </span>
-                      {ch.has_cognition_override && (
-                        <span
-                          className="rounded-sm bg-amber-400/20 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-amber-700 dark:text-amber-300"
-                          title="Per-channel cognition override (e.g. LM Studio)"
-                        >
-                          override
-                        </span>
-                      )}
-                    </span>
-                    <span className="truncate text-sm text-muted-foreground">
-                      {ch.org ? `${ch.org} · ` : ''}
-                      {ch.root_path}
-                    </span>
-                  </span>
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          )}
-
-          <CommandSeparator />
-
-          {/* Capture stays visible regardless of filter — it's the
-              universal fallback when no channel matches the query, and
-              the muscle-memory action when the principal just wants to
-              jot something. `forceMount` keeps it mounted even when cmdk
-              would otherwise filter it out. */}
-          <CommandGroup heading="Capture" forceMount>
-            <CommandItem
-              value="__capture_fallback__"
-              onSelect={() => void handleCapture()}
-              forceMount
-              className="flex items-center gap-3"
-            >
-              <span className="flex flex-col gap-0.5">
-                <span className="text-base font-medium leading-tight">
-                  {text.trim()
-                    ? `Capture "${text.trim().slice(0, 60)}${text.trim().length > 60 ? '…' : ''}"`
-                    : 'Capture to inbox:triage'}
-                </span>
-                <span className="text-sm text-muted-foreground">
-                  Saves locally, never sent
-                </span>
-              </span>
-            </CommandItem>
-          </CommandGroup>
-        </CommandList>
-      </Command>
+    <div className="flex h-screen w-screen items-center justify-center rounded-[var(--app-corner-radius)] border border-border bg-background p-6 text-center shadow-lg">
+      <p className="text-sm text-muted-foreground">
+        Open Secretariat to edit and stamp your markdown.
+      </p>
     </div>
   )
 }

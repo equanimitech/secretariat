@@ -2,7 +2,6 @@ import { useEffect } from 'react'
 import { check } from '@tauri-apps/plugin-updater'
 import { relaunch } from '@tauri-apps/plugin-process'
 import { ask, message } from '@tauri-apps/plugin-dialog'
-import { onOpenUrl } from '@tauri-apps/plugin-deep-link'
 import { initializeCommandSystem } from './lib/commands'
 import { buildAppMenu, setupMenuLanguageListener } from './lib/menu'
 import { initializeLanguage } from './i18n/language-init'
@@ -127,58 +126,12 @@ function App() {
     // Check for updates 5 seconds after app loads
     const updateTimer = setTimeout(checkForUpdates, 5000)
 
-    // Deep link listener — `secretariat://<host>/v0/invite/<token>` URLs
-    // arrive here when the user clicks "Open in Secretariat" on the
-    // relay's HTML landing page (or pastes a URL into a registered
-    // handler). Fires the Tauri claim command, which auto-runs init for
-    // first-time recipients.
-    //
-    // macOS delivers `file://` URLs through the same channel when the
-    // app is launched via `open -a Secretariat <path>` (e.g. `sec view`).
-    // Those route through `RunEvent::Opened` → `spawn_markdown_window`
-    // on the Rust side; we ignore them here so they don't hit the
-    // invite-claim path.
-    let deepLinkUnsub: (() => void) | undefined
-    onOpenUrl(async urls => {
-      for (const url of urls) {
-        logger.info(`Deep link received: ${url}`)
-        let parsed: URL
-        try {
-          parsed = new URL(url)
-        } catch {
-          logger.warn(`Ignoring unparseable URL: ${url}`)
-          continue
-        }
-        if (parsed.protocol !== 'secretariat:') {
-          logger.info(`Ignoring non-invite URL scheme: ${parsed.protocol}`)
-          continue
-        }
-        const result = await commands.claimInviteUrl(url)
-        if (result.status === 'ok') {
-          logger.info('Invite claimed', { ...result.data })
-          alert(
-            `Connected to ${result.data.inviter_did}.\nYou can now exchange envelopes.`
-          )
-        } else {
-          logger.error(`Claim failed: ${result.error}`)
-          alert(`Could not claim invite:\n${result.error}`)
-        }
-      }
-    })
-      .then(unsub => {
-        deepLinkUnsub = unsub
-      })
-      .catch(err => {
-        logger.warn('Failed to register deep link handler', { error: err })
-      })
-
     // Markdown reader/editor: drain PendingOpens and open windows for files
     // that arrived via RunEvent::Opened / single-instance argv.
     const unwatchPendingOpens = watchPendingOpens()
 
     return () => {
       clearTimeout(updateTimer)
-      deepLinkUnsub?.()
       unwatchPendingOpens()
     }
   }, [])

@@ -214,55 +214,6 @@ async secretariatRoot() : Promise<Result<string, string>> {
 }
 },
 /**
- * Claim a correspondence invite from a deep link or HTTPS URL.
- * 
- * Accepts either form:
- * - `secretariat://<host>/v0/invite/<token>` (deep link from landing page)
- * - `https://<host>/v0/invite/<token>` (raw HTTPS URL the inviter shared)
- * 
- * Generates a fresh identity if none exists yet (so a deep link click is
- * the only step a first-time recipient needs). Maps to the existing
- * `secretariat-core::application::claim_invite` use case.
- */
-async claimInviteUrl(deepLinkOrUrl: string) : Promise<Result<InviteClaimReport, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("claim_invite_url", { deepLinkOrUrl }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * List received envelopes — walks the v0.3 substrate tree under
- * `~/.secretariat/` for every `envelopes/` directory and collects
- * the `.md` leaves.
- */
-async listInbox() : Promise<Result<EnvelopeListing[], string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("list_inbox") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * List the principal's review queue — every envelope on disk under
- * any queue's `envelopes/YYYY/MM/DD/` tree. Post-Move 4 (substrate-
- * for-themia) drafts and federated envelopes share that tree; the
- * envelope frontmatter's `delivered:` field (absent = draft) is the
- * disambiguator. Both `to` and `queue` are populated on every
- * entry — discriminate local vs peer by comparing `to` to the
- * principal's own DID.
- */
-async listReviewQueue() : Promise<Result<EnvelopeListing[], string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("list_review_queue") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
  * Decrypt + return the body of an envelope file. Plaintext envelopes
  * pass through unchanged; encrypted envelopes are decrypted using the
  * local signing key (key never leaves the device).
@@ -270,22 +221,6 @@ async listReviewQueue() : Promise<Result<EnvelopeListing[], string>> {
 async readEnvelope(filePath: string) : Promise<Result<EnvelopeRead, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("read_envelope", { filePath }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Run one sync cycle against every registered relay. Pulls inbound
- * envelopes on the principal's subscribed org channels. Principal-
- * initiated per the review-session model — no background push.
- * 
- * Idempotent and safe to call repeatedly. Returns a report the UI can
- * surface (counts + non-fatal warnings).
- */
-async syncNow() : Promise<Result<SyncReport, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("sync_now") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -317,59 +252,9 @@ async setProfile(displayName: string) : Promise<Result<Profile, string>> {
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * Create an invite at the principal's first registered relay. Returns
- * the HTTPS claim URL the inviter shares (recipient's HTML landing
- * page lives at the same URL with `Accept: text/html`). Optional
- * `purpose` becomes the suggested contact name on the receiving side.
- */
-async createInvite(purpose: string | null) : Promise<Result<string, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("create_invite", { purpose }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
 async stampEnvelope(filePath: string) : Promise<Result<StampReport, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("stamp_envelope", { filePath }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Move an inbox envelope to `inbox/deferred/` — "remind me later".
- * Returns the new path. Idempotent.
- */
-async deferInboxEnvelope(filePath: string) : Promise<Result<string, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("defer_inbox_envelope", { filePath }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Move an inbox envelope to `inbox/archived/` — "ignore / handled".
- * Returns the new path. Idempotent.
- */
-async archiveInboxEnvelope(filePath: string) : Promise<Result<string, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("archive_inbox_envelope", { filePath }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Reverse of `archive_inbox_envelope` — move a file from
- * `<queue>/archived/` back to `<queue>/envelopes/` (flat).
- */
-async unarchiveInboxEnvelope(filePath: string) : Promise<Result<string, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("unarchive_inbox_envelope", { filePath }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -383,58 +268,6 @@ async unarchiveInboxEnvelope(filePath: string) : Promise<Result<string, string>>
 async launchAssistant(terminal: string | null, command: string | null) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("launch_assistant", { terminal, command }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * List every vault the principal can review — orgs + Private.
- * Backs the simplified main-window org picker.
- */
-async listReviewableOrgs() : Promise<Result<ReviewableOrg[], string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("list_reviewable_orgs") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Launch a review session in the principal's chosen terminal, with
- * cwd set to the org's substrate root (or `~/.secretariat` for
- * Private). Passes `--agent review` to surface the org-local review
- * agent if one exists under `<org-root>/.claude/agents/review.md`.
- * 
- * `alias` is `_self` for Private, or the org's DNS-label alias.
- */
-async reviewOrg(alias: string, terminal: string | null, command: string | null) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("review_org", { alias, terminal, command }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * List every channel the principal can launch into.
- */
-async listLaunchableChannels() : Promise<Result<LaunchableChannel[], string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("list_launchable_channels") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Create a new channel. Private (self channels root) when `org` is None;
- * org-scoped when supplied. Returns the resolved channel root path so
- * the caller can pop it open as a session tab immediately.
- */
-async createChannel(handle: string, name: string, description: string, org: string | null) : Promise<Result<LaunchableChannel, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("create_channel", { handle, name, description, org }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -460,28 +293,6 @@ async launchChannelFromPane(handle: string, org: string | null, terminal: string
 async launchClaudeAt(path: string, terminal: string | null) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("launch_claude_at", { path, terminal }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Delete a channel hard-tree. Idempotent (no-ops if absent).
- */
-async deleteChannel(handle: string, org: string | null) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("delete_channel", { handle, org }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Capture an arbitrary blob of text to the `triage` queue from the quick-pane.
- */
-async quickCapture(text: string) : Promise<Result<string, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("quick_capture", { text }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -609,25 +420,6 @@ async revealInFinder(path: string) : Promise<Result<null, string>> {
 async listRelays() : Promise<Result<RelayInfo[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("list_relays") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Add a relay endpoint and register the principal's DID against it
- * in one shot. Upserts the entry into `relay-state.json` regardless of
- * network outcome (so the row stays visible as "pending registration"
- * on failure); attempts the DID-keyed registration handshake on top.
- * 
- * Returns `Ok(())` only when registration succeeds. On registration
- * failure the entry persists as pending — callers can retry by calling
- * `add_relay` again with the same endpoint, which will re-attempt the
- * handshake.
- */
-async addRelay(endpoint: string) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("add_relay", { endpoint }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -816,26 +608,6 @@ export type EntryKind =
  * how to open it (markdown editor for `.md`, Finder for others).
  */
 "file"
-export type EnvelopeListing = { file_path: string; from: string | null; 
-/**
- * DID of the queue *owner* (recipient). Always set on well-formed
- * envelopes. UI compares to the principal's own DID to discriminate
- * local capture (`to == self`) from peer/channel post (`to != self`).
- */
-to: string | null; 
-/**
- * Queue handle on the owner's machine (`<namespace>:<slug>`). Always
- * set on well-formed envelopes alongside `to`. Direct messages
- * conventionally use `inbox:default`.
- */
-queue: string | null; stamped: boolean; encrypted: boolean; 
-/**
- * Delivery state marker from envelope frontmatter. `None` = draft
- * / undelivered (substrate-for-themia Move 4). `Some("<relay-seq-id>")`
- * = federated. `Some("local")` = self-owned channel that never
- * federates.
- */
-delivered: string | null }
 export type EnvelopePreview = { 
 /**
  * Absolute path to the `.md` file — caller uses this to open the
@@ -954,17 +726,7 @@ export type IntegrationsStatus = { claude_code: IntegrationStatus; claude_deskto
  * can re-wire from the UI to bring them into sync.
  */
 bundled_binary: string | null }
-export type InviteClaimReport = { inviter_did: string; claimant_did: string; claimed_at: string; 
-/**
- * True when the relay registered this principal as part of the claim
- * (first-time onboarding). False when the principal was already a tenant.
- */
-registered: boolean }
 export type JsonValue = null | boolean | number | string | JsonValue[] | Partial<{ [key in string]: JsonValue }>
-/**
- * A channel the principal can launch into from the quick-pane typeahead.
- */
-export type LaunchableChannel = { handle: string; org: string | null; name: string; root_path: string; has_cognition_override: boolean }
 export type PreferencesDto = { composition: CompositionSettingsDto; cognition: CognitionSettingsDto; delivery: DeliverySettingsDto }
 export type Profile = { display_name: string }
 export type ReadMarkdownResult = { content: string; sha256: string }
@@ -993,24 +755,6 @@ export type RecoveryError =
  */
 { type: "ParseError"; message: string }
 export type RelayInfo = { endpoint: string; registered: boolean }
-export type RelaySyncReport = { endpoint: string; inbound_count: number; warnings: string[] }
-/**
- * A reviewable organization the principal can dispatch a review session into.
- */
-export type ReviewableOrg = { 
-/**
- * `_self` for the private vault (UI-layer sentinel — the on-disk
- * `_self/` wrapper is gone post-Move-3c), alias DNS-label for orgs.
- */
-alias: string; 
-/**
- * Human-readable label rendered on the button.
- */
-display_name: string; 
-/**
- * Resolved working directory the review session will cd into.
- */
-root_path: string }
 /**
  * Stamp a draft. Touch ID fires from the app's window context. The
  * stamp's atomic rename promotes the file into the canonical
@@ -1034,7 +778,6 @@ relay_assigned_id: string | null;
  * `None` now.
  */
 delivery_warning: string | null }
-export type SyncReport = { per_relay: RelaySyncReport[] }
 export type TreeEntry = { name: string; path: string; kind: EntryKind; 
 /**
  * Cheap to compute; true for dirs that have at least one visible
