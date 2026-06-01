@@ -1,6 +1,6 @@
 ---
 name: share
-description: Draft a miscellaneous shareable file (brief, summary, invitation, handoff note, recap, outline) to ~/Downloads/ so the user can pass it along. Use when the user says "/share", "draft this for X", "write a brief / summary / recap", "put this in downloads for me", or asks you to prepare a document intended for a third party rather than for the codebase. Always append the signature line. NOTE: for sending to a known contact or channel, use /decision or compose an envelope instead — /share is for one-off external handoffs.
+description: Draft a miscellaneous shareable file (brief, summary, invitation, handoff note, recap, outline) to ~/Downloads/ so the user can pass it along. Use when the user says "/share", "draft this for X", "write a brief / summary / recap", "put this in downloads for me", or asks you to prepare a document intended for a third party rather than for the codebase. Always append the signature line. NOTE: to record an internal commitment, use /decision (stamps a doc in the repo) — /share is for one-off external handoffs.
 user-invocable: true
 allowed-tools: [Write, Read]
 ---
@@ -39,7 +39,7 @@ Always end the file with:
 _Drafted by AI, reviewed by a human._
 ```
 
-The `---` divider precedes it. This is the shareable's weak attestation — same question as a signed envelope ("did a human review this?"), different mechanism. For a strong attestation, the user should compose and stamp an envelope instead.
+The `---` divider precedes it. This is the shareable's weak attestation — same question as a signature ("did a human review this?"), different mechanism. For a strong attestation, the user should record a `/decision` and stamp the repo doc instead.
 
 ## Rules
 

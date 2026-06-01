@@ -16,7 +16,6 @@ const VERSION_FILES = [
   { path: 'crates/cli/Cargo.toml', kind: 'toml-package' },
   { path: 'crates/daemon/Cargo.toml', kind: 'toml-package' },
   { path: 'crates/mcp/Cargo.toml', kind: 'toml-package' },
-  { path: 'crates/relay/Cargo.toml', kind: 'toml-package' },
 ]
 
 // Match the [package] block's `version = "..."` line, anchored at the

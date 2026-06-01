@@ -4,7 +4,67 @@ All notable changes to Secretariat are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased](https://github.com/equanimitech/secretariat/compare/v0.11.8...HEAD)
+## [0.12.0](https://github.com/equanimitech/secretariat/compare/v0.11.9...v0.12.0) — 2026-06-01
+
+Git-native teardown. The correspondence apparatus is cut; what remains is
+the markdown editor over a plain filesystem tree plus the Signet stamp /
+verify / read core. The substrate is now repos, not `~/.secretariat`
+queues (envelopes already migrated into repo `docs/` in v0.11.x). One PR,
+~21k lines removed, all layers — `cargo build`/`test`/`clippy -D warnings`
+green, `cargo check -p secretariat` clean. No on-wire record shapes
+changed; no lexicon diff.
+
+### Removed
+
+- **Federation column.** `relay/` crate deleted (dropped from workspace
+  members; unused axum/tower/tower-http deps removed). Core loses
+  `application/{sync,federation,delivery_policy}`; `transport/` slimmed to
+  `RelayState`. Daemon loses the serve poll loop, `outbox_watcher`,
+  `relay_register`, and the IPC `TICK` path — kept: the macOS LaunchAgent
+  surface (install/uninstall/status) + a keepalive `serve`. MCP drops
+  `daemon_tick` / `daemon_status`; CLI `daemon` trimmed to the
+  launchagent verbs.
+- **Channels / orgs / contracts / compose / capture / invite / review.**
+  Core application use cases deleted (`compose_envelope`,
+  `channel_def_envelope`, `invite_ops`, `accept_org_membership`,
+  `contract_ops`, `inbox_actions`, `review_queue`, `capture_ops`,
+  `contextify_capture`); `inbox_ops` keeps only the read/decrypt path.
+  CLI loses `compose`/`channels`/`orgs`/`invite`/`list`/`capture`. MCP
+  `server.rs` reduced to `stamp` / `read` / `verify` / `agent_*` (org,
+  channel, contract, compose, capture, invite, archive tools + the
+  orgs/compositions resources removed). Tauri drops the matching
+  commands + bindings. The keeper stores backing `sec launch`
+  (channel_def/binding/contract/org) are retained.
+- **Capture skills follow the substrate shift.** The `.claude/skills/`
+  set is realigned to git-native: `/review` (legacy `~/.secretariat/`
+  queue-triage) is deleted — superseded by `/review-repos`; the personal
+  capture skills (`/decision` `/idea` `/pain` `/question` `/log`) move out
+  of the product into `~/.claude/skills/` and re-route off the removed
+  `compose`/`capture` MCP tools — `/decision` writes `docs/decisions/*.md`
+  then stamps in place; `/idea` `/pain` `/question` capture to Things (repo
+  `docs/` escape hatch when code-tied); `/log` appends to the personal
+  journal. `/share` + `review-repos` keep their stale correspondence
+  cross-refs scrubbed. The repo retains only project/dev-tooling skills
+  (`check`, `cleanup`, `init`, `change-package-manager`, `review-repos`,
+  `share`).
+- **Channel/org/relay/capture UI.** `ReviewSurface`, `OrgPicker`,
+  `ChannelPicker`, `ChannelTimeline`, the preferences `RelayPane`, and
+  the explorer channel machinery (`PinnedChannels`, `useUnreadCounts`,
+  pinned/unread/active stores, `envelope-path`, `preview-render`) are
+  gone. `ExplorerTree` is now a plain filesystem tree (dirs toggle, `.md`
+  opens in a markdown tab, rename + reveal remain). `SessionTabs` is a
+  markdown-only tab host; `QuickPaneApp` is a minimal placeholder; the
+  deep-link invite-claim handler is removed.
+
+### Changed
+
+- **Decoupled the stamp/verify/read core from the channel `Envelope`.**
+  `AttestedDocument` loses its envelope field; markdown parses
+  `$envelope` opaquely; `inbox_ops` read/decrypt reconstitutes the
+  `Envelope` on demand — so the federation/compose machinery could be
+  deleted without touching the crypto core.
+
+## [0.11.9](https://github.com/equanimitech/secretariat/compare/v0.11.8...v0.11.9) — 2026-05-26
 
 Substrate gets live org membership (Slice A'): one invite now grants
 ongoing participation — new channels appear on subscribers' sidebars

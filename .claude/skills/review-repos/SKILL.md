@@ -1,16 +1,9 @@
 ---
 name: review-repos
-description: Altitude-aware review of stamped markdown directly on top of git repos — the git-native substrate's review walker, composed from `git` + `sec verify` + `sec stamp` with zero new infrastructure. Surfaces per-doc stamp state (sealed / unstamped / new / revised / tampered) across one or more repos, rendered coarse→fine so the principal descends on demand and seals only what they read in full. Use when the user says "/review-repos", "review the repos", "review docs in this repo", "what needs stamping", "what changed since I stamped it", or names a repo path ("review leggia", "review ~/Developer/..."). Companion to the git-native substrate (`docs/ideas/2026-05-31-git-native-substrate.md`). Distinct from `/review` (which triages captures in the legacy `~/.secretariat/` queues).
+description: Altitude-aware review of stamped markdown directly on top of git repos — the git-native substrate's review walker, composed from `git` + `sec verify` + `sec stamp` with zero new infrastructure. Surfaces per-doc stamp state (sealed / unstamped / new / revised / tampered) across one or more repos, rendered coarse→fine so the principal descends on demand and seals only what they read in full. Use when the user says "/review-repos", "review the repos", "review docs in this repo", "what needs stamping", "what changed since I stamped it", or names a repo path ("review leggia", "review ~/Developer/..."). Companion to the git-native substrate (`docs/ideas/2026-05-31-git-native-substrate.md`). This is the substrate's review walker; capture triage now lives in Things (via the personal `/idea` `/pain` `/question` skills), not the removed `~/.secretariat/` queues.
 user-invocable: true
 allowed-tools:
-  [
-    Bash,
-    Read,
-    Glob,
-    Agent,
-    mcp__secretariat__read,
-    mcp__secretariat__stamp,
-  ]
+  [Bash, Read, Glob, Agent, mcp__secretariat__read, mcp__secretariat__stamp]
 ---
 
 # Review over repos
@@ -31,12 +24,12 @@ sec stamp <file>              → seal at the floor (Touch ID)
 
 ## Scope resolution
 
-| Signal | Scope |
-| ------ | ----- |
-| `/review-repos` (no args) | the current working directory's repo |
-| `/review-repos <path>` | that repo |
-| `/review-repos <name>` | match a known repo by name (e.g. `leggia` → `~/Developer/themia/leggia`) |
-| multiple paths/names | cross-repo roll-up (altitude 1 = one line per repo) |
+| Signal                    | Scope                                                                    |
+| ------------------------- | ------------------------------------------------------------------------ |
+| `/review-repos` (no args) | the current working directory's repo                                     |
+| `/review-repos <path>`    | that repo                                                                |
+| `/review-repos <name>`    | match a known repo by name (e.g. `leggia` → `~/Developer/themia/leggia`) |
+| multiple paths/names      | cross-repo roll-up (altitude 1 = one line per repo)                      |
 
 A future `~/.signet/repos.json` will hold the registered-repo set; until it
 exists, take paths/names from the invocation (default: cwd).
@@ -57,13 +50,13 @@ ask once rather than flooding the review with noise.
 For each candidate file, run `sec verify --json <file>` and read git status.
 Map to one of five states:
 
-| State | Signal | Meaning |
-| ----- | ------ | ------- |
-| **SEALED** | `stamp.outcome = "verified"`, file unchanged since its commit | principal has vouched; body matches the sealed hash |
-| **REVISED** | `stamp.outcome = "verified"` **but** `git status` shows the file modified (` M`) since commit | legitimately edited after sealing — a **re-stamp candidate** |
-| **TAMPERED** | `stamp.outcome = "tampered"` (`claimedHash ≠ computedHash`) | body no longer matches the sealed hash. **Re-stamp if the change was intentional; investigate if not.** |
-| **UNSTAMPED** | `stamp.outcome = "none"`, file is tracked | committed but never sealed |
-| **NEW** | `stamp.outcome = "none"`, file is untracked / uncommitted (`??` in `git status --porcelain`) | freshly written, not yet in history |
+| State         | Signal                                                                                        | Meaning                                                                                                 |
+| ------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| **SEALED**    | `stamp.outcome = "verified"`, file unchanged since its commit                                 | principal has vouched; body matches the sealed hash                                                     |
+| **REVISED**   | `stamp.outcome = "verified"` **but** `git status` shows the file modified (` M`) since commit | legitimately edited after sealing — a **re-stamp candidate**                                            |
+| **TAMPERED**  | `stamp.outcome = "tampered"` (`claimedHash ≠ computedHash`)                                   | body no longer matches the sealed hash. **Re-stamp if the change was intentional; investigate if not.** |
+| **UNSTAMPED** | `stamp.outcome = "none"`, file is tracked                                                     | committed but never sealed                                                                              |
+| **NEW**       | `stamp.outcome = "none"`, file is untracked / uncommitted (`??` in `git status --porcelain`)  | freshly written, not yet in history                                                                     |
 
 Canonical commands:
 
@@ -85,13 +78,13 @@ This is `semantic-zoom` applied to the review surface. **Default to rendering
 altitudes 0–1** (coarse). Descend one rung on the principal's signal; never
 dump the floor unprompted.
 
-| Altitude | Renders | Example |
-| -------- | ------- | ------- |
-| **0 — handle** | one glyph line, totals | `⚓ secretariat · 104 unstamped · 1 tampered · 2 new` |
-| **1 — per repo / per state** | one line per repo (multi) or per state bucket (single) | `TAMPERED 1 · REVISED 0 · UNSTAMPED 104 · NEW 2 · SEALED 5` |
-| **2 — per doc** | pick a bucket → one line per doc: path · state · last-commit · 1-line gist | `docs/ideas/git-native-substrate.md · NEW · (uncommitted) · "repos as channels"` |
-| **3 — page** | pick a doc → headline + **`git diff` since last stamp** + claimed/computed hash | for the decide-to-seal moment |
-| **4 — floor** | the full body verbatim → the stamp ceremony | only on explicit "stamp it" |
+| Altitude                     | Renders                                                                         | Example                                                                          |
+| ---------------------------- | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| **0 — handle**               | one glyph line, totals                                                          | `⚓ secretariat · 104 unstamped · 1 tampered · 2 new`                            |
+| **1 — per repo / per state** | one line per repo (multi) or per state bucket (single)                          | `TAMPERED 1 · REVISED 0 · UNSTAMPED 104 · NEW 2 · SEALED 5`                      |
+| **2 — per doc**              | pick a bucket → one line per doc: path · state · last-commit · 1-line gist      | `docs/ideas/git-native-substrate.md · NEW · (uncommitted) · "repos as channels"` |
+| **3 — page**                 | pick a doc → headline + **`git diff` since last stamp** + claimed/computed hash | for the decide-to-seal moment                                                    |
+| **4 — floor**                | the full body verbatim → the stamp ceremony                                     | only on explicit "stamp it"                                                      |
 
 Lead with altitude 0–1. Always surface **TAMPERED first** (it's the integrity
 alarm), then REVISED (re-stamp candidates), then NEW/UNSTAMPED, then SEALED

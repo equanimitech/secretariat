@@ -25,6 +25,10 @@ docs/pitches/
 docs/decisions/
 docs/audits/
 docs/superpowers/
+# Migrated envelopes (git-native substrate) — flat dated docs keep their
+# original on-wire formatting; some are stamped, so reformatting the body
+# would break the seal hash. Treat as data, not source.
+docs/20*.md
 
 # Logs
 *.log
