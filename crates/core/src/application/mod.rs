@@ -7,6 +7,7 @@ pub mod channels_ops;
 pub mod inbox_ops;
 pub mod launch_channel;
 pub mod org_ops;
+pub mod repo_ops;
 pub mod stamp_document;
 pub mod verify_document;
 
@@ -25,6 +26,7 @@ pub use channels_ops::{
 pub use inbox_ops::{read_envelope, InboxOpError, ReadResult};
 pub use launch_channel::{launch_channel, launch_channel_with_binding, LaunchChannelError};
 pub use org_ops::{create_org, delete_org, list_orgs, show_org, OrgOpsError};
+pub use repo_ops::{list_repos, register_repo, unregister_repo, RepoOpsError};
 pub use stamp_document::{stamp_document, StampError, StampOutcome};
 pub use verify_document::{
     verify_document, verify_document_layered, LayeredVerifyOutcome, SignatureOutcome, VerifyError,
