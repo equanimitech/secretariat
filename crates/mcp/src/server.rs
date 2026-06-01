@@ -8,6 +8,7 @@
 //! | `read` | Decrypt + return body of an envelope |
 //! | `verify` | Check a signed/stamped artifact (three-state layered verifier) |
 //! | `agent_add` / `agent_list` / `agent_remove` / `agent_rotate` | Manage authorized agents |
+//! | `repo_add` / `repo_list` / `repo_remove` | Manage the substrate manifest (`[[repos]]`) |
 //!
 //! On `stamp`: the call only *initiates* the ceremony; the platform
 //! biometric gate (Touch ID via the Swift helper) blocks until the
@@ -209,6 +210,55 @@ impl From<secretariat_core::domain::Agent> for AgentDto {
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct ListAgentsOutput {
     pub agents: Vec<AgentDto>,
+}
+
+// ---------------------------------------------------------------------------
+// Repo-registry parameter / output schemas
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+pub struct RepoDto {
+    /// Absolute path to the repo.
+    pub path: String,
+    /// `project` or `home`.
+    pub role: String,
+    /// Free-form grouping labels (e.g. `themia`, `equanimitech`).
+    pub tags: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct RepoAddParams {
+    /// Path to the repo (must be a git repo). Absolute preferred.
+    pub path: String,
+    /// `project` (default) or `home`.
+    #[serde(default)]
+    pub role: Option<String>,
+    /// Free-form grouping tags.
+    #[serde(default)]
+    pub tags: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct RepoListParams {
+    /// Only repos carrying this tag.
+    #[serde(default)]
+    pub tag: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct RepoRemoveParams {
+    /// Path to the repo to unenroll.
+    pub path: String,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct RepoListOutput {
+    pub repos: Vec<RepoDto>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct RepoRemoveOutput {
+    pub removed: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -447,6 +497,77 @@ impl SecretariatServer {
         info!(name = %rotated.name, new_did = %rotated.did, "agent rotated via MCP");
         Ok(Json(AgentDto::from(rotated)))
     }
+
+    #[tool(
+        name = "repo_add",
+        annotations(
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        ),
+        description = "Enroll (or update) a git repo in the substrate manifest. `path` is \
+        the identity — calling again with the same path updates its role/tags (upsert, no \
+        duplicate). `role` is `project` (default) or `home` (private cross-cutting PKM). \
+        `tags` are free-form grouping labels (e.g. themia, equanimitech). Fails if `path` \
+        is not a git repo."
+    )]
+    async fn repo_add(
+        &self,
+        Parameters(params): Parameters<RepoAddParams>,
+    ) -> Result<Json<RepoDto>, ErrorData> {
+        use secretariat_core::application::repo_ops::register_repo;
+        use secretariat_core::infrastructure::RepoRole;
+        let role = RepoRole::parse(params.role.as_deref().unwrap_or("project"))
+            .map_err(|e| invalid_request(format!("invalid role: {e}")))?;
+        let entry = register_repo(
+            &self.paths.preferences,
+            std::path::Path::new(&params.path),
+            role,
+            params.tags,
+        )
+        .map_err(|e| invalid_request(format!("repo_add failed: {e}")))?;
+        info!(path = %entry.path.display(), "repo enrolled via MCP");
+        Ok(Json(repo_to_dto(entry)))
+    }
+
+    #[tool(
+        name = "repo_list",
+        annotations(read_only_hint = true, idempotent_hint = true, open_world_hint = false),
+        description = "List repos enrolled in the substrate manifest, optionally filtered \
+        to those carrying a given tag. Each entry: absolute path, role (project|home), tags."
+    )]
+    async fn repo_list(
+        &self,
+        Parameters(params): Parameters<RepoListParams>,
+    ) -> Result<Json<RepoListOutput>, ErrorData> {
+        use secretariat_core::application::repo_ops::list_repos;
+        let repos = list_repos(&self.paths.preferences, params.tag.as_deref())
+            .map_err(|e| invalid_request(format!("repo_list failed: {e}")))?;
+        Ok(Json(RepoListOutput {
+            repos: repos.into_iter().map(repo_to_dto).collect(),
+        }))
+    }
+
+    #[tool(
+        name = "repo_remove",
+        annotations(
+            destructive_hint = true,
+            idempotent_hint = true,
+            open_world_hint = false
+        ),
+        description = "Unenroll a repo from the substrate manifest by path. Returns \
+        `removed: false` if the path was not enrolled. Does not touch the repo's files — \
+        only the manifest entry."
+    )]
+    async fn repo_remove(
+        &self,
+        Parameters(params): Parameters<RepoRemoveParams>,
+    ) -> Result<Json<RepoRemoveOutput>, ErrorData> {
+        use secretariat_core::application::repo_ops::unregister_repo;
+        let removed = unregister_repo(&self.paths.preferences, std::path::Path::new(&params.path))
+            .map_err(|e| invalid_request(format!("repo_remove failed: {e}")))?;
+        Ok(Json(RepoRemoveOutput { removed }))
+    }
 }
 
 #[tool_handler]
@@ -497,6 +618,14 @@ Always `verify` inbound envelopes before trusting their content.";
 
 fn invalid_request(msg: String) -> ErrorData {
     ErrorData::new(ErrorCode::INVALID_REQUEST, msg, None)
+}
+
+fn repo_to_dto(e: secretariat_core::infrastructure::RepoEntry) -> RepoDto {
+    RepoDto {
+        path: e.path.display().to_string(),
+        role: e.role.as_str().to_string(),
+        tags: e.tags,
+    }
 }
 
 fn load_principal_did(paths: &KeyPaths) -> Result<Did, ErrorData> {
@@ -608,4 +737,27 @@ fn layered_outcome_to_view(outcome: LayeredVerifyOutcome) -> VerifyOutput {
         },
     };
     VerifyOutput { signature, stamp }
+}
+
+#[cfg(test)]
+mod repo_tool_tests {
+    use secretariat_core::application::repo_ops::{list_repos, register_repo, unregister_repo};
+    use secretariat_core::infrastructure::RepoRole;
+    use tempfile::TempDir;
+
+    #[test]
+    fn repo_ops_roundtrip_under_temp_prefs() {
+        let d = TempDir::new().unwrap();
+        let repo = d.path().join("themia");
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+        let prefs = d.path().join("preferences.toml");
+
+        register_repo(&prefs, &repo, RepoRole::Home, vec!["themia".into()]).unwrap();
+        let listed = list_repos(&prefs, Some("themia")).unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].role, RepoRole::Home);
+
+        assert!(unregister_repo(&prefs, &repo).unwrap());
+        assert!(list_repos(&prefs, None).unwrap().is_empty());
+    }
 }
