@@ -1,6 +1,6 @@
 [package]
 name = "secretariat-core"
-version = "0.11.9"
+version = "0.12.0"
 edition = "2021"
 authors = ["Rafa Ballestiero"]
 license = "MIT"
