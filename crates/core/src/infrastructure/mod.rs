@@ -19,6 +19,7 @@ pub mod native_biometric;
 pub mod org_store;
 pub mod preferences;
 pub mod queue_dir;
+pub mod repo_registry;
 pub mod transport;
 
 pub use binding_store::{load_channel_binding, resolve_channel_path, BindingStoreError};
@@ -55,3 +56,4 @@ pub use preferences::{
     CompositionPrefs, DeliveryPrefs, Preferences, PreferencesError,
 };
 pub use queue_dir::{ciphertext_dir, envelopes_dir, queue_dir, AliasMap};
+pub use repo_registry::{RepoEntry, RepoRegistry, RepoRole};
