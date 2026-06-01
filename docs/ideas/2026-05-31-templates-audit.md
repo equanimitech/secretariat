@@ -1,7 +1,7 @@
 # Are we even using templates?
 
 **Date:** 2026-05-31
-**Status:** captured (Things inbox)
+**Status:** decide (likely moot in git-native)
 **Source:** Things3 quick-capture, triaged 2026-05-31
 
 > are we even using templates in secretariat?

@@ -1,7 +1,7 @@
 # Saving a Slack message is an oracle action
 
 **Date:** 2026-05-31
-**Status:** captured (Things inbox)
+**Status:** someday
 **Source:** Things3 quick-capture, triaged 2026-05-31
 
 > saving messages on slack is an oracle, it should add them to linear

@@ -1,7 +1,7 @@
 # Bug: no frontmatter access in main window
 
 **Date:** 2026-05-31
-**Status:** captured (Things inbox) — likely bug
+**Status:** next-action (editor bug)
 **Source:** Things3 quick-capture, triaged 2026-05-31
 
 > I have no access to the front matter within the main window when viewing a file, why?

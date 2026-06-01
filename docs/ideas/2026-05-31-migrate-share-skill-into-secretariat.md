@@ -1,7 +1,7 @@
 # Migrate the /share skill into Secretariat
 
 **Date:** 2026-05-31
-**Status:** captured (Things, Anytime)
+**Status:** someday
 **Source:** Things3, triaged 2026-05-31
 
 > Migrate /share skill into Secretariat

@@ -1,7 +1,7 @@
 # Stamping ceremony UI — make it feel regal
 
 **Date:** 2026-05-31
-**Status:** captured (Things inbox)
+**Status:** next-action (stamp-dialog UX)
 **Source:** Things3 quick-capture, triaged 2026-05-31
 
 > stamping ceremony UI could be improved -> it should feel like when a king put their royal stamp on it.

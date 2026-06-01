@@ -1,7 +1,7 @@
 # Share PDFs of markdown (with a stamped signal)
 
 **Date:** 2026-05-31
-**Status:** captured (Things inbox)
+**Status:** someday
 **Source:** Things3 quick-capture, triaged 2026-05-31
 
 > secretariat to share PDFs of markdown (with a stamped signal?)

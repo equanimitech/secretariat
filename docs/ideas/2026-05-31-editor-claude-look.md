@@ -1,7 +1,7 @@
 # Editor should look more like Claude
 
 **Date:** 2026-05-31
-**Status:** captured (Things inbox)
+**Status:** next-action (editor polish)
 **Source:** Things3 quick-capture, triaged 2026-05-31
 
 > would like secretariat editor to look a bit more like Claude. Font sizes are off, the — look a bit weird, etc.

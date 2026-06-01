@@ -1,7 +1,7 @@
 # Just have sessions running in the background
 
 **Date:** 2026-05-31
-**Status:** captured (Things inbox)
+**Status:** project → pitch (shaping)
 **Source:** Things3 quick-capture, triaged 2026-05-31
 
 > secretariat: just have sessions running in the back

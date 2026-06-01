@@ -1,7 +1,7 @@
 # Improve quick capture (Things3-grade)
 
 **Date:** 2026-05-31
-**Status:** captured (Things inbox)
+**Status:** someday
 **Source:** Things3 quick-capture, triaged 2026-05-31
 
 > we need to improve quick capture for secretariat following things3:

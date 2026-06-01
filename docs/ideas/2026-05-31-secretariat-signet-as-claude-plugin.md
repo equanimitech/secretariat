@@ -1,7 +1,7 @@
 # Release Signet / Secretariat as a Claude plugin?
 
 **Date:** 2026-05-31
-**Status:** captured (Things inbox) — open question
+**Status:** someday
 **Source:** Things3 quick-capture, triaged 2026-05-31
 
 > should we release signet / secretariat simply as a claude plugin?

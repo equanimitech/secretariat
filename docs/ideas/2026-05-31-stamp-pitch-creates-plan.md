@@ -1,7 +1,7 @@
 # Stamping a pitch creates a plan
 
 **Date:** 2026-05-31
-**Status:** captured (Things inbox)
+**Status:** project (deferred)
 **Source:** Things3 quick-capture, triaged 2026-05-31
 
 > when I stamp pitches, we should create plans from them (on stamp?)
