@@ -1,8 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Plus, X, Hash, FileText, Archive, ArchiveRestore } from 'lucide-react'
-import { toast } from 'sonner'
-import type { LaunchableChannel } from '@/lib/bindings'
-import { Button } from '@/components/ui/button'
+import { X, FileText } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   ContextMenu,
@@ -10,18 +7,8 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu'
-import { classifyEnvelopePath } from '@/lib/envelope-path'
-import {
-  OPEN_CHANNEL_EVENT,
-  type OpenChannelRequest,
-} from '@/components/layout/LeftSideBar'
-import { unreadStore } from '@/components/explorer/unreadState'
-import { activeChannelStore } from '@/components/explorer/activeChannel'
-import { commands } from '@/lib/bindings'
 import { MarkdownWindow } from '@/components/markdown/MarkdownWindow'
-import { ChannelPicker } from './ChannelPicker'
-import { ChannelTimeline } from './ChannelTimeline'
-import { loadTabs, makeChannelTab, makeMarkdownTab, saveTabs } from './storage'
+import { loadTabs, makeMarkdownTab, saveTabs } from './storage'
 import type { PersistedTabs, Tab } from './types'
 
 export const OPEN_MARKDOWN_EVENT = 'secretariat:open-markdown'
@@ -32,7 +19,6 @@ export interface OpenMarkdownRequest {
 
 export function SessionTabs() {
   const [state, setState] = useState<PersistedTabs>(() => loadTabs())
-  const [pickerOpen, setPickerOpen] = useState(false)
 
   useEffect(() => {
     saveTabs(state)
@@ -43,51 +29,8 @@ export function SessionTabs() {
     [state]
   )
 
-  // Mirror the active channel-tab path into the shared store so the
-  // explorer can suppress unread badges + bold styling on the channel
-  // the principal is actively viewing.
+  // Sidebar tree → tab strip. Markdown files open (or refocus) a tab.
   useEffect(() => {
-    if (activeTab && activeTab.kind === 'channel') {
-      activeChannelStore.set(activeTab.channelPath)
-    } else {
-      activeChannelStore.set(null)
-    }
-  }, [activeTab])
-
-  const openChannelFromPicker = useCallback((channel: LaunchableChannel) => {
-    void markChannelRead(channel.root_path)
-    const tab = makeChannelTab({
-      handle: channel.handle,
-      name: channel.name,
-      rootPath: channel.root_path,
-      org: channel.org,
-    })
-    setState(prev => ({
-      tabs: [...prev.tabs, tab],
-      activeId: tab.id,
-    }))
-  }, [])
-
-  // Sidebar tree → tab strip. Channel tabs refocus existing; new
-  // otherwise.
-  useEffect(() => {
-    function onOpenChannel(e: Event) {
-      const detail = (e as CustomEvent<OpenChannelRequest>).detail
-      void markChannelRead(detail.path)
-      setState(prev => {
-        const existing = prev.tabs.find(
-          t => t.kind === 'channel' && t.channelPath === detail.path
-        )
-        if (existing) return { ...prev, activeId: existing.id }
-        const tab = makeChannelTab({
-          handle: detail.handle,
-          name: detail.name,
-          rootPath: detail.path,
-          org: detail.org,
-        })
-        return { tabs: [...prev.tabs, tab], activeId: tab.id }
-      })
-    }
     function onOpenMarkdown(e: Event) {
       const detail = (e as CustomEvent<OpenMarkdownRequest>).detail
       setState(prev => {
@@ -99,16 +42,11 @@ export function SessionTabs() {
         return { tabs: [...prev.tabs, tab], activeId: tab.id }
       })
     }
-    window.addEventListener(OPEN_CHANNEL_EVENT, onOpenChannel as EventListener)
     window.addEventListener(
       OPEN_MARKDOWN_EVENT,
       onOpenMarkdown as EventListener
     )
     return () => {
-      window.removeEventListener(
-        OPEN_CHANNEL_EVENT,
-        onOpenChannel as EventListener
-      )
       window.removeEventListener(
         OPEN_MARKDOWN_EVENT,
         onOpenMarkdown as EventListener
@@ -129,11 +67,6 @@ export function SessionTabs() {
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key === 't') {
-        e.preventDefault()
-        setPickerOpen(true)
-        return
-      }
       if ((e.metaKey || e.ctrlKey) && e.key === 'w' && activeTab) {
         e.preventDefault()
         closeTab(activeTab.id)
@@ -154,52 +87,32 @@ export function SessionTabs() {
 
   return (
     <div className="flex h-full w-full flex-col bg-background">
-      <div className="flex h-9 shrink-0 items-center border-b border-border bg-muted/30">
-        <div className="flex flex-1 items-center gap-px overflow-x-auto">
-          {state.tabs.map(tab => (
-            <TabHeader
-              key={tab.id}
-              tab={tab}
-              active={tab.id === state.activeId}
-              onActivate={() =>
-                setState(prev => ({ ...prev, activeId: tab.id }))
-              }
-              onClose={() => closeTab(tab.id)}
-            />
-          ))}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="ml-1 h-7 px-2"
-            onClick={() => setPickerOpen(true)}
-            aria-label="Open channel"
-          >
-            <Plus className="h-4 w-4" />
-          </Button>
+      {state.tabs.length > 0 && (
+        <div className="flex h-9 shrink-0 items-center border-b border-border bg-muted/30">
+          <div className="flex flex-1 items-center gap-px overflow-x-auto">
+            {state.tabs.map(tab => (
+              <TabHeader
+                key={tab.id}
+                tab={tab}
+                active={tab.id === state.activeId}
+                onActivate={() =>
+                  setState(prev => ({ ...prev, activeId: tab.id }))
+                }
+                onClose={() => closeTab(tab.id)}
+              />
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="min-h-0 flex-1">
-        {activeTab ? (
-          <TabBody tab={activeTab} />
-        ) : (
-          <EmptyState onOpen={() => setPickerOpen(true)} />
-        )}
+        {activeTab ? <TabBody tab={activeTab} /> : <EmptyState />}
       </div>
-
-      <ChannelPicker
-        open={pickerOpen}
-        onOpenChange={setPickerOpen}
-        onPick={openChannelFromPicker}
-      />
     </div>
   )
 }
 
 function TabBody({ tab }: { tab: Tab }) {
-  if (tab.kind === 'channel') {
-    return <ChannelTimeline key={tab.id} tab={tab} />
-  }
   return <MarkdownWindow key={tab.id} filePath={tab.filePath} embedded />
 }
 
@@ -214,11 +127,6 @@ function TabHeader({
   onActivate: () => void
   onClose: () => void
 }) {
-  const Icon = tab.kind === 'channel' ? Hash : FileText
-  const label =
-    tab.kind === 'channel'
-      ? `${tab.org ? `${tab.org} / ` : ''}${tab.channelName}`
-      : tab.name
   const row = (
     <div
       role="tab"
@@ -231,8 +139,8 @@ function TabHeader({
           : 'text-muted-foreground hover:bg-background/50'
       )}
     >
-      <Icon className="h-3 w-3 shrink-0 opacity-60" />
-      <span className="truncate max-w-[180px]">{label}</span>
+      <FileText className="h-3 w-3 shrink-0 opacity-60" />
+      <span className="truncate max-w-[180px]">{tab.name}</span>
       <button
         type="button"
         aria-label="Close tab"
@@ -246,96 +154,28 @@ function TabHeader({
       </button>
     </div>
   )
-  if (tab.kind !== 'markdown') return row
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>{row}</ContextMenuTrigger>
       <ContextMenuContent>
-        <MarkdownTabMenuItems filePath={tab.filePath} onClose={onClose} />
+        <ContextMenuItem onSelect={() => onClose()}>
+          <X className="h-3.5 w-3.5" />
+          Close tab
+        </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
   )
 }
 
-function MarkdownTabMenuItems({
-  filePath,
-  onClose,
-}: {
-  filePath: string
-  onClose: () => void
-}) {
-  const { isEnvelope, isArchived } = classifyEnvelopePath(filePath)
-  const onArchive = async () => {
-    const res = await commands.archiveInboxEnvelope(filePath)
-    if (res.status === 'error') {
-      toast.error(`Archive failed: ${res.error}`)
-      return
-    }
-    toast.success('Archived')
-    onClose()
-  }
-  const onUnarchive = async () => {
-    const res = await commands.unarchiveInboxEnvelope(filePath)
-    if (res.status === 'error') {
-      toast.error(`Unarchive failed: ${res.error}`)
-      return
-    }
-    toast.success('Unarchived')
-    onClose()
-  }
-  return (
-    <>
-      <ContextMenuItem onSelect={() => onClose()}>
-        <X className="h-3.5 w-3.5" />
-        Close tab
-      </ContextMenuItem>
-      {isArchived && (
-        <ContextMenuItem onSelect={onUnarchive}>
-          <ArchiveRestore className="h-3.5 w-3.5" />
-          Unarchive
-        </ContextMenuItem>
-      )}
-      {isEnvelope && !isArchived && (
-        <ContextMenuItem onSelect={onArchive}>
-          <Archive className="h-3.5 w-3.5" />
-          Archive
-        </ContextMenuItem>
-      )}
-    </>
-  )
-}
-
-/**
- * Mark every envelope under a channel-dir as opened. Fires the
- * envelope-opened event so the explorer recomputes ancestor unread
- * counts.
- */
-async function markChannelRead(channelPath: string) {
-  const res = await commands.listEnvelopesUnder(channelPath)
-  if (res.status !== 'ok') return
-  let touched = false
-  for (const p of res.data) {
-    if (!unreadStore.isOpened(p)) {
-      unreadStore.markOpened(p)
-      touched = true
-    }
-  }
-  if (touched) {
-    window.dispatchEvent(new CustomEvent('secretariat:envelope-opened'))
-  }
-}
-
-function EmptyState({ onOpen }: { onOpen: () => void }) {
+function EmptyState() {
   return (
     <div className="flex h-full w-full items-center justify-center">
       <div className="flex flex-col items-center gap-3 text-center">
-        <p className="text-sm text-muted-foreground">No sessions open.</p>
-        <Button onClick={onOpen}>
-          <Plus className="mr-1 h-4 w-4" />
-          Open channel
-        </Button>
+        <p className="text-sm text-muted-foreground">
+          Open a markdown file from the sidebar to start editing.
+        </p>
         <p className="font-mono text-[10px] text-muted-foreground">
-          ⌘T new · ⌘W close · ⌘1..9 jump
+          ⌘W close · ⌘1..9 jump
         </p>
       </div>
     </div>

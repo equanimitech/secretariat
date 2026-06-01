@@ -44,7 +44,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::domain::{Envelope, EnvelopeSignature, Stamp};
+use crate::domain::{EnvelopeSignature, Stamp};
 
 /// Reserved frontmatter keys that carry cryptographic semantics. A
 /// caller-supplied body may NOT inject these (see capture_ops): they are
@@ -67,7 +67,16 @@ pub enum MarkdownError {
 /// re-emits canonical YAML, not the original.
 #[derive(Debug, Clone)]
 pub struct ParsedDocument {
-    pub envelope: Option<Envelope>,
+    /// The `$envelope` routing block, parsed OPAQUELY as a YAML value.
+    ///
+    /// Decoupled from the typed `Envelope` domain type during the
+    /// git-native teardown: stamp/verify/read no longer need the markdown
+    /// layer to know the envelope schema. Callers that still want the
+    /// typed view deserialize on demand (`serde_yaml::from_value`). The
+    /// keep-set read/decrypt path reads only the handful of wire fields it
+    /// needs (`from`, `to`, `handle`, `encryption`) via lightweight
+    /// accessors rather than the full type.
+    pub envelope: Option<serde_yaml::Value>,
     /// Author signature (substrate-for-themia Move 2). Distinct from the
     /// principal's `stamp`; see module docs.
     pub signature: Option<EnvelopeSignature>,
@@ -82,7 +91,7 @@ pub struct ParsedDocument {
 #[derive(Serialize, Deserialize, Default)]
 struct FrontmatterShape {
     #[serde(rename = "$envelope", default, skip_serializing_if = "Option::is_none")]
-    envelope: Option<Envelope>,
+    envelope: Option<serde_yaml::Value>,
     #[serde(
         rename = "$signature",
         default,
@@ -159,7 +168,7 @@ pub fn parse_document(content: &str) -> Result<ParsedDocument, MarkdownError> {
 /// the author's signature).
 pub fn embed_frontmatter(
     body: &str,
-    envelope: Option<&Envelope>,
+    envelope: Option<&serde_yaml::Value>,
     signature: Option<&EnvelopeSignature>,
     stamp: Option<&Stamp>,
 ) -> Result<String, MarkdownError> {
@@ -176,7 +185,7 @@ pub fn embed_frontmatter(
 /// [`RESERVED_FRONTMATTER_KEYS`]); enforce upstream.
 pub fn embed_frontmatter_with_extra(
     body: &str,
-    envelope: Option<&Envelope>,
+    envelope: Option<&serde_yaml::Value>,
     signature: Option<&EnvelopeSignature>,
     stamp: Option<&Stamp>,
     extra: BTreeMap<String, serde_yaml::Value>,
@@ -209,7 +218,7 @@ pub fn embed_frontmatter_with_extra(
 /// [`embed_frontmatter`] directly so the `$signature` layer is explicit.
 pub fn embed_stamp(
     body: &str,
-    envelope: Option<&Envelope>,
+    envelope: Option<&serde_yaml::Value>,
     stamp: Option<&Stamp>,
 ) -> Result<String, MarkdownError> {
     embed_frontmatter(body, envelope, None, stamp)
@@ -324,8 +333,8 @@ fn split_at_closing_delim(s: &str) -> Option<(&str, &str)> {
 mod tests {
     use super::*;
     use crate::domain::{
-        canonical_body_hash, AttestedDocument, Did, DocHash, EnvelopeBuilder, QueueHandle,
-        Recipient, Signature, StampAct,
+        canonical_body_hash, AttestedDocument, Did, DocHash, Envelope, EnvelopeBuilder,
+        QueueHandle, Recipient, Signature, StampAct,
     };
     use chrono::TimeZone;
     use chrono::Utc;
@@ -334,8 +343,12 @@ mod tests {
         Did::parse("did:web:rafa.equanimi.tech").unwrap()
     }
 
-    fn fixture_envelope() -> crate::domain::Envelope {
-        EnvelopeBuilder::new(
+    /// Build a fixture envelope and serialize it to the opaque YAML value
+    /// the parser now carries. The typed `Envelope` round-trips through
+    /// `serde_yaml`, so embed/parse fidelity is unchanged — only the
+    /// markdown layer's dependency on the type is gone.
+    fn fixture_envelope_value() -> serde_yaml::Value {
+        let env = EnvelopeBuilder::new(
             rafa_did(),
             Recipient::new(
                 Did::parse("did:web:marcelo.ballestiero.com").unwrap(),
@@ -343,7 +356,8 @@ mod tests {
             ),
         )
         .source("claude-code-2026-04-30T14:22:00Z")
-        .build()
+        .build();
+        serde_yaml::to_value(&env).unwrap()
     }
 
     fn fixture_stamp_for(hash: DocHash) -> Stamp {
@@ -367,7 +381,7 @@ mod tests {
 
     #[test]
     fn parses_doc_with_only_envelope() {
-        let env = fixture_envelope();
+        let env = fixture_envelope_value();
         let yaml = serde_yaml::to_string(&FrontmatterShape {
             envelope: Some(env.clone()),
             signature: None,
@@ -377,14 +391,17 @@ mod tests {
         .unwrap();
         let doc = format!("---\n{}---\n# hello\n", yaml);
         let p = parse_document(&doc).unwrap();
-        assert_eq!(p.envelope, Some(env));
+        // The opaque value round-trips; deserializing it yields the typed
+        // envelope, proving the wire shape survived the opaque hop.
+        let typed: Envelope = serde_yaml::from_value(p.envelope.clone().unwrap()).unwrap();
+        assert_eq!(typed.recipient.handle.as_str(), "inbox:default");
         assert!(p.stamp.is_none());
         assert_eq!(p.body, "# hello\n");
     }
 
     #[test]
     fn parses_doc_with_envelope_and_stamp() {
-        let env = fixture_envelope();
+        let env = fixture_envelope_value();
         let body_text = "# hello\n";
         let stamp = fixture_stamp_for(canonical_body_hash(body_text));
         let combined = embed_stamp(body_text, Some(&env), Some(&stamp)).unwrap();
@@ -393,8 +410,9 @@ mod tests {
         assert_eq!(p.envelope, Some(env.clone()));
         assert_eq!(p.stamp, Some(stamp.clone()));
 
-        // The aggregate accepts the round-tripped pieces.
-        let _ = AttestedDocument::new(p.envelope, p.stamp.unwrap(), p.body).unwrap();
+        // The aggregate accepts the round-tripped pieces — and no longer
+        // needs the envelope to do so.
+        let _ = AttestedDocument::new(p.stamp.unwrap(), p.body).unwrap();
     }
 
     #[test]
@@ -413,7 +431,7 @@ mod tests {
 
     #[test]
     fn embed_then_parse_preserves_body_bytes() {
-        let env = fixture_envelope();
+        let env = fixture_envelope_value();
         let body = "# Title\n\nParagraph with **bold** and a list:\n- one\n- two\n";
         let stamp = fixture_stamp_for(canonical_body_hash(body));
         let out = embed_stamp(body, Some(&env), Some(&stamp)).unwrap();
@@ -461,6 +479,7 @@ mod tests {
         )
         .encryption(EncryptionScheme::X25519XChaCha20Poly1305)
         .build();
+        let envelope_value = serde_yaml::to_value(&envelope).unwrap();
 
         // 4. Stamp covers the wire-string body bytes.
         let body_hash = canonical_body_hash(&body_wire);
@@ -468,11 +487,13 @@ mod tests {
 
         // 5. Embed → markdown document with encryption-marked envelope and
         //    SealedBox-wire-string body.
-        let doc = embed_stamp(&body_wire, Some(&envelope), Some(&stamp)).unwrap();
+        let doc = embed_stamp(&body_wire, Some(&envelope_value), Some(&stamp)).unwrap();
 
-        // 6. Recipient parses.
+        // 6. Recipient parses. The envelope is opaque on the parse side;
+        //    deserialize on demand to inspect the encryption marker.
         let parsed = parse_document(&doc).unwrap();
-        let parsed_envelope = parsed.envelope.expect("envelope must round-trip");
+        let parsed_value = parsed.envelope.clone().expect("envelope must round-trip");
+        let parsed_envelope: Envelope = serde_yaml::from_value(parsed_value).unwrap();
         assert!(parsed_envelope.is_encrypted());
         assert_eq!(
             parsed_envelope.encryption,
@@ -511,14 +532,8 @@ mod tests {
         // Build a real envelope, embed it, then attempt to lift —
         // simulates an LLM-supplied body that smuggles a substrate-only
         // block. Must be rejected.
-        let envelope = fixture_envelope();
-        let doc = embed_frontmatter(
-            "# Body\n",
-            Some(&envelope),
-            None,
-            None,
-        )
-        .unwrap();
+        let envelope = fixture_envelope_value();
+        let doc = embed_frontmatter("# Body\n", Some(&envelope), None, None).unwrap();
         let err = lift_leading_frontmatter(&doc).unwrap_err();
         match err {
             LiftFrontmatterError::ReservedKeys { keys } => {

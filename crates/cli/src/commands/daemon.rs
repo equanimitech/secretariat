@@ -1,21 +1,17 @@
-//! `sec daemon` — clap surface for the long-running plumbing process.
+//! `sec daemon` — clap surface for the macOS LaunchAgent supervision.
 //!
-//! The actual work — serve loop, one-shot tick, relay registration,
-//! LaunchAgent install/uninstall/status — lives in `secretariat-daemon`.
-//! This file is the CLI's thin entry point: argument parsing, principal
-//! identity resolution (`key_paths` / `load_did` / `load_signing_key`),
-//! and dispatch.
+//! The federation column (relay registration, the serve poll loop, the
+//! one-shot `tick`) was removed in the git-native teardown (cut A). What
+//! remains is the LaunchAgent ceremony — install / uninstall / status —
+//! plus a keepalive `serve` entry point the installed plist targets.
 //!
-//! See `crates/daemon/src/lib.rs` for the library surface and
-//! `docs/ideas/2026-05-12-daemon-evolution.md` for the v0.3+ direction
-//! (9 subsystems landing across phases A–E).
+//! See `crates/daemon/src/lib.rs` for the library surface.
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use secretariat_core::infrastructure::keys::load_signing_key;
 use secretariat_daemon::{
-    init_tracing, install_launchagent, register, report_status, serve, tick_via_ipc_or_inproc,
-    uninstall_launchagent,
+    init_tracing, install_launchagent, report_status, serve, uninstall_launchagent,
 };
 
 use super::paths::{key_paths, load_did};
@@ -28,18 +24,10 @@ pub struct Args {
 
 #[derive(Subcommand, Debug)]
 enum Cmd {
-    /// Register with a relay (one-time per relay).
-    Register {
-        /// Relay endpoint URL, e.g. `wss://relay.rafa.equanimi.tech`
-        /// or `http://127.0.0.1:8443` for dev.
-        #[arg(long)]
-        endpoint: String,
-    },
-    /// Run the foreground daemon loop.
+    /// Run the foreground keepalive loop. This is the LaunchAgent plist's
+    /// target (`sec daemon serve`); it blocks until SIGTERM/SIGINT and
+    /// brings no subsystems online today (git-native teardown, cut A).
     Serve,
-    /// Run a single sync cycle and exit. Useful for cron, post-stamp
-    /// pushes, and Tauri's "Sync now" debugging.
-    Tick,
     /// Install the daemon as a macOS LaunchAgent. Survives reboot, runs
     /// in the background. Idempotent — safe to re-run after upgrades.
     Install,
@@ -58,30 +46,12 @@ pub fn run(args: Args) -> Result<()> {
     runtime.block_on(async move {
         let paths = key_paths()?;
         match args.cmd {
-            Cmd::Register { endpoint } => {
-                let did = load_did(&paths)?;
-                let key = load_signing_key(&paths.signing_key).with_context(|| {
-                    format!("loading signing key from {}", paths.signing_key.display())
-                })?;
-                register(&paths, &did, &key, &endpoint).await
-            }
             Cmd::Serve => {
                 let did = load_did(&paths)?;
                 let key = load_signing_key(&paths.signing_key).with_context(|| {
                     format!("loading signing key from {}", paths.signing_key.display())
                 })?;
                 serve(&paths, &did, &key).await
-            }
-            Cmd::Tick => {
-                // Prefer the running daemon's IPC socket so we don't
-                // race against its `RelayState` saves; fall back to
-                // in-proc when no daemon is listening (v0.2.16
-                // behavior preserved).
-                let did = load_did(&paths)?;
-                let key = load_signing_key(&paths.signing_key).with_context(|| {
-                    format!("loading signing key from {}", paths.signing_key.display())
-                })?;
-                tick_via_ipc_or_inproc(&paths, &did, &key).await
             }
             Cmd::Install => install_launchagent(&paths).await,
             Cmd::Uninstall => uninstall_launchagent().await,

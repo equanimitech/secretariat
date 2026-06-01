@@ -262,56 +262,10 @@ pub fn run() {
                 }
             });
 
-            // Background sync — keeps state warm without surfacing notifications.
-            // Per the review-session model
-            // (memory/feedback_review_session_model.md), the principal-initiated
-            // "Sync now" button is the primary affordance; this loop just
-            // means the inbox isn't empty when they open the app. Cadence
-            // honors `~/.secretariat/cadence.toml` (default 15-min floor,
-            // see core::application::delivery_policy).
-            tauri::async_runtime::spawn(async {
-                use secretariat_core::application::{sync_now, CadenceConfig};
-                use secretariat_core::infrastructure::keys::{load_signing_key, KeyPaths};
-
-                loop {
-                    let interval_min = match KeyPaths::discover() {
-                        Ok(paths) => {
-                            CadenceConfig::load_or_default(&paths.root.join("cadence.toml"))
-                                .map(|c| c.poll_interval_minutes)
-                                .unwrap_or(15)
-                        }
-                        Err(_) => 15,
-                    };
-                    tauri::async_runtime::spawn_blocking(move || {
-                        std::thread::sleep(std::time::Duration::from_secs(
-                            (interval_min as u64).saturating_mul(60),
-                        ))
-                    })
-                    .await
-                    .ok();
-
-                    // Skip silently if no identity yet (pre-onboarding) or
-                    // if key/DID load fails. Errors don't kill the loop —
-                    // try again next tick.
-                    use secretariat_core::infrastructure::identity_store::load_identity;
-                    let Ok(paths) = KeyPaths::discover() else {
-                        continue;
-                    };
-                    if !paths.signing_key.exists() {
-                        continue;
-                    }
-                    let Ok(Some(identity)) = load_identity(&paths.identity_md) else {
-                        continue;
-                    };
-                    let did = identity.did;
-                    let Ok(key) = load_signing_key(&paths.signing_key) else {
-                        continue;
-                    };
-                    if let Err(e) = sync_now(&paths, &did, &key).await {
-                        log::warn!("background sync failed: {e}");
-                    }
-                }
-            });
+            // The background sync/poll loop was removed in the git-native
+            // teardown (cut A) along with the federation column. Inbound
+            // correspondence over a hosted relay is no longer wired; the
+            // git-native substrate grows its own delivery path.
 
             Ok(())
         })

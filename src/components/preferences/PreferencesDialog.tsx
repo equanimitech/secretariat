@@ -1,13 +1,5 @@
 import { useState } from 'react'
-import {
-  User,
-  FolderOpen,
-  Keyboard,
-  Radio,
-  Plug,
-  Brain,
-  Info,
-} from 'lucide-react'
+import { User, FolderOpen, Keyboard, Plug, Brain, Info } from 'lucide-react'
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -36,21 +28,19 @@ import { useUIStore } from '@/store/ui-store'
 import { ProfilePane } from './panes/ProfilePane'
 import { PathsPane } from './panes/PathsPane'
 import { ShortcutPane } from './panes/ShortcutPane'
-import { RelayPane } from './panes/RelayPane'
 import { IntegrationsPane } from './panes/IntegrationsPane'
 import { CognitionPane } from './panes/CognitionPane'
 import { AboutPane } from './panes/AboutPane'
 
 // Template panes (Appearance / General / Advanced) remain on disk under
 // `panes/` but are not surfaced — they're scaffold leftovers. The
-// Secretariat-shaped panes shipping in v0.3 are: Profile, Paths,
-// Shortcut, Relay, Integrations.
+// Secretariat-shaped panes are: Profile, Paths, Shortcut, Integrations,
+// Cognition, About. (Relay was removed in the git-native cut.)
 
 type PreferencePane =
   | 'profile'
   | 'paths'
   | 'shortcut'
-  | 'relay'
   | 'integrations'
   | 'cognition'
   | 'about'
@@ -59,7 +49,6 @@ const navigationItems = [
   { id: 'profile' as const, label: 'Profile', icon: User },
   { id: 'paths' as const, label: 'Paths', icon: FolderOpen },
   { id: 'shortcut' as const, label: 'Shortcut', icon: Keyboard },
-  { id: 'relay' as const, label: 'Relay', icon: Radio },
   { id: 'integrations' as const, label: 'Integrations', icon: Plug },
   { id: 'cognition' as const, label: 'Cognition', icon: Brain },
   { id: 'about' as const, label: 'About', icon: Info },
@@ -135,7 +124,6 @@ export function PreferencesDialog() {
               {activePane === 'profile' && <ProfilePane />}
               {activePane === 'paths' && <PathsPane />}
               {activePane === 'shortcut' && <ShortcutPane />}
-              {activePane === 'relay' && <RelayPane />}
               {activePane === 'integrations' && <IntegrationsPane />}
               {activePane === 'cognition' && <CognitionPane />}
               {activePane === 'about' && <AboutPane />}

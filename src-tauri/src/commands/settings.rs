@@ -5,8 +5,7 @@
 use std::path::PathBuf;
 use std::process::Command;
 
-use secretariat_core::infrastructure::identity_store::load_identity;
-use secretariat_core::infrastructure::keys::{load_signing_key, KeyPaths};
+use secretariat_core::infrastructure::keys::KeyPaths;
 use secretariat_core::infrastructure::preferences::{
     load_or_migrate as load_or_migrate_preferences, CognitionProvider, Preferences,
 };
@@ -68,52 +67,11 @@ pub async fn list_relays() -> Result<Vec<RelayInfo>, String> {
         .collect())
 }
 
-/// Add a relay endpoint and register the principal's DID against it
-/// in one shot. Upserts the entry into `relay-state.json` regardless of
-/// network outcome (so the row stays visible as "pending registration"
-/// on failure); attempts the DID-keyed registration handshake on top.
-///
-/// Returns `Ok(())` only when registration succeeds. On registration
-/// failure the entry persists as pending — callers can retry by calling
-/// `add_relay` again with the same endpoint, which will re-attempt the
-/// handshake.
-#[tauri::command]
-#[specta::specta]
-pub async fn add_relay(endpoint: String) -> Result<(), String> {
-    let trimmed = endpoint.trim().to_string();
-    if trimmed.is_empty() {
-        return Err("endpoint must not be empty".to_string());
-    }
-    if !trimmed.starts_with("https://") && !trimmed.starts_with("http://") {
-        return Err("endpoint must start with `https://` or `http://`".to_string());
-    }
-    let paths = key_paths()?;
-
-    // Persist the entry first so the UI has something to show even when
-    // the handshake fails (typo, server down, network off).
-    {
-        let mut state =
-            RelayState::load(&paths.relay_state).map_err(|e| format!("loading: {e}"))?;
-        state.entry_mut(&trimmed);
-        state
-            .save(&paths.relay_state)
-            .map_err(|e| format!("saving: {e}"))?;
-    }
-
-    // Now register. Re-upserts internally and sets `registered = true`
-    // on success. Requires identity to exist — pre-onboarding adds
-    // bail with a clear message.
-    let identity = load_identity(&paths.identity_md)
-        .map_err(|e| format!("loading identity: {e}"))?
-        .ok_or_else(|| "no identity — finish onboarding first".to_string())?;
-    let key =
-        load_signing_key(&paths.signing_key).map_err(|e| format!("loading signing key: {e}"))?;
-
-    secretariat_daemon::register(&paths, &identity.did, &key, &trimmed)
-        .await
-        .map_err(|e| format!("registering with {trimmed}: {e}"))?;
-    Ok(())
-}
+// The `add_relay` command — which upserted a relay-state entry and ran the
+// DID-keyed registration handshake against a hosted relay — was removed in
+// the git-native teardown (cut A) along with the federation column. The
+// Relay pane is read-only now (`list_relays`); a write path re-lands when
+// the git-native substrate grows its own delivery transport.
 
 // ---------------------------------------------------------------------------
 // Integrations (MCP)

@@ -15,7 +15,6 @@ pub mod identity_store;
 pub mod keys;
 pub mod manifest_cache;
 pub mod markdown;
-pub mod membership_store;
 pub mod native_biometric;
 pub mod org_store;
 pub mod preferences;
@@ -46,9 +45,6 @@ pub use keys::{
     generate_keypair, load_signing_key, save_signing_key, write_did_document, KeyError, KeyPaths,
 };
 pub use markdown::{embed_stamp, parse_document, MarkdownError, ParsedDocument};
-pub use membership_store::{
-    load_membership, save_membership, MembershipStoreError, OrgMembership, MEMBERSHIP_FILENAME,
-};
 pub use native_biometric::NativeBiometricGate;
 pub use org_store::{
     delete_org as delete_org_tree, list_org_dirs, load_org, org_channels_root, org_dir,

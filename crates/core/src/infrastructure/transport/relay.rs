@@ -1,38 +1,29 @@
-//! HTTP client for the Secretariat relay (`crates/relay`).
+//! Persistent relay state (`~/.secretariat/relay-state.json`).
 //!
-//! Concretely: register once, authenticate (challenge → signed answer →
-//! short-lived bearer token), POST envelopes addressed to other DIDs, GET
-//! envelopes addressed to us. Cursor-paginated polling.
+//! The federation HTTP client that polled and pushed envelopes over a
+//! self-hosted relay was removed in the git-native teardown (cut A). What
+//! remains is the on-disk state model that other flows still read:
 //!
-//! ## State model
-//!
-//! [`RelayState`] tracks per-relay state across daemon restarts:
-//! - `endpoint` — the relay base URL (matches a contact's `relay_endpoint`
-//!   or the principal's own self-hosted relay)
+//! - `endpoint` — the relay base URL a contact / org channel is reachable at
 //! - `registered` — whether we've completed the one-time registration
-//! - `token` + `token_expires_at` — current bearer token (re-authenticate
-//!   when expired)
-//! - `cursor` — highest envelope id we've successfully ingested; `?after=<cursor>`
-//!   on next poll
+//!   (used by the invite flow to pick a default endpoint)
+//! - `token` + `token_expires_at` — kept on the record for forward
+//!   compatibility; nothing writes them today
+//! - `queue_cursors` — per-`(owner, handle)` ingest cursors
 //!
 //! State is persisted at `~/.secretariat/relay-state.json` (atomic write,
-//! mode 0600 on Unix).
+//! mode 0600 on Unix). Invite creation/claim and the Settings → Relay pane
+//! are the remaining readers/writers.
 
 use std::path::{Path, PathBuf};
 
-use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use chrono::{DateTime, Utc};
-use ed25519_dalek::{Signer, SigningKey};
-use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 use thiserror::Error;
 
-use crate::codec::encode_ed25519_multibase;
 use crate::domain::{Did, QueueHandle};
 
-const REGISTER_DOMAIN: &[u8] = b"secretariat-relay-register:v0:";
-const AUTH_DOMAIN: &[u8] = b"secretariat-relay-auth:v0:";
 /// v2 (2026-05-19): per-`(owner, handle)` cursors replace the single
 /// per-endpoint cursor. Channels (org-scoped or self-owned) all subscribe
 /// uniformly via `(owner, handle)`. No migration code — nothing was in
@@ -42,18 +33,6 @@ const STATE_VERSION: u32 = 2;
 // ---------------------------------------------------------------------------
 // Errors
 // ---------------------------------------------------------------------------
-
-#[derive(Debug, Error)]
-pub enum RelayClientError {
-    #[error("http error: {0}")]
-    Http(#[from] reqwest::Error),
-    #[error("relay returned status {status}: {body}")]
-    BadStatus { status: u16, body: String },
-    #[error("relay response did not match expected schema: {0}")]
-    BadResponse(String),
-    #[error("base64 decode failed: {0}")]
-    Base64(#[from] base64::DecodeError),
-}
 
 #[derive(Debug, Error)]
 pub enum RelayStateError {
@@ -238,292 +217,6 @@ impl RelayState {
     pub fn iter(&self) -> impl Iterator<Item = &RelayEntry> {
         self.relays.iter()
     }
-}
-
-// ---------------------------------------------------------------------------
-// Inbound envelopes
-// ---------------------------------------------------------------------------
-
-/// One envelope pulled from the relay. The body is the raw bytes the sender
-/// POSTed (typically a markdown file with frontmatter + an encrypted body).
-#[derive(Debug, Clone)]
-pub struct RelayInbound {
-    pub id: u64,
-    pub queued_at: DateTime<Utc>,
-    pub sender_did: Option<Did>,
-    pub body: Vec<u8>,
-    pub content_type: String,
-}
-
-#[derive(Deserialize)]
-struct PollResponseWire {
-    envelopes: Vec<InboundWire>,
-}
-
-#[derive(Deserialize)]
-struct InboundWire {
-    id: u64,
-    queued_at: DateTime<Utc>,
-    #[serde(default)]
-    sender_did: Option<Did>,
-    /// base64-encoded bytes
-    body: String,
-    content_type: String,
-}
-
-// ---------------------------------------------------------------------------
-// RelayClient
-// ---------------------------------------------------------------------------
-
-/// HTTP client for one relay endpoint.
-pub struct RelayClient<'a> {
-    pub endpoint: String,
-    pub did: Did,
-    pub signing_key: &'a SigningKey,
-    http: Client,
-}
-
-impl<'a> RelayClient<'a> {
-    pub fn new(endpoint: impl Into<String>, did: Did, signing_key: &'a SigningKey) -> Self {
-        let endpoint = endpoint.into();
-        let endpoint = endpoint.trim_end_matches('/').to_string();
-        Self {
-            endpoint,
-            did,
-            signing_key,
-            http: Client::new(),
-        }
-    }
-
-    /// One-time registration. Idempotent on the server side (returns 409 if
-    /// already registered — we treat that as success).
-    pub async fn register(&self) -> Result<(), RelayClientError> {
-        let pubkey_bytes = self.signing_key.verifying_key().to_bytes();
-        let pubkey_mb = encode_ed25519_multibase(&pubkey_bytes);
-
-        let mut to_sign = REGISTER_DOMAIN.to_vec();
-        to_sign.extend_from_slice(self.did.as_str().as_bytes());
-        to_sign.extend_from_slice(&pubkey_bytes);
-        let sig = self.signing_key.sign(&to_sign);
-        let sig_str = format!("ed25519:{}", B64.encode(sig.to_bytes()));
-
-        let r = self
-            .http
-            .post(format!("{}/v0/register", self.endpoint))
-            .json(&serde_json::json!({
-                "did": self.did.as_str(),
-                "pubkey_multibase": pubkey_mb,
-                "signature": sig_str,
-            }))
-            .send()
-            .await?;
-
-        let status = r.status();
-        if status.is_success() || status == reqwest::StatusCode::CONFLICT {
-            // 201 = newly registered; 409 = already registered. Both are OK.
-            return Ok(());
-        }
-        let body = r.text().await.unwrap_or_default();
-        Err(RelayClientError::BadStatus {
-            status: status.as_u16(),
-            body,
-        })
-    }
-
-    /// Challenge → answer → bearer token. Caller stores token + expiry in
-    /// [`RelayState`].
-    pub async fn authenticate(&self) -> Result<(String, DateTime<Utc>), RelayClientError> {
-        let challenge: serde_json::Value = self
-            .http
-            .post(format!("{}/v0/auth/challenge", self.endpoint))
-            .json(&serde_json::json!({ "did": self.did.as_str() }))
-            .send()
-            .await?
-            .error_for_status()?
-            .json()
-            .await?;
-        let nonce = challenge["nonce"]
-            .as_str()
-            .ok_or_else(|| RelayClientError::BadResponse("challenge missing nonce".into()))?
-            .to_string();
-
-        let mut to_sign = AUTH_DOMAIN.to_vec();
-        to_sign.extend_from_slice(nonce.as_bytes());
-        let sig = self.signing_key.sign(&to_sign);
-        let sig_str = format!("ed25519:{}", B64.encode(sig.to_bytes()));
-
-        let answer: serde_json::Value = self
-            .http
-            .post(format!("{}/v0/auth/answer", self.endpoint))
-            .json(&serde_json::json!({
-                "did": self.did.as_str(),
-                "nonce": nonce,
-                "signature": sig_str,
-            }))
-            .send()
-            .await?
-            .error_for_status()?
-            .json()
-            .await?;
-        let token = answer["token"]
-            .as_str()
-            .ok_or_else(|| RelayClientError::BadResponse("answer missing token".into()))?
-            .to_string();
-        let expires_at_str = answer["expires_at"]
-            .as_str()
-            .ok_or_else(|| RelayClientError::BadResponse("answer missing expires_at".into()))?;
-        let expires_at = DateTime::parse_from_rfc3339(expires_at_str)
-            .map_err(|e| RelayClientError::BadResponse(format!("bad expires_at: {e}")))?
-            .with_timezone(&Utc);
-
-        Ok((token, expires_at))
-    }
-
-    // ---------------------------------------------------------------------
-    // Channel queue (v0.8) — `(owner, handle)` index axis.
-    // ---------------------------------------------------------------------
-
-    /// POST an envelope to an `(owner, handle)` queue. One primitive,
-    /// one route — every send is to `(owner, handle)` regardless of
-    /// whether the queue is org-scoped or self-owned. Body is opaque
-    /// bytes; relay queues by `(owner, handle)` and assigns the
-    /// per-channel seq.
-    ///
-    /// Handle is percent-encoded into the path segment (colons → `%3A`); the
-    /// `reqwest::Url` builder handles this for path segments automatically.
-    pub async fn send(
-        &self,
-        owner: &Did,
-        handle: &QueueHandle,
-        body: &[u8],
-        content_type: &str,
-    ) -> Result<u64, RelayClientError> {
-        let url = format!(
-            "{}/v0/queue/{}/{}",
-            self.endpoint,
-            owner.as_str(),
-            encode_handle(handle),
-        );
-        let r = self
-            .http
-            .post(url)
-            .header("content-type", content_type)
-            .header("x-sender-did", self.did.as_str())
-            .body(body.to_vec())
-            .send()
-            .await?;
-        let status = r.status();
-        if !status.is_success() {
-            let body = r.text().await.unwrap_or_default();
-            return Err(RelayClientError::BadStatus {
-                status: status.as_u16(),
-                body,
-            });
-        }
-        let parsed: serde_json::Value = r.json().await?;
-        let id = parsed["id"]
-            .as_u64()
-            .ok_or_else(|| RelayClientError::BadResponse("post response missing id".into()))?;
-        Ok(id)
-    }
-
-    /// Pull entries with `id > after` from the `(owner, handle)` channel
-    /// queue. Caller must hold a valid bearer token (we send our own DID's).
-    pub async fn poll(
-        &self,
-        owner: &Did,
-        handle: &QueueHandle,
-        token: &str,
-        after: u64,
-    ) -> Result<Vec<RelayInbound>, RelayClientError> {
-        let url = format!(
-            "{}/v0/queue/{}/{}",
-            self.endpoint,
-            owner.as_str(),
-            encode_handle(handle),
-        );
-        let r = self
-            .http
-            .get(url)
-            .query(&[("after", after)])
-            .header("authorization", format!("Bearer {token}"))
-            .send()
-            .await?;
-        let status = r.status();
-        if !status.is_success() {
-            let body = r.text().await.unwrap_or_default();
-            return Err(RelayClientError::BadStatus {
-                status: status.as_u16(),
-                body,
-            });
-        }
-        let parsed: PollResponseWire = r.json().await?;
-        parsed
-            .envelopes
-            .into_iter()
-            .map(|w| {
-                let body = B64.decode(w.body)?;
-                Ok(RelayInbound {
-                    id: w.id,
-                    queued_at: w.queued_at,
-                    sender_did: w.sender_did,
-                    body,
-                    content_type: w.content_type,
-                })
-            })
-            .collect()
-    }
-
-    /// Pull every claimed invite where this principal is the inviter.
-    /// Used by the daemon to discover claim events and auto-add the
-    /// claimer as a contact (bidirectional contact-add — the defining
-    /// behavior of a correspondence invite).
-    ///
-    /// Idempotent on the relay side: returns the same list across calls
-    /// until the invite is pruned. The daemon dedupes against its local
-    /// contact book.
-    pub async fn claimed_invites(
-        &self,
-        token: &str,
-    ) -> Result<Vec<ClaimedInviteWire>, RelayClientError> {
-        let r = self
-            .http
-            .get(format!("{}/v0/invites/claimed", self.endpoint))
-            .header("authorization", format!("Bearer {token}"))
-            .send()
-            .await?;
-        let status = r.status();
-        if !status.is_success() {
-            let body = r.text().await.unwrap_or_default();
-            return Err(RelayClientError::BadStatus {
-                status: status.as_u16(),
-                body,
-            });
-        }
-        let parsed: ClaimedListWire = r.json().await?;
-        Ok(parsed.invites)
-    }
-}
-
-/// Percent-encode a [`QueueHandle`] for a URL path segment. Grammar
-/// (`[a-z0-9_-:]`) means only `:` needs encoding for path-safety —
-/// no need to pull in `percent-encoding` for one char.
-fn encode_handle(h: &QueueHandle) -> String {
-    h.as_str().replace(':', "%3A")
-}
-
-#[derive(serde::Deserialize, Debug, Clone)]
-pub struct ClaimedInviteWire {
-    pub token: String,
-    pub claimant_did: String,
-    pub claimed_at: String,
-    #[serde(default)]
-    pub purpose: Option<String>,
-}
-
-#[derive(serde::Deserialize)]
-struct ClaimedListWire {
-    invites: Vec<ClaimedInviteWire>,
 }
 
 // ---------------------------------------------------------------------------

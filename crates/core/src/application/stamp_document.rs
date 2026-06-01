@@ -85,8 +85,10 @@ pub fn stamp_document<S: Signer>(
         signature,
     );
 
-    // Validate invariant — should always pass since we just hashed.
-    let _ = AttestedDocument::new(parsed.envelope.clone(), stamp.clone(), parsed.body.clone())?;
+    // Validate invariant — should always pass since we just hashed. The
+    // aggregate no longer carries the envelope; the opaque `$envelope`
+    // block is preserved verbatim through `embed_frontmatter` below.
+    let _ = AttestedDocument::new(stamp.clone(), parsed.body.clone())?;
 
     // Preserve any existing author `$signature` (Move 2): stamping
     // attests to an already-signed envelope; it does not replace the
@@ -148,7 +150,7 @@ fn build_stamp_reason(basename: Option<&str>, headline: Option<&str>, short_hash
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::{Did, EnvelopeBuilder, QueueHandle, Recipient};
+    use crate::domain::{Did, Envelope, EnvelopeBuilder, QueueHandle, Recipient};
     use crate::infrastructure::ed25519_signer::{AlwaysAllowGate, Ed25519Signer};
     use crate::infrastructure::keys::generate_keypair;
     use crate::infrastructure::markdown::embed_stamp as do_embed;
@@ -260,7 +262,8 @@ mod tests {
         // Local capture: owner DID matches the principal's DID.
         assert_eq!(envelope.recipient.owner, me);
 
-        let pre = do_embed("# Thought\n\nworth keeping\n", Some(&envelope), None).unwrap();
+        let envelope_value = serde_yaml::to_value(&envelope).unwrap();
+        let pre = do_embed("# Thought\n\nworth keeping\n", Some(&envelope_value), None).unwrap();
         fs::write(&path, pre).unwrap();
 
         let signer = make_signer();
@@ -275,10 +278,10 @@ mod tests {
 
         let parsed = parse_document(&fs::read_to_string(&path).unwrap()).unwrap();
         assert!(parsed.stamp.is_some());
-        assert_eq!(
-            parsed.envelope.unwrap().recipient.handle.as_str(),
-            "inbox:triage"
-        );
+        // The opaque `$envelope` block is preserved verbatim; deserialize
+        // to confirm the routing handle survived the stamp round-trip.
+        let typed: Envelope = serde_yaml::from_value(parsed.envelope.unwrap()).unwrap();
+        assert_eq!(typed.recipient.handle.as_str(), "inbox:triage");
         assert_eq!(&outcome.stamp.signer, signer.signer_did());
     }
 
@@ -296,7 +299,8 @@ mod tests {
         )
         .source("test")
         .build();
-        let pre = do_embed("# Body\n", Some(&envelope), None).unwrap();
+        let envelope_value = serde_yaml::to_value(&envelope).unwrap();
+        let pre = do_embed("# Body\n", Some(&envelope_value), None).unwrap();
         fs::write(&path, pre).unwrap();
 
         let signer = make_signer();
@@ -310,7 +314,8 @@ mod tests {
         .unwrap();
 
         let parsed = parse_document(&fs::read_to_string(&path).unwrap()).unwrap();
-        assert_eq!(parsed.envelope, Some(envelope));
+        // Opaque block preserved verbatim across the stamp.
+        assert_eq!(parsed.envelope, Some(envelope_value));
         assert!(parsed.stamp.is_some());
     }
 }

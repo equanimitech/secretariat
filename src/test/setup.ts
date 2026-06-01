@@ -72,16 +72,10 @@ vi.mock('@/lib/bindings', () => ({
   commands: {
     getProfile: vi.fn().mockResolvedValue(okResult(null)),
     currentIdentity: vi.fn().mockResolvedValue(okResult(null)),
-    // Explorer
+    // Explorer (plain filesystem tree)
     listExplorerRoots: vi.fn().mockResolvedValue(okResult([])),
     listDir: vi.fn().mockResolvedValue(okResult([])),
-    listEnvelopesUnder: vi.fn().mockResolvedValue(okResult([])),
-    deleteChannel: vi.fn().mockResolvedValue(okResult(null)),
-    movePath: vi.fn().mockResolvedValue(okResult(null)),
     renamePath: vi.fn().mockResolvedValue(okResult(null)),
-    launchClaudeAt: vi.fn().mockResolvedValue(okResult(null)),
-    // Misc bindings the main window subtree pulls in lazily
-    claimInviteUrl: vi.fn().mockResolvedValue(okResult({ inviter_did: '' })),
   },
 }))
 

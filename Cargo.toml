@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["src-tauri", "crates/core", "crates/cli", "crates/relay", "crates/mcp", "crates/daemon"]
+members = ["src-tauri", "crates/core", "crates/cli", "crates/mcp", "crates/daemon"]
 
 # Shared dep versions across the workspace.
 # Per-crate Cargo.toml files reference these via `.workspace = true`.
@@ -28,19 +28,12 @@ tempfile = "3"
 x25519-dalek = { version = "2.0", features = ["static_secrets"] }
 chacha20poly1305 = "0.10"
 tokio = { version = "1.40", features = ["full"] }
-axum = "0.7"
-tower = "0.5"
-tower-http = { version = "0.6", features = ["trace", "cors"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4"] }
 toml = "0.8"
 rmcp = { version = "0.8", features = ["server", "macros", "schemars", "transport-io"] }
 schemars = "1.0"
-
-# dev only — pulled into individual crates' [dev-dependencies] by name
-assert_cmd = "2"
-predicates = "3"
 
 # Dev profile tuned for disk usage. Full debuginfo + incremental compilation
 # pushed target/debug past 16 GB during normal tauri:dev work. Trade:

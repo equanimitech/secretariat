@@ -315,7 +315,11 @@ fn read_one(path: &Path) -> Result<ChannelEnvelope, ChannelOpError> {
         path: path.to_path_buf(),
         source,
     })?;
-    let (from, source, encrypted, title, lede, summary) = match &parsed.envelope {
+    let typed = parsed
+        .envelope
+        .as_ref()
+        .and_then(|v| serde_yaml::from_value::<crate::domain::Envelope>(v.clone()).ok());
+    let (from, source, encrypted, title, lede, summary) = match &typed {
         Some(e) => (
             Some(e.from.as_str().to_string()),
             e.source.clone(),
@@ -408,8 +412,8 @@ pub fn delete_channel(channels_root: &Path, handle: &QueueHandle) -> Result<(), 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::application::{capture_to_queue, CaptureRequest};
-    use crate::domain::{Did, Root};
+    use crate::domain::{Did, EnvelopeBuilder, Recipient};
+    use crate::infrastructure::markdown::embed_stamp;
     use chrono::TimeZone;
     use tempfile::TempDir;
 
@@ -417,24 +421,34 @@ mod tests {
         Did::from_ed25519_public_key(&[0xb1; 32])
     }
 
-    /// Capture helper for tests. `vault_root` is the temp vault root;
-    /// the resolver computes `<vault>/channels/<segs>/...` for the
-    /// supplied handle (Move 3c — no `_self/` wrapper). The caller passes
-    /// `channels` only to vivify the `channel.md` first (the existence
-    /// gate refuses unknown channels).
-    fn capture(vault_root: &Path, channels: &Path, handle: &str, body: &str, now: DateTime<Utc>) {
+    /// Capture helper for tests. Vivifies the channel (the read/list
+    /// existence gate refuses unknown channels), then writes a
+    /// self-addressed envelope into the channel's `envelopes/YYYY/MM/DD/`
+    /// day-shard directly. Replaces the former `capture_to_queue` seam
+    /// (removed in the git-native teardown) with an inline file write so
+    /// the read/list invariants stay covered.
+    ///
+    /// `vault_root` is unused now (kept for call-site shape) — the helper
+    /// writes under `channels` directly, matching the Move-3c self layout.
+    fn capture(_vault_root: &Path, channels: &Path, handle: &str, body: &str, now: DateTime<Utc>) {
         let q = QueueHandle::parse(handle).unwrap();
         let _ = create_channel(channels, q.clone(), "", "", now, None);
-        let req = CaptureRequest {
-            from: principal(),
-            queue: q,
-            body: body.to_string(),
-            source: "test".to_string(),
-            title: None,
-            lede: None,
-            summary: None,
-        };
-        capture_to_queue(req, vault_root, &Root::Self_, now).unwrap();
+
+        let recipient = Recipient::new(principal(), q.clone());
+        let env = EnvelopeBuilder::new(principal(), recipient)
+            .source("test".to_string())
+            .build();
+        let env_value = serde_yaml::to_value(&env).unwrap();
+        let content = embed_stamp(body, Some(&env_value), None).unwrap();
+
+        let day_shard = channel_segment_dir(channels, &q)
+            .join("envelopes")
+            .join(now.format("%Y").to_string())
+            .join(now.format("%m").to_string())
+            .join(now.format("%d").to_string());
+        fs::create_dir_all(&day_shard).unwrap();
+        let filename = format!("{}-test.md", now.format("%Y%m%dT%H%M%SZ"));
+        fs::write(day_shard.join(filename), content).unwrap();
     }
 
     /// Self-channels root under a temp vault, matching what `capture()`
