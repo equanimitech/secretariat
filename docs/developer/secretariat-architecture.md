@@ -1,52 +1,47 @@
 # Secretariat — architecture
 
-This document describes the system as it exists today — channels, orgs,
-MCP-primary. It is the orientation read for Claude and for any developer
-landing on the repo. For shipping state see `CHANGELOG.md`; for the _why_
-behind the current substrate, see
-[`../ideas/2026-05-12-secretariat-as-autonomous-enterprise-substrate.md`](../ideas/2026-05-12-secretariat-as-autonomous-enterprise-substrate.md);
-for the substrate layout decision, see
-[`../decisions/2026-05-12-substrate-layout-v03.md`](../decisions/2026-05-12-substrate-layout-v03.md).
+This document describes the system as it exists today, after the **v0.12.0
+git-native teardown** (see [`../../CHANGELOG.md`](../../CHANGELOG.md)). The
+correspondence apparatus — federation, channels, orgs, contracts, compose,
+capture, invite, the review queue — was cut. What remains is a **markdown
+editor** over a plain filesystem tree plus the **Signet stamp / verify / read
+core**, with `sec launch` opening a cognition CLI in a repo-bound `cwd`.
+
+For the _why_ behind the cut, see
+[`../ideas/2026-05-31-git-native-substrate.md`](../ideas/2026-05-31-git-native-substrate.md)
+and the bounded-context decision
+[`../decisions/2026-06-01-signet-secretariat-bounded-context-boundary.md`](../decisions/2026-06-01-signet-secretariat-bounded-context-boundary.md).
+Pre-teardown docs describing channels/orgs/relay are **historical records**,
+not current orientation.
 
 ## What the system does
 
-Secretariat is the operating substrate for an autonomous enterprise. AI
-agents (with their own DIDs) draft continuously into shared channels;
-the human principal selectively stamps the envelopes that count
-(decisions, commitments, external comms, contracts). Everything is
-markdown on the local filesystem, signed by its author, optionally
-sealed to a recipient, optionally elevated by a Touch-ID-gated stamp.
+A human opens a markdown document, reads it, and **seals it** with a
+biometric-gated signature. AI (Claude, via MCP or `sec launch`) reads, drafts,
+and _proposes_ a stamp; the principal is the only one who can stamp. The seal
+is an `$attestation` block embedded in the document's frontmatter, verifiable
+by anyone with no server in the middle.
 
-Three trust layers, composed over two records (envelope + stamp):
+Two verifiable layers, embedded in the document:
 
-1. **Signed envelope** — every envelope carries a detached ed25519
-   signature from its author (human passport or agent DID). **Mandatory.**
-   Drives provenance: _did this come from the claimed author?_
-2. **Stamp** — Touch-ID attestation by the principal. **Selective.**
-   Applied to envelopes the principal elects to elevate; the stamped
-   subset is the org's authoritative ledger, the unstamped remainder
-   is ambient context.
-3. **Counter-stamp** — multi-principal stamp on the same envelope
-   (process-verbaux model). **Reserved.** Design space defined in the
-   lexicon; no record type ships yet — Themia's annual AG is the
-   concrete driver.
+1. **Signature** — a detached ed25519 signature keyed to the author's DID
+   (human principal or authorized agent). Proves _did this come from the
+   claimed author?_
+2. **Stamp** — Touch-ID attestation by the principal. **Selective.** Applied
+   to documents the principal elects to elevate; the stamped subset is the
+   authoritative record, the unstamped remainder is ambient context.
+3. **Counter-stamp** — multi-principal stamp on the same document. **Reserved.**
+   Design space defined in the lexicon; no record type ships yet.
 
-Composition layered on top:
-
-- **Org** = `did:web` document advertising channels + member roster.
-- **Channel** = an append-only envelope log identified by
-  `(owner_did, handle)` where `handle` ∈ `inbox:*` | `area:*` | `channel:*`.
-  Owner's relay is the canonical sequencer; subscribers read that
-  sequence.
-- **Contract** = roster + cadence + trust gate, accumulating along the
-  channel tree (org-root → ancestors → leaf) the way `CLAUDE.md` walks
-  up from a working directory.
+The substrate is **git repositories**: documents are markdown files under a
+repo's `docs/` (or anywhere); the identity + signing key live under
+`~/.secretariat/`. There is no queue tree, no daemon poll loop, no relay.
 
 ## Repository layout
 
 ```
 secretariat/
-├── Cargo.toml                    workspace root (5 crates)
+├── Cargo.toml                    workspace root
 ├── crates/
 │   ├── core/                     library — all business logic
 │   │   └── src/
@@ -58,27 +53,29 @@ secretariat/
 │   │       └── application/      use cases (orchestration)
 │   ├── cli/                      `sec` binary
 │   ├── mcp/                      `sec-mcp` MCP server (rmcp)
-│   ├── daemon/                   `sec-daemon` background service
-│   └── relay/                    `sec-relay` owner-as-sequencer server
-├── src-tauri/                    Tauri shell (tray + sidecar wiring)
+│   ├── daemon/                   `sec-daemon` — macOS LaunchAgent surface only
+│   └── cognition-claude-sdk/     Claude Agent SDK cognition adapter
+├── src-tauri/                    Tauri shell (markdown editor + tray + sidecar wiring)
 ├── tools/touchid-prompt/         Swift biometric helper
 ├── lexicons/                     AT-proto-shaped record schemas (truth)
 └── docs/
     ├── developer/                ← you are here
-    ├── decisions/                ADRs (substrate layout, etc.)
+    ├── decisions/                ADRs
     ├── ideas/                    raw captures
-    ├── pitches/                  Shape Up pitches for in-flight work
+    ├── pitches/                  Shape Up pitches (many pre-teardown = historical)
     └── milestones/               historical milestones
 ```
+
+The `relay/` crate was deleted in the teardown; the workspace is now five
+crates: `cli`, `core`, `mcp`, `daemon`, `cognition-claude-sdk`.
 
 ## Layer dependencies (DDD)
 
 ```
 crates/cli                  ──▶ application + infrastructure
 crates/mcp                  ──▶ application + infrastructure
-crates/daemon               ──▶ application + infrastructure
-crates/relay                ──▶ (independent — HTTP service, no domain coupling)
-src-tauri                   ──▶ (sidecar wiring only; no direct core dep)
+crates/daemon               ──▶ (LaunchAgent install/uninstall/status + keepalive serve)
+src-tauri                   ──▶ (sidecar wiring + editor UI; no direct core dep)
 crates/core::application    ──▶ ports + domain
 crates/core::infrastructure ──▶ ports + domain
 crates/core::ports          ──▶ domain
@@ -87,120 +84,69 @@ crates/core::domain         ──▶ codec (multibase only)
 
 **Hard rule:** the domain layer cannot use `std::fs`, `reqwest`,
 `chrono::Utc::now()`, or any IO/clock. Time and randomness enter via
-parameters or ports. The architectural guardrail keeps domain testable
-as pure logic and makes illegal states unrepresentable at construction.
+parameters or ports. The guardrail keeps domain testable as pure logic and
+makes illegal states unrepresentable at construction.
 
-## Filesystem layout (passport-rooted)
+## Filesystem layout
 
-Each principal-controlled identity is a **passport** — a self-contained
-subtree under `~/.secretariat/` (override via `SECRETARIAT_HOME`).
-Possession of the private key is the identity proof; no sidecar pointer
-file.
+Two roots:
+
+**1. Identity home — `~/.secretariat/`** (override via `SECRETARIAT_HOME`).
+Holds the principal's key + identity, written by `sec init`. Possession of the
+private key is the identity proof.
 
 ```
 ~/.secretariat/
-├── <passport-handle>/              # `did:web:DOMAIN` → DOMAIN; `did:key` → slug(display_name)
-│   ├── .identity                   # role: passport, canonical DID, handle binding
-│   ├── key                         # ed25519 PKCS#8, mode 0600 — THE proof
-│   ├── did                         # cross-checked against key on startup
-│   ├── profile.json
-│   ├── template.md                 # global envelope template
-│   ├── contacts.json
-│   ├── cognition.json
-│   ├── CLAUDE.md
-│   ├── .claude/{skills,agents,commands}/
-│   ├── queues/                     # flat captures: inbox:*, area:*
-│   └── channel/                    # channel-tree: channel:*
-│       └── <segs>/
-│           ├── contract.local.md   # per-subscriber consumption contract
-│           ├── envelopes/YYYY/MM/DD/<ts>-<hash>.md
-│           └── outbox/             # drafts watched by the daemon
-│
-├── <org-or-peer-handle>/           # subscriptions — NO `key` file
-│   ├── .identity                   # role: org-subscription | peer-subscription
-│   ├── CLAUDE.md                   # context from owner's _meta
-│   ├── .claude/                    # skills/agents from owner's _meta
-│   └── channel/<segs>/
-│       ├── contract.local.md
-│       ├── envelopes/...
-│       ├── outbox/
-│       ├── _meta/                  # governance: roster, channel-wide policy
-│       └── _ciphertext/            # sealed bodies awaiting decryption
-│
-├── peers/                          # global did-doc cache
-└── bin/                            # helper binaries (touchid-prompt, etc.)
+├── identity.md                 # canonical DID, display name, authorized_agents
+├── key                         # ed25519 PKCS#8, mode 0600 — THE proof
+├── profile.json                # display name (presence)
+├── cognition.toml / preferences.toml   # cognition launcher config
+└── bin/                        # helper binaries (touchid-prompt, etc.)
 ```
 
-The channel directory IS a Claude Code project. `cd <channel-dir> && claude`
-activates `CLAUDE.md`, `.claude/skills/`, the envelope history, the
-consumption contract, and the outbox — same directory powers interactive
-sessions and headless agents launched by the daemon via the Claude
-Agent SDK.
+**2. Document substrate — git repositories.** Documents are markdown files
+with `$envelope` / `$attestation` frontmatter, living anywhere — typically a
+repo's `docs/`. `sec stamp` / `sec verify` / `sec read` operate on any file
+path; `/review-repos` walks a repo's doc surface by stamp state. There is no
+canonical `~/.secretariat/` document tree anymore — the repo _is_ the
+substrate (architectural invariant #8).
 
-**Two-tier file model in transit-bearing channels:** envelopes arrive
-sealed under `_ciphertext/`; the daemon decrypts to `envelopes/` for
-agent + grep access. The principal sees plaintext markdown; transports
-only ever saw signed ciphertext.
+`sec launch` resolves a repo path (optionally via a `root_path` override) and
+opens the configured cognition CLI there, so `cd <repo> && claude` activates
+`CLAUDE.md`, `.claude/skills/`, and the doc history for free.
 
 ## Domain (pure business logic)
 
-`crates/core/src/domain/`
+`crates/core/src/domain/` — the Signet trust core. Survives the teardown
+intact.
 
 ### Value objects (newtypes, parse-time validation)
 
-- **`Did`** — `did:web:<host>[:<path>]` or `did:key:z<multibase>`.
-  `parse`, `from_ed25519_public_key`, `web_document_url`,
-  `embedded_ed25519_key`.
+- **`Did`** — `did:web:<host>[:<path>]` or `did:key:z<multibase>`. `parse`,
+  `from_ed25519_public_key`, `web_document_url`, `embedded_ed25519_key`.
 - **`DocHash`** — sha256 over canonical body. Serializes `sha256:<hex>`.
 - **`Signature`** — detached ed25519. Serializes `ed25519:<base64>`.
 - **`StampAct`** — `Attest | Defer | Vouch | Dispute | Redirect`. Only
   `Attest` ships today; others reserved in the lexicon.
-- **`EnvelopeDepth`** — `Gross | Subtle`.
-- **`EnvelopeUrgency`** — `Now | Soon | Whenever`.
-- **`QueueHandle`** — `inbox:<seg>[:<seg>...]` |
-  `area:<seg>[:<seg>...]` | `channel:<seg>[:<seg>...]`. Three sibling
-  namespaces in the same grammar (depth = colon count).
-- **`OrgAlias`** — kebab-case on-disk handle for an org subscription.
-- **`TrustGate`** — `Signed | Stamped | CounterStamped` (minimum
-  receiver requirement).
 
-### Entities
-
-- **`Stamp`** — signed human act. Immutable. Lexicon
-  `tech.equanimi.secretariat.stamp`.
-- **`Envelope`** — author's bid: from / to / handle / depth / urgency /
-  `reply_to?: DocHash` (threading). Lexicon
-  `tech.equanimi.secretariat.envelope`. The `(to, handle)` pair factors
-  the queue URI `did:web:themia.pro#channel:dommage-corporel:paris-cohort`
-  — one identity, many queues.
-- **`Recipient`** — `Peer { did }` | `LocalQueue { handle }`. Routing
-  discriminator; doesn't travel on-wire (recovered from envelope).
-- **`Org`** — DID-rooted namespace; cached projection of the org's
-  `did:web` DID document plus its advertised channels.
-- **`ChannelDef`** — per-channel governance (display name, description,
-  default contract knobs). Lexicon
-  `tech.equanimi.secretariat.channelDef`.
-- **`ChannelContract`** — receiver-side consumption contract: cadence
-  floor, `min_trust: TrustGate`, notify policy, filters. Accumulates
-  down the channel tree (org-root → ancestors → leaf); roster = UNION,
-  cadence_floor / trust_gate = MAX-RESTRICTIVE. Lives in
-  `contract.local.md` — `.local` is load-bearing (private, never sent,
-  never shared).
-- **`Contact`** — principal-local roster entry (DID + display + notes).
+The `$envelope` frontmatter is parsed **opaquely** post-teardown — the crypto
+core reads/embeds attestations without depending on the channel `Envelope`
+shape. Legacy queue/channel/org value objects (`QueueHandle`, `OrgAlias`,
+`TrustGate`, `EnvelopeDepth/Urgency`) were cut as live types.
 
 ### Aggregate
 
-- **`AttestedDocument`** — `Option<Envelope>`, `Stamp`, `body: String`.
-  Construction enforces the invariant
-  `stamp.doc_hash == canonical_body_hash(body)`. Signature verification
-  is _not_ in the aggregate — it requires IO (DID resolution) and is
-  composed in the application layer.
+- **`AttestedDocument`** — `Stamp` + `body: String` (the envelope coupling was
+  severed in teardown phase P1). Construction enforces the invariant
+  `stamp.doc_hash == canonical_body_hash(body)`. Signature verification is
+  _not_ in the aggregate — it requires IO (DID resolution) and is composed in
+  the application layer.
 
 ### Pure helpers
 
-- **`canonical_body_hash(body) -> DocHash`** — strip leading BOM,
-  normalize CRLF→LF, strip trailing whitespace; preserve leading
-  whitespace; SHA-256 over UTF-8.
+- **`canonical_body_hash(body) -> DocHash`** — strip leading BOM, normalize
+  CRLF→LF, strip trailing whitespace; preserve leading whitespace; SHA-256
+  over UTF-8.
 
 ## Ports (traits)
 
@@ -208,12 +154,11 @@ only ever saw signed ciphertext.
 
 - **`Signer`** — `signer_did()`, `sign(doc_hash, reason) -> Signature`.
   Implementations gate signing on a humanness check (biometric).
-- **`DidResolver`** — `resolve(did) -> ResolvedDid` returning ed25519
-  keys; implementations may cache.
-- **`CognitionPort`** — `complete(messages, tools) -> Completion`. The
-  agent loop talks to this, not a vendor SDK. Adapters: Claude Code
-  (subscription), OpenAI-compatible (BYOK), local (deferred). Sovereignty
-  over cognition parallels sovereignty over keys.
+- **`DidResolver`** — `resolve(did) -> ResolvedDid` returning ed25519 keys;
+  implementations may cache.
+- **`CognitionPort`** — `complete(messages, tools) -> Completion`. The agent
+  loop talks to this, not a vendor SDK. Sovereignty over cognition parallels
+  sovereignty over keys.
 
 ## Infrastructure (concrete adapters)
 
@@ -221,188 +166,125 @@ only ever saw signed ciphertext.
 
 ### Signing
 
-- **`Ed25519Signer<B: BiometricGate>`** — signing key + pluggable
-  biometric gate. Gate has no access to the key; it returns "verified
-  yes/no". Signing happens in Rust _after_ the gate returns success.
+- **`Ed25519Signer<B: BiometricGate>`** — signing key + pluggable biometric
+  gate. The gate has no access to the key; it returns "verified yes/no".
+  Signing happens in Rust _after_ the gate returns success.
 - **`BiometricGate`** trait. Real impl: **`TouchIdGate`** shells out to
   `tools/touchid-prompt/` (Swift). Test impls: `AlwaysAllowGate`,
   `AlwaysDenyGate`.
 
 ### Resolution
 
-- **`DidWebResolver`** — HTTPS fetch of `did.json`, cached at
-  `peers/<sanitized-did>.json`. Trust-on-first-use; no TTL in MVP.
+- **`DidWebResolver`** — HTTPS fetch of `did.json`, cached as a peer doc.
+  Trust-on-first-use; no TTL in MVP.
 - **`DidKeyResolver`** — pure function over the embedded key.
 - **`CompositeDidResolver`** — dispatches by `did.method()`.
-
-### Crypto (`crypto/`)
-
-- **`sealed`** — sealed-box body encryption: ed25519 → x25519
-  conversion + XChaCha20-Poly1305 to recipient's DID-derived key.
-  Transports see signed ciphertext, never plaintext.
-
-### Persistence (`*_store.rs`)
-
-- **`Substrate`** (formerly `KeyPaths`) — substrate root resolution;
-  ready for multi-passport API even though the substrate currently
-  enforces single.
-- **`ProfileStore`, `ContactStore`, `OrgStore`, `ChannelDefStore`,
-  `ContractStore`, `QueueDir`** — filesystem-backed stores. Each is the
-  read+write boundary for one aggregate.
-- Keys: PKCS#8 PEM, mode `0600`, refuse to overwrite.
-
-### Transport (`transport/`)
-
-- **`relay`** — HTTP client against `sec-relay`. Owner-as-sequencer per
-  channel; subscribers poll (humans, ≥15-min floor — anti-compulsion)
-  or push-subscribe (agents, sub-second).
-
-### Cognition (`cognition/`)
-
-- **`claude`** — Claude Code adapter (uses the user's existing
-  subscription).
-- **`openai_compat`** — generic adapter for OpenAI-compatible endpoints
-  (Anthropic API, Ollama, etc.).
-- **`ledger`** — per-conversation transcript persistence.
 
 ### Markdown
 
 - **`parse_document` / `embed_stamp`** — YAML frontmatter handling.
-  `parse → embed → parse` round-trips byte-for-byte on body.
+  `parse → embed → parse` round-trips byte-for-byte on body. Embeds the
+  `$attestation` block in place.
+
+### Persistence (`*_store.rs`)
+
+- **`identity_store`** — read/write `identity.md` (DID, display name,
+  `authorized_agents`).
+- **`channel_def_store` / `binding_store` / `contract_store` / `org_store`** —
+  retained **only as keepers** backing `sec launch` (channel binding +
+  `root_path` resolution). They are not user-facing features post-teardown.
+- Keys: PKCS#8 PEM, mode `0600`, refuse to overwrite.
 
 ### Codec (`crates/core/src/codec.rs`)
 
-- **`encode_ed25519_multibase` / `decode_ed25519_multibase`** —
-  z-prefixed base58btc with `ed25519-pub` multicodec.
+- **`encode_ed25519_multibase` / `decode_ed25519_multibase`** — z-prefixed
+  base58btc with the `ed25519-pub` multicodec.
+
+### Cognition (`crates/cognition-claude-sdk/`)
+
+- Claude Agent SDK adapter — drives a headless cognition session for
+  `sec launch` / background work. Other substrates (Anthropic API, local
+  models) wire through the same `CognitionPort` per invariant #5.
 
 ## Application (use cases)
 
-`crates/core/src/application/` — every principal-facing primitive
-ships parallel use case + CLI command + MCP tool.
+`crates/core/src/application/` — post-teardown the surviving use cases are:
 
-| Use case                        | What it does                                                                     |
-| ------------------------------- | -------------------------------------------------------------------------------- |
-| `compose_envelope`              | Read template, prepend `$envelope`, write to recipient's outbox                  |
-| `stamp_document`                | Hash + sign + embed; refuses re-stamp unless `force`                             |
-| `verify_document`               | Returns `Verified / Tampered / Unsigned / SignerUnresolvable / SignatureInvalid` |
-| `send_envelope`                 | Seal body to recipient, hand to relay client                                     |
-| `capture_ops`                   | `capture(queue, body)` → write to `<passport>/queues/<handle>/...`               |
-| `contextify_capture`            | Enrich raw capture with org/channel context for review                           |
-| `inbox_ops`, `inbox_actions`    | Read / archive / route inbound envelopes                                         |
-| `review_queue`                  | Cross-channel walker — collates inbox + outbox drafts + captures                 |
-| `channels_ops`                  | Create / list / delete channels under a passport-owned org                       |
-| `org_ops`                       | Create / list / delete orgs (did:web-rooted)                                     |
-| `contract_ops`                  | Get / set consumption contracts; resolver accumulates org-root → leaf            |
-| `contact_ops`                   | Add / list / remove contacts (passport-local roster)                             |
-| `invite_ops`                    | Create + claim bilateral correspondence invites                                  |
-| `process_correspondence_claims` | Daemon-side: process accepted invites, install peer subscription                 |
-| `delivery_policy`               | Resolve effective contract to decide queue-vs-surface                            |
-| `sync`                          | Pull from relay, decrypt `_ciphertext/` → `envelopes/`, write index              |
+| Use case          | What it does                                                                       |
+| ----------------- | ---------------------------------------------------------------------------------- |
+| `stamp_document`  | Hash + sign + embed `$attestation`; refuses re-stamp unless `force`                |
+| `verify_document` | Layered result `{signature, stamp, counter_stamps}` against the signer's DID doc   |
+| `read`/`inbox_ops`| Read + decrypt the body of a document (the read/decrypt path; list/draft cut)       |
+| `launch_channel`  | Resolve a repo-bound `cwd` (via keeper stores + `root_path`) and exec the cognition CLI |
+| `agent_ops`       | Add / list / remove / rotate authorized agents in `identity.md`                    |
+
+Cut in teardown: `compose_envelope`, `send_envelope`, `capture_ops`,
+`contextify_capture`, `review_queue`, `inbox_actions`, `channel_def_envelope`,
+`contract_ops`, `invite_ops`, `accept_org_membership`,
+`process_correspondence_claims`, `delivery_policy`, `sync`, `federation`.
 
 ## CLI (`sec`)
 
 `crates/cli/src/`
 
 ```
-sec init [--did did:web:<host>[:<path>]]
-sec compose --to <did> [--handle <queue-handle>] [--depth ...] [--urgency ...]
-sec capture --queue <handle> [--body <text>]
-sec channels {create | list | delete | get-contract | set-contract | resolve-contract}
-sec orgs {create | list | delete | get-contract | set-contract}
+sec init [--did did:web:<host>[:<path>]]   # generate key, write ~/.secretariat/*
+sec agent {add | list | remove | rotate}   # manage authorized agents (scribes)
 sec stamp <file> [--act attest] [--force] [--allow-test-biometrics]
 sec verify <file> [--json]
-sec list {inbox | outbox | peers}
-sec contact {add | list | remove}
-sec read <envelope>
-sec invite {create | accept}
-sec daemon {install | uninstall | status | tick}
-sec mcp install
-sec profile {get | set}
+sec read <file>                            # decrypt + print body
+sec launch [<repo>]                        # open cognition CLI in a repo-bound cwd
+sec mcp install                            # wire sec-mcp into Claude Desktop / Code
+sec daemon {install | uninstall | status}  # macOS LaunchAgent (keepalive serve)
+sec profile {get | set}                    # display name (presence)
+sec view <file>                            # open a markdown file in the desktop app
 ```
 
-Exit codes: `0` ok, `1` generic error, `2` verify failed / already
-stamped, `3` biometric refused.
+Cut subcommands: `compose`, `capture`, `channels`, `orgs`, `invite`, `list`,
+and `daemon tick` / `daemon register`.
+
+Exit codes: `0` ok, `1` generic error, `2` verify failed / already stamped,
+`3` biometric refused.
 
 Env vars: `SECRETARIAT_HOME`, `SECRETARIAT_TOUCHID_BINARY`,
 `SECRETARIAT_BIOMETRIC` (`touchid` | `always_allow` | `always_deny` —
-non-touchid honored only in debug builds or with
-`--allow-test-biometrics`).
+non-touchid honored only in debug builds or with `--allow-test-biometrics`).
 
 ## MCP (`sec-mcp`)
 
-`crates/mcp/src/server.rs` exposes tools via `rmcp` `#[tool(...)]`
-attributes. Same parameter shapes as the CLI flags, same return shapes
-as the use cases' output structs.
+`crates/mcp/src/server.rs` exposes tools via `rmcp` `#[tool(...)]` attributes.
 
-**Tools:** `compose`, `capture`, `list_channels`, `read_channel`,
-`stamp`, `archive`, `read`, `verify`, `invite`, `accept_invite`,
-`create_org`, `list_orgs`, `delete_org`, `create_channel`,
-`delete_channel`, `get_channel_contract`, `set_channel_contract`,
-`resolve_channel_contract`, `get_org_contract`, `set_org_contract`,
-`daemon_tick`, `daemon_status`.
+**Tools (the complete current set):** `stamp`, `read`, `verify`, `agent_add`,
+`agent_list`, `agent_remove`, `agent_rotate`.
 
-**Prompts:** `idea`, `pain`, `review`, `compose`, `onboard`, `stamp`.
-
-MCP is the **primary interface** per
-[`memory/project_mcp_is_primary_interface.md`](../../CLAUDE.md). UI
-navigates; MCP handles all CRUD.
+The server's `instructions` string carries the **stamp ceremony**: before
+`stamp`, the client must `read` the file, render the full body verbatim,
+obtain explicit same-turn consent, then call `stamp` (Touch ID gates
+regardless). Claude proposes; the principal stamps. Cut in teardown:
+`compose`, `capture`, `list_channels`, `read_channel`, `archive`,
+`create_channel`/`delete_channel`, `create_org`/`list_orgs`/`delete_org`,
+`invite`/`accept_invite`, all `*_contract` tools, `daemon_tick`/`daemon_status`,
+and the `orgs` / `compositions` resources.
 
 ## Daemon (`sec-daemon`)
 
-`crates/daemon/src/` — local nervous system, installed as a macOS
-LaunchAgent (`sec daemon install`).
-
-Subsystems:
-
-- **`outbox_watcher`** — watches `<passport>/.../<channel>/outbox/`,
-  surfaces drafts for review and (on stamp) hands to relay client.
-- **`serve`** — main loop; ticks scheduled subscribers, processes
-  inbound from relays.
-- **`relay_register`** — registers the passport's own owned channels
-  with its relay.
-- **`ipc`** — local socket for `sec daemon tick` / `status`.
-
-Push for agents (sub-second), poll for humans (≥15-min floor). The
-anti-compulsion floor is a property of the human subscription, not the
-substrate — agents on the same channel get push.
-
-## Relay (`sec-relay`)
-
-`crates/relay/src/` — minimal HTTP service implementing
-owner-as-sequencer for a single passport's channels. **Independent
-crate; no domain coupling.**
-
-Routes (`routes/`):
-
-- `POST /channels/:handle/envelopes` — append (auth: passport's own key)
-- `GET /channels/:handle/envelopes?cursor=` — read sequence
-- `POST /channels/:handle/subscribe` — agent push subscription
-- Invite endpoints.
-
-Per-channel strong consistency emerges from the owner's relay. Cross-
-channel global ordering is explicitly NOT provided — channels are
-independent logs; cross-channel causality is expressed via envelope-
-hash references in `reply_to`.
-
-Self-hosted (the passport's own infrastructure) or run locally for
-single-user setups. No central broker, registry, or marketplace.
+`crates/daemon/src/` — reduced in teardown to the **macOS LaunchAgent
+surface**: `install` / `uninstall` / `status` plus a minimal keepalive `serve`
+that the installed plist targets. The poll/send loop, `outbox_watcher`,
+`relay_register`, and the IPC `TICK` path were all deleted. There is no
+federation, no inbound-from-relay, no scheduled subscriber tick.
 
 ## Wire format
 
-Stamped envelope = markdown with YAML frontmatter:
+A stamped document = markdown with YAML frontmatter:
 
 ```markdown
 ---
-$envelope:
+$envelope: # parsed opaquely by the crypto core — routing metadata only
   $type: tech.equanimi.secretariat.envelope
   from: did:key:z6Mk... | did:web:rafa.equanimi.tech
-  to: did:web:themia.pro # owner DID of the queue
-  handle: channel:dommage-corporel:paris # queue handle under that owner
-  depth: gross | subtle
-  urgency: now | soon | whenever
-  reply_to: sha256:<hex> # optional — threading
-  source: <free-form>
-$attestation: # absent if envelope is signed-only
+  ...
+$attestation: # absent if the document is signed-only / unstamped
   $type: tech.equanimi.secretariat.stamp
   signer: <did>
   act: attest
@@ -416,20 +298,16 @@ $attestation: # absent if envelope is signed-only
 ...
 ```
 
-Queue URI assembled: `<to>#<handle>` →
-`did:web:themia.pro#channel:dommage-corporel:paris`. W3C DID URL
-fragment semantics ("sub-resource of identity"); wire format keeps
-`(to, handle)` factored for efficient routing.
+**Hashing rules** — strip leading BOM, normalize CRLF→LF, strip trailing
+whitespace, preserve leading whitespace, SHA-256 over UTF-8. The hash covers
+the **body only**; frontmatter is metadata. Editing the body after stamping
+breaks the hash and `verify` reports `tampered`.
 
-**Hashing rules** — strip leading BOM, normalize CRLF→LF, strip
-trailing whitespace, preserve leading whitespace, SHA-256 over UTF-8.
-The hash covers the **body only**; envelope frontmatter is routing
-metadata.
-
-**Body encryption** — sealed-box to recipient's x25519 (from ed25519);
-transports see signed ciphertext. Bodies under `_ciphertext/` until
-the daemon decrypts to `envelopes/`. Decrypted plaintext never leaves
-the device.
+> Note: the stamp hash preimage (body-only vs frontmatter+body) and the
+> record shape (`$attestation` object vs a `$signatures` array) are an active
+> point of divergence between `sec`'s stamp core and the standalone Signet
+> crate — see the bounded-context decision. Treat the above as `sec`'s current
+> on-wire shape.
 
 ## Three-layer trust model in code
 
@@ -437,47 +315,39 @@ the device.
 
 ```json
 {
-  "signature": "ok | invalid | unresolvable",
-  "stamp": "none | ok | invalid",
+  "signature": "ok | invalid | unresolvable | none | verifiedAgent | okUnverifiedAgent",
+  "stamp": "none | verified | tampered",
   "counter_stamps": []
 }
 ```
 
-Recipient policy decides what's required. An unstamped-but-signed
-envelope is _informational_ (the author wrote this); a stamped envelope
-is _authoritative_ (the principal vouches). UI surfaces this
-distinction; agents acting on received envelopes MUST treat
+Recipient policy decides what's required. An unstamped-but-signed document is
+_informational_ (the author wrote this); a stamped document is _authoritative_
+(the principal vouches). Agents acting on a received document MUST treat
 signed-only ≠ stamped.
 
-Counter-stamps are designed in the lexicon but no record type ships
-yet — deferred until concrete driver (Themia's annual
-`assemblee_generale` process-verbaux).
+Counter-stamps are designed in the lexicon but no record type ships yet —
+deferred until a concrete driver.
 
 ## Threat model
 
 ### Defended
 
-- **AI forging a stamp** — biometric gate blocks; signing happens in
-  Rust after gate success, key never reachable from AI surface.
-- **Tampered body** — hash invariant breaks; aggregate refuses to
-  construct.
-- **Impersonator's stamp** — signer's DID document is authoritative
+- **AI forging a stamp** — biometric gate blocks; signing happens in Rust
+  after gate success, key never reachable from the AI surface.
+- **Tampered body** — hash invariant breaks; aggregate refuses to construct;
+  `verify` reports `tampered`.
+- **Impersonator's stamp** — the signer's DID document is authoritative
   (`did:web` over HTTPS or `did:key` self-proving).
-- **Transport leak of content** — bodies sealed end-to-end before they
-  reach the wire.
 
 ### Acknowledged (not defended)
 
-- **Compromise of the principal's machine** — sudo + FS access
-  exfiltrates the key. Mitigation later: Secure Enclave via WebAuthn.
-- **Metadata leakage to transports** — Gmail/Slack see
-  who-to-whom-and-when. Acknowledged in invariant #4; bilateral
-  contracts may negotiate stronger transports for steady state.
-- **DNS hijack of `did:web` host** — mitigated by HTTPS + first-fetch
-  cache, but not absent attack-on-first-use.
+- **Compromise of the principal's machine** — sudo + FS access exfiltrates the
+  key. Mitigation later: Secure Enclave via WebAuthn.
+- **DNS hijack of `did:web` host** — mitigated by HTTPS + first-fetch cache,
+  but not absent attack-on-first-use.
 - **Coercion** — biometric verifies presence, not free will.
 - **Replay** — same body → same hash → same signature. Intentional.
-  Envelope `source` carries app-level dedupe IDs.
 
 ## Architectural invariants (recap)
 
@@ -485,25 +355,22 @@ These are properties of the _system_, not rules of _behavior_. See
 [`../../AGENTS.md`](../../AGENTS.md) for the full list. Summary:
 
 1. No central server. 2. No telemetry. 3. Keys never leave device.
-2. Transports are adapters, not authorities. 5. Cognition is pluggable.
-3. Correspondence is bilateral or multi-party; always local.
-4. No SaaS distribution. 8. Filesystem authoritative; channel dir is
-   the activation surface. 9. Owner-as-sequencer per channel; cross-
-   channel order not provided.
+4. Cognition is pluggable. 5. Filesystem is authoritative; the git repo is the
+   substrate. 6. No SaaS distribution.
+
+(The pre-teardown invariants about transports-as-adapters, bilateral/
+multi-party correspondence, and owner-as-sequencer channels lapsed with the
+correspondence apparatus; they survive only as historical record.)
 
 ## What's not built yet
 
-| Component                                                           | Trigger                                      |
-| ------------------------------------------------------------------- | -------------------------------------------- |
-| Counter-stamp record + multi-party stamping ceremony                | Themia `assemblee_generale` annual AG        |
-| Attention routing daemon (cadence + `queue_handle` + `kind`)        | 2–3 weeks of real channel traffic            |
-| SQLite read-cache for cross-channel queries                         | When query latency demands                   |
-| Multi-passport same-device sync (key migration UX)                  | Concrete driver                              |
-| Channel ownership transfer (`rosterUpdate.op = transfer_ownership`) | Concrete driver                              |
-| Lexicon publication                                                 | After self-use stabilizes the schema         |
-| Windows support                                                     | When Christophe's brief workflow needs it    |
-| `defer` / `vouch` / `dispute` / `redirect` stamp acts               | As cadence + multi-party land                |
-| Webhook adapter for external sources                                | DID-keyed external services or agent-proxied |
+| Component                                            | Trigger                               |
+| ---------------------------------------------------- | ------------------------------------- |
+| Counter-stamp record + multi-party stamping ceremony | A concrete multi-principal driver     |
+| Stamp-chain (each stamp signing the previous hash)   | When an audit trail demands it        |
+| Signet-crate convergence (one stamp core)            | CI-gated on seal continuity           |
+| Lexicon publication                                  | After self-use stabilizes the schema  |
+| Windows support                                      | When Christophe's workflow needs it   |
+| `defer` / `vouch` / `dispute` / `redirect` acts      | As multi-party lands                  |
 
-See [`../milestones/`](../milestones/) for the historical sequence and
-the substrate decision in [`../decisions/2026-05-12-substrate-layout-v03.md`](../decisions/2026-05-12-substrate-layout-v03.md).
+See [`../milestones/`](../milestones/) for the historical sequence.

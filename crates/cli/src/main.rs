@@ -30,10 +30,10 @@ enum Cmd {
     /// Verify a stamped markdown file against the signer's did:web document.
     Verify(commands::verify::Args),
 
-    /// Run the daemon: register with relays + serve the poll/send loop.
+    /// Manage the macOS LaunchAgent: install / uninstall / status + keepalive serve.
     Daemon(commands::daemon::Args),
 
-    /// Decrypt + print the body of an envelope (encrypted or plaintext).
+    /// Decrypt + print the body of a markdown document (encrypted or plaintext).
     Read(commands::read::Args),
 
     /// Open Claude Code (or the configured cognition CLI) in a channel-bound cwd.
