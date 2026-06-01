@@ -20,11 +20,12 @@ generic template defaults (the project was bootstrapped from
 ## What's here today
 
 - **CLI (`sec`)** — works end-to-end on macOS. Subcommands:
-  `init` / `agent` / `stamp` / `verify` / `read` / `launch` / `mcp` /
+  `init` / `agent` / `repo` / `stamp` / `verify` / `read` / `launch` / `mcp` /
   `daemon` / `profile` / `view`. See
   `docs/developer/secretariat-architecture.md`.
 - **MCP server (`sec-mcp`)** — built. Tools: `stamp`, `read`, `verify`,
-  `agent_add`, `agent_list`, `agent_remove`, `agent_rotate`. That is the
+  `agent_add`, `agent_list`, `agent_remove`, `agent_rotate`,
+  `repo_add`, `repo_list`, `repo_remove`. That is the
   complete current set. The server `instructions` carry the stamp ceremony.
   Source at `crates/mcp/`.
 - **Tauri shell** — the **markdown editor**: read/edit markdown, frontmatter
