@@ -37,7 +37,7 @@ zenborg ░░░░░░░░░░░░░░░░░░░░ 1 call
 
 ### MCP Servers to Activate
 
-- [ ] secretariat — local daemon + MCP exposing compose/capture/stamp/read/channels/orgs. Install the Tauri app; `sec mcp install` wires it into Claude Code automatically.
+- [ ] secretariat — markdown editor + MCP exposing stamp/read/verify (+ agent management). Install the Tauri app; `sec mcp install` wires it into Claude Code automatically.
 
 - [ ] things-mcp — Things 3 task access (macOS). Install via plugin marketplace; requires Things 3 app.
 
@@ -47,7 +47,7 @@ zenborg ░░░░░░░░░░░░░░░░░░░░ 1 call
 
 ### Skills to Know About
 
-- /idea — capture a raw product thought mid-conversation. Lands in the review queue, not in chat.
+- /idea — capture a raw product thought mid-conversation. Lands in Things (or repo `docs/` when code-tied), not in chat.
 
 - /pain — capture a bug, friction, or improvement without fixing inline.
 
@@ -87,7 +87,7 @@ starter task (if there is one). Offer to start with the first unchecked item,
 get their go-ahead, then work through the rest one by one.
 
 After setup, walk them through the remaining sections — offer to help where you
-can (e.g. link to channels), and just surface the purely informational bits.
+can (e.g. open a doc in the app), and just surface the purely informational bits.
 
 Don't invent sections or summaries that aren't in the guide. The stats are the
 guide creator's personal usage data — don't extrapolate them into a "team

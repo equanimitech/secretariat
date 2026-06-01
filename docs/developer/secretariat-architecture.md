@@ -233,7 +233,7 @@ sec agent {add | list | remove | rotate}   # manage authorized agents (scribes)
 sec stamp <file> [--act attest] [--force] [--allow-test-biometrics]
 sec verify <file> [--json]
 sec read <file>                            # decrypt + print body
-sec launch [<repo>]                        # open cognition CLI in a repo-bound cwd
+sec launch <handle> [--org <alias>]        # open cognition CLI in a channel-bound cwd (root_path → repo)
 sec mcp install                            # wire sec-mcp into Claude Desktop / Code
 sec daemon {install | uninstall | status}  # macOS LaunchAgent (keepalive serve)
 sec profile {get | set}                    # display name (presence)

@@ -2,6 +2,13 @@
 
 Patterns for saving and loading data to disk.
 
+> Scope: this covers **app-local** storage in the Tauri shell (preferences,
+> caches, recovery). It is **not** the document substrate — documents are
+> markdown files in git repos, and the identity/key live under
+> `~/.secretariat/` (see `secretariat-architecture.md`). There is no
+> database-as-source-of-truth; any SQLite below would be a regenerable
+> read-cache, never authoritative.
+
 ## Choosing a Storage Method
 
 | Need               | Solution           | When to Use                                                           |

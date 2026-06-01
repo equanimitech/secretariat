@@ -11,7 +11,7 @@
 
 Do not report security vulnerabilities through public GitHub issues.
 
-**Contact**: YOUR_SECURITY_EMAIL
+**Report privately** via [GitHub Security Advisories](https://github.com/equanimitech/secretariat/security/advisories/new) (private vulnerability reporting).
 
 Include:
 
@@ -59,7 +59,7 @@ std::fs::write(user_input, data)
 ### Dependency Audits
 
 ```bash
-npm audit
+pnpm audit
 cargo audit
 ```
 

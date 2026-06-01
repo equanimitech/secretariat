@@ -13,11 +13,11 @@ Thank you for your interest in contributing!
 ### Setup
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/YOUR_REPO.git
-cd YOUR_REPO
-npm install
-npm run dev
-npm run check:all
+git clone https://github.com/equanimitech/secretariat.git
+cd secretariat
+pnpm install
+pnpm tauri:dev
+pnpm check:all
 ```
 
 ## How to Contribute
@@ -33,7 +33,7 @@ npm run check:all
 1. Fork the repository
 2. Create a feature branch: `git checkout -b feature/amazing-feature`
 3. Make changes following the guidelines below
-4. Ensure checks pass: `npm run check:all`
+4. Ensure checks pass: `pnpm check:all`
 5. Commit using conventional commits
 6. Push and open a Pull Request
 
@@ -60,7 +60,7 @@ All PRs must pass:
 - Rust formatting and clippy
 - Tests
 
-Run locally: `npm run check:all`
+Run locally: `pnpm check:all`
 
 ## Commit Messages
 

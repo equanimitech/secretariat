@@ -7,9 +7,16 @@ target channel's on-disk home. The channel-dir is authoritative: its
 automatically, so a parent operator can fan into any channel's context
 with one verb.
 
-This is the human side of the launch/dispatch/root_path slice
-(`docs/pitches/2026-05-13-launch-dispatch-root-path.md`). The headless
-`dispatch` counterpart and the `bind` writer ship separately.
+This is the human side of the launch/dispatch/root_path slice (original
+pitch archived at
+`docs/superpowers/plans/archived/2026-05-13-launch-dispatch-root-path.md`).
+The headless `dispatch` counterpart and the `bind` writer were never built —
+binding is manual (see below).
+
+> Post-v0.12.0 teardown: `sec launch` survived (its channel-dir / `root_path`
+> resolution stores were kept as launch keepers), but the `sec channels` /
+> `sec orgs` commands that used to scaffold the dirs were cut. Create the
+> binding by hand as shown below.
 
 ## Resolution
 
@@ -46,16 +53,16 @@ EOF
 tree.
 
 If the bound path is a git repo, add a fenced block to its
-`.gitignore` so Secretariat artifacts don't leak into shared history:
+`.gitignore` so the private binding file doesn't leak into shared history:
 
 ```text
 # === secretariat ===
 contract.local.md
-envelopes/
-outbox/
-_ciphertext/
 # === /secretariat ===
 ```
+
+(The pre-teardown `envelopes/` / `outbox/` / `_ciphertext/` substrate dirs no
+longer exist, so `contract.local.md` is the only artifact to ignore.)
 
 ## Choosing the cognition substrate
 
@@ -133,6 +140,6 @@ platforms `sec` spawns the command and waits.
 | ---------------------------------------- | ------------------------------------------------------------------ |
 | `invalid handle ...`                     | Handle didn't parse — see `QueueHandle::parse`                     |
 | `not a channel handle`                   | Use `channel:foo` / `channel:foo:bar`, not `inbox:` / `area:`      |
-| `channel ... does not exist`             | No `channel.md` at the resolved path — `sec channels create` first |
+| `channel ... does not exist`             | No `channel.md` at the resolved path — create the binding dir by hand (above) |
 | `launch_command is empty in preferences` | `[cognition] launch_command = ""` — pick a real binary             |
 | `could not launch ...`                   | OS-level spawn failure — typically the binary isn't on `$PATH`     |
