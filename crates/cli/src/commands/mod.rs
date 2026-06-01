@@ -9,6 +9,7 @@ pub mod launch;
 pub mod mcp;
 pub mod profile;
 pub mod read;
+pub mod repo;
 pub mod stamp;
 pub mod verify;
 pub mod view;

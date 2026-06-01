@@ -36,6 +36,9 @@ enum Cmd {
     /// Decrypt + print the body of a markdown document (encrypted or plaintext).
     Read(commands::read::Args),
 
+    /// Manage the substrate manifest: enroll / list / unenroll git repos.
+    Repo(commands::repo::Args),
+
     /// Open Claude Code (or the configured cognition CLI) in a channel-bound cwd.
     Launch(commands::launch::Args),
 
@@ -58,6 +61,7 @@ fn main() -> Result<()> {
         Cmd::Verify(a) => commands::verify::run(a),
         Cmd::Daemon(a) => commands::daemon::run(a),
         Cmd::Read(a) => commands::read::run(a),
+        Cmd::Repo(a) => commands::repo::run(a),
         Cmd::Launch(a) => commands::launch::run(a),
         Cmd::Mcp(a) => commands::mcp::run(a),
         Cmd::Profile(a) => commands::profile::run(a),
