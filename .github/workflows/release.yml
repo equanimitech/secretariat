@@ -165,11 +165,10 @@ jobs:
           CLI=$(grep -m1 '^version' crates/cli/Cargo.toml | cut -d'"' -f2)
           DAEMON=$(grep -m1 '^version' crates/daemon/Cargo.toml | cut -d'"' -f2)
           MCP=$(grep -m1 '^version' crates/mcp/Cargo.toml | cut -d'"' -f2)
-          RELAY=$(grep -m1 '^version' crates/relay/Cargo.toml | cut -d'"' -f2)
           TAURI_CARGO=$(grep -m1 '^version' src-tauri/Cargo.toml | cut -d'"' -f2)
-          echo "tag=$TAG pkg=$PKG tauri.conf=$TAURI tauri.cargo=$TAURI_CARGO core=$CORE cli=$CLI daemon=$DAEMON mcp=$MCP relay=$RELAY"
+          echo "tag=$TAG pkg=$PKG tauri.conf=$TAURI tauri.cargo=$TAURI_CARGO core=$CORE cli=$CLI daemon=$DAEMON mcp=$MCP"
           fail=0
-          for v in "$PKG" "$TAURI" "$TAURI_CARGO" "$CORE" "$CLI" "$DAEMON" "$MCP" "$RELAY"; do
+          for v in "$PKG" "$TAURI" "$TAURI_CARGO" "$CORE" "$CLI" "$DAEMON" "$MCP"; do
             if [ "$v" != "$TAG" ]; then fail=1; fi
           done
           if [ "$fail" -ne 0 ]; then
