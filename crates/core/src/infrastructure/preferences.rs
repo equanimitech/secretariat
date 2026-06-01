@@ -18,6 +18,8 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::infrastructure::repo_registry::{RepoEntry, RepoRegistry};
+
 // ---------------------------------------------------------------------------
 // Errors
 // ---------------------------------------------------------------------------
@@ -200,6 +202,13 @@ pub struct Preferences {
     pub cognition: CognitionPrefs,
     #[serde(default)]
     pub delivery: DeliveryPrefs,
+    /// The substrate manifest — git repos Secretariat treats as its world.
+    /// Renders top-level `[[repos]]`. No `#[serde(flatten)]`: a direct
+    /// `Vec` renders the array-of-tables natively and dodges flatten's TOML
+    /// fragility. `Preferences` has no top-level scalar keys, so the array
+    /// ordering constraint is satisfied.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub repos: Vec<RepoEntry>,
 }
 
 impl Preferences {
@@ -234,6 +243,11 @@ impl Preferences {
             });
         }
         Ok(())
+    }
+
+    /// Borrowed query view over the enrolled repos.
+    pub fn registry(&self) -> RepoRegistry<'_> {
+        RepoRegistry::new(&self.repos)
     }
 }
 
@@ -452,5 +466,41 @@ mod tests {
         assert!(prefs.cognition.api_key.is_none());
         // Legacy file NOT deleted (we didn't migrate).
         assert!(cog.exists());
+    }
+
+    #[test]
+    fn repos_round_trip_via_toml() {
+        use super::super::repo_registry::{RepoEntry, RepoRole};
+        use std::path::PathBuf;
+        let d = dir();
+        let path = d.path().join("preferences.toml");
+        let mut prefs = Preferences::default();
+        prefs.cognition.launch_command = "claude".into();
+        prefs.repos = vec![
+            RepoEntry {
+                path: PathBuf::from("/Users/rafa/Developer/themia"),
+                role: RepoRole::Project,
+                tags: vec!["themia".into()],
+            },
+            RepoEntry {
+                path: PathBuf::from("/Users/rafa/knowledge"),
+                role: RepoRole::Home,
+                tags: vec!["equanimitech".into()],
+            },
+        ];
+        prefs.save(&path).unwrap();
+        let loaded = Preferences::load(&path).unwrap();
+        assert_eq!(loaded, prefs);
+        assert_eq!(loaded.registry().home_repos().count(), 1);
+    }
+
+    #[test]
+    fn missing_repos_deserializes_to_empty() {
+        let d = dir();
+        let path = d.path().join("preferences.toml");
+        // Older preferences.toml with no [[repos]].
+        std::fs::write(&path, "[cognition]\nlaunch_command = \"claude\"\n").unwrap();
+        let loaded = Preferences::load(&path).unwrap();
+        assert!(loaded.repos.is_empty());
     }
 }
