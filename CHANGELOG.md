@@ -4,6 +4,34 @@ All notable changes to Secretariat are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.1](https://github.com/equanimitech/secretariat/compare/v0.12.0...v0.12.1) — 2026-06-02
+
+First **published** build of the 0.12 line. v0.12.0 was tagged but never
+released — the release pipeline's version-lockstep guard still grepped the
+deleted `relay` crate and exited before building, leaving an empty draft and
+v0.11.9 as the newest build the updater could see. v0.12.1 ships the 0.12.0
+git-native teardown plus the changes below.
+
+### Added
+
+- **Repo registry (`sec repo`).** `sec repo` (enroll / list / unenroll) plus
+  the `repo_add` / `repo_list` / `repo_remove` MCP tools — the substrate
+  manifest naming which git repos are in the principal's world.
+
+### Fixed
+
+- **Release pipeline.** The version-lockstep guard no longer references the
+  deleted `crates/relay/Cargo.toml`; it now covers the seven live manifests
+  (package.json, tauri.conf.json, src-tauri Cargo, core, cli, daemon, mcp).
+  This is why v0.12.0 never published.
+
+### Changed
+
+- **Docs realigned to the teardown.** AGENTS.md, README, and the developer
+  architecture/launch docs now describe the markdown editor + Signet
+  stamp/verify/read core over the git-native substrate; obsolete plans and
+  ideas targeting the cut correspondence apparatus were archived.
+
 ## [0.12.0](https://github.com/equanimitech/secretariat/compare/v0.11.9...v0.12.0) — 2026-06-01
 
 Git-native teardown. The correspondence apparatus is cut; what remains is
