@@ -235,10 +235,10 @@ When making decisions, optimize for these two flows.
 
 Two methods supported. Default is `did:key`.
 
-| Method        | When to use                                | Hosting                            |
-| ------------- | ------------------------------------------ | ---------------------------------- |
-| **`did:key`** | New users, individuals without a domain    | Zero — the DID _is_ the public key |
-| **`did:web`** | Users with a domain they control (Rafa)    | A static `.well-known/did.json`    |
+| Method        | When to use                             | Hosting                            |
+| ------------- | --------------------------------------- | ---------------------------------- |
+| **`did:key`** | New users, individuals without a domain | Zero — the DID _is_ the public key |
+| **`did:web`** | Users with a domain they control (Rafa) | A static `.well-known/did.json`    |
 
 `sec init` (no args) auto-derives a `did:key`. `sec init --did
 did:web:rafa.equanimi.tech` opts into the domain-anchored variant.

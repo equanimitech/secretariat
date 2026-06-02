@@ -136,10 +136,10 @@ platforms `sec` spawns the command and waits.
 
 ## Errors
 
-| Error                                    | Meaning                                                            |
-| ---------------------------------------- | ------------------------------------------------------------------ |
-| `invalid handle ...`                     | Handle didn't parse — see `QueueHandle::parse`                     |
-| `not a channel handle`                   | Use `channel:foo` / `channel:foo:bar`, not `inbox:` / `area:`      |
+| Error                                    | Meaning                                                                       |
+| ---------------------------------------- | ----------------------------------------------------------------------------- |
+| `invalid handle ...`                     | Handle didn't parse — see `QueueHandle::parse`                                |
+| `not a channel handle`                   | Use `channel:foo` / `channel:foo:bar`, not `inbox:` / `area:`                 |
 | `channel ... does not exist`             | No `channel.md` at the resolved path — create the binding dir by hand (above) |
-| `launch_command is empty in preferences` | `[cognition] launch_command = ""` — pick a real binary             |
-| `could not launch ...`                   | OS-level spawn failure — typically the binary isn't on `$PATH`     |
+| `launch_command is empty in preferences` | `[cognition] launch_command = ""` — pick a real binary                        |
+| `could not launch ...`                   | OS-level spawn failure — typically the binary isn't on `$PATH`                |

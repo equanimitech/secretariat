@@ -210,13 +210,13 @@ shape. Legacy queue/channel/org value objects (`QueueHandle`, `OrgAlias`,
 
 `crates/core/src/application/` — post-teardown the surviving use cases are:
 
-| Use case          | What it does                                                                       |
-| ----------------- | ---------------------------------------------------------------------------------- |
-| `stamp_document`  | Hash + sign + embed `$attestation`; refuses re-stamp unless `force`                |
-| `verify_document` | Layered result `{signature, stamp, counter_stamps}` against the signer's DID doc   |
-| `read`/`inbox_ops`| Read + decrypt the body of a document (the read/decrypt path; list/draft cut)       |
-| `launch_channel`  | Resolve a repo-bound `cwd` (via keeper stores + `root_path`) and exec the cognition CLI |
-| `agent_ops`       | Add / list / remove / rotate authorized agents in `identity.md`                    |
+| Use case           | What it does                                                                            |
+| ------------------ | --------------------------------------------------------------------------------------- |
+| `stamp_document`   | Hash + sign + embed `$attestation`; refuses re-stamp unless `force`                     |
+| `verify_document`  | Layered result `{signature, stamp, counter_stamps}` against the signer's DID doc        |
+| `read`/`inbox_ops` | Read + decrypt the body of a document (the read/decrypt path; list/draft cut)           |
+| `launch_channel`   | Resolve a repo-bound `cwd` (via keeper stores + `root_path`) and exec the cognition CLI |
+| `agent_ops`        | Add / list / remove / rotate authorized agents in `identity.md`                         |
 
 Cut in teardown: `compose_envelope`, `send_envelope`, `capture_ops`,
 `contextify_capture`, `review_queue`, `inbox_actions`, `channel_def_envelope`,
@@ -355,7 +355,7 @@ These are properties of the _system_, not rules of _behavior_. See
 [`../../AGENTS.md`](../../AGENTS.md) for the full list. Summary:
 
 1. No central server. 2. No telemetry. 3. Keys never leave device.
-4. Cognition is pluggable. 5. Filesystem is authoritative; the git repo is the
+2. Cognition is pluggable. 5. Filesystem is authoritative; the git repo is the
    substrate. 6. No SaaS distribution.
 
 (The pre-teardown invariants about transports-as-adapters, bilateral/
@@ -364,13 +364,13 @@ correspondence apparatus; they survive only as historical record.)
 
 ## What's not built yet
 
-| Component                                            | Trigger                               |
-| ---------------------------------------------------- | ------------------------------------- |
-| Counter-stamp record + multi-party stamping ceremony | A concrete multi-principal driver     |
-| Stamp-chain (each stamp signing the previous hash)   | When an audit trail demands it        |
-| Signet-crate convergence (one stamp core)            | CI-gated on seal continuity           |
-| Lexicon publication                                  | After self-use stabilizes the schema  |
-| Windows support                                      | When Christophe's workflow needs it   |
-| `defer` / `vouch` / `dispute` / `redirect` acts      | As multi-party lands                  |
+| Component                                            | Trigger                              |
+| ---------------------------------------------------- | ------------------------------------ |
+| Counter-stamp record + multi-party stamping ceremony | A concrete multi-principal driver    |
+| Stamp-chain (each stamp signing the previous hash)   | When an audit trail demands it       |
+| Signet-crate convergence (one stamp core)            | CI-gated on seal continuity          |
+| Lexicon publication                                  | After self-use stabilizes the schema |
+| Windows support                                      | When Christophe's workflow needs it  |
+| `defer` / `vouch` / `dispute` / `redirect` acts      | As multi-party lands                 |
 
 See [`../milestones/`](../milestones/) for the historical sequence.
