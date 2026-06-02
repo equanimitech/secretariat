@@ -182,7 +182,7 @@ crates/cli         (binary `sec`)              ──▶ application + infrastru
 crates/mcp         (binary `sec-mcp`)          ──▶ application + infrastructure
 crates/daemon      (macOS LaunchAgent surface) ──▶ install/uninstall/status + keepalive
 src-tauri          (markdown editor + tray)    ──▶ sidecar wiring + editor UI
-crates/cognition-claude-sdk                    ──▶ CognitionPort adapter
+crates/cognition-claude-sdk                    ──▶ TS/Bun sidecar: Claude Agent SDK bridge (not a Cargo crate)
 crates/core::application                       ──▶ ports, domain
 crates/core::infrastructure                    ──▶ ports, domain (impls)
 crates/core::ports                             ──▶ domain (traits)

@@ -54,7 +54,7 @@ secretariat/
 │   ├── cli/                      `sec` binary
 │   ├── mcp/                      `sec-mcp` MCP server (rmcp)
 │   ├── daemon/                   `sec-daemon` — macOS LaunchAgent surface only
-│   └── cognition-claude-sdk/     Claude Agent SDK cognition adapter
+│   └── cognition-claude-sdk/     TS/Bun package — Claude Agent SDK bridge (bun-compiled to a sidecar binary; NOT a Cargo crate)
 ├── src-tauri/                    Tauri shell (markdown editor + tray + sidecar wiring)
 ├── tools/touchid-prompt/         Swift biometric helper
 ├── lexicons/                     AT-proto-shaped record schemas (truth)
@@ -66,8 +66,12 @@ secretariat/
     └── milestones/               historical milestones
 ```
 
-The `relay/` crate was deleted in the teardown; the workspace is now five
-crates: `cli`, `core`, `mcp`, `daemon`, `cognition-claude-sdk`.
+The `relay/` crate was deleted in the teardown. The Cargo workspace is now
+five members: `crates/core`, `crates/cli`, `crates/mcp`, `crates/daemon`, and
+`src-tauri`. `crates/cognition-claude-sdk` is **not** a Cargo crate — it's a
+TS/Bun package (`@anthropic-ai/claude-agent-sdk` wrapper) that `bun build
+--compile`s into a sidecar binary, staged alongside `sec` / `sec-mcp` by
+`src-tauri/scripts/build-sidecars.sh`.
 
 ## Layer dependencies (DDD)
 
@@ -200,11 +204,13 @@ shape. Legacy queue/channel/org value objects (`QueueHandle`, `OrgAlias`,
 - **`encode_ed25519_multibase` / `decode_ed25519_multibase`** — z-prefixed
   base58btc with the `ed25519-pub` multicodec.
 
-### Cognition (`crates/cognition-claude-sdk/`)
+### Cognition (`crates/cognition-claude-sdk/` — TS/Bun sidecar)
 
-- Claude Agent SDK adapter — drives a headless cognition session for
-  `sec launch` / background work. Other substrates (Anthropic API, local
-  models) wire through the same `CognitionPort` per invariant #5.
+- A private TS/Bun package wrapping `@anthropic-ai/claude-agent-sdk`,
+  `bun build --compile`d into a sidecar binary. Drives a headless cognition
+  session for `sec launch` / background work; the Rust side talks to it through
+  the `CognitionPort`. Other substrates (Anthropic API, local models) wire
+  through the same port per invariant #5.
 
 ## Application (use cases)
 
