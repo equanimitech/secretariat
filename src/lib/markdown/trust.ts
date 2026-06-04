@@ -22,7 +22,9 @@ export function deriveTrustState(r: LayeredVerifyResult): TrustState {
   // stamp is quarantined too (AGENTS.md rule #5), never shown as signed/unsigned.
   if (TAMPER.has(sig.outcome) || TAMPER.has(stamp.outcome)) return 'tampered'
 
-  const sealed = stamp.outcome === 'verified' && (sig.outcome === 'none' || SIG_OK.has(sig.outcome))
+  const sealed =
+    stamp.outcome === 'verified' &&
+    (sig.outcome === 'none' || SIG_OK.has(sig.outcome))
   if (sealed) return 'sealed'
 
   // "Can't confirm" on either layer degrades to `signed` (informational) —

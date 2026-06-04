@@ -4,9 +4,20 @@ import type { TrustState } from '@/lib/markdown/trust'
 // Flat status styling — a tinted label, deliberately NOT a button. Faint
 // trust-colour wash + saturated text/icon, no shadow, no border. Reads as a
 // state indicator next to the (solid, raised) Seal button.
-const CONFIG: Record<TrustState, { label: string; Icon: typeof BadgeCheck; cls: string }> = {
-  sealed: { label: 'Sealed', Icon: BadgeCheck, cls: 'bg-trust-sealed/15 text-trust-sealed' },
-  signed: { label: 'Signed', Icon: CircleDashed, cls: 'bg-trust-signed/15 text-trust-signed' },
+const CONFIG: Record<
+  TrustState,
+  { label: string; Icon: typeof BadgeCheck; cls: string }
+> = {
+  sealed: {
+    label: 'Sealed',
+    Icon: BadgeCheck,
+    cls: 'bg-trust-sealed/15 text-trust-sealed',
+  },
+  signed: {
+    label: 'Signed',
+    Icon: CircleDashed,
+    cls: 'bg-trust-signed/15 text-trust-signed',
+  },
   unsigned: {
     label: 'Unsigned',
     Icon: Circle,

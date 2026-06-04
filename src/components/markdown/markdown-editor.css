@@ -31,7 +31,12 @@
   /* Flush — no indent. Block handles overflow left into .editor-shell's
      padding (no longer clipped, since .prose-host has no overflow). */
   padding: 0 !important;
-  font-family: ui-sans-serif, -apple-system, 'SF Pro Text', system-ui, sans-serif;
+  font-family:
+    ui-sans-serif,
+    -apple-system,
+    'SF Pro Text',
+    system-ui,
+    sans-serif;
   font-size: 1.0625rem; /* ~17px */
   line-height: 1.7;
   color: var(--foreground);

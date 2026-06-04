@@ -60,7 +60,13 @@ function FineRow({ label, value }: { label: string; value: string | null }) {
   )
 }
 
-function FineLayer({ name, layer }: { name: string; layer: VerifyLayerResult }) {
+function FineLayer({
+  name,
+  layer,
+}: {
+  name: string
+  layer: VerifyLayerResult
+}) {
   return (
     <div className="space-y-0.5">
       <div className="text-muted-foreground text-[11px] font-medium uppercase tracking-wide">

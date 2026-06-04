@@ -19,7 +19,10 @@ function summarize(fm: Frontmatter): { label: string; detail: string | null } {
   if (detail) {
     return {
       label: detail,
-      detail: agentCount > 0 ? `${agentCount} agent${agentCount === 1 ? '' : 's'}` : null,
+      detail:
+        agentCount > 0
+          ? `${agentCount} agent${agentCount === 1 ? '' : 's'}`
+          : null,
     }
   }
   return {
