@@ -3,9 +3,9 @@ import { deriveTrustState } from './trust'
 import type { LayeredVerifyResult } from '../bindings'
 
 const layer = (outcome: string) => ({
-  outcome, signer: null, signerRole: null, principal: null, agent: null,
-  signedAt: null, stampedAt: null, act: null, claimedHash: null,
-  computedHash: null, cause: null,
+  outcome, signer: null, signer_role: null, principal: null, agent: null,
+  signed_at: null, stamped_at: null, act: null, claimed_hash: null,
+  computed_hash: null, cause: null,
 })
 const result = (sig: string, stamp: string): LayeredVerifyResult => ({
   signature: layer(sig), stamp: layer(stamp),
