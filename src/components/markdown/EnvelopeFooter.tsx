@@ -42,7 +42,7 @@ export function EnvelopeFooter({
             type="button"
             onClick={onStamp}
             disabled={stamping || saving}
-            className="bg-trust-sealed text-trust-sealed-fg focus-visible:ring-trust-sealed inline-flex h-8 items-center gap-1.5 rounded-md px-3.5 text-sm font-medium shadow-sm transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 active:scale-[0.98] disabled:opacity-50"
+            className="bg-trust-sealed text-trust-sealed-fg focus-visible:ring-trust-sealed inline-flex h-8 items-center gap-1.5 rounded-md border border-black/10 px-3.5 text-sm font-medium shadow transition hover:shadow-md hover:brightness-105 active:translate-y-px active:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 disabled:opacity-50 dark:border-white/10"
           >
             <BadgeCheck className="h-4 w-4" />
             {stamping ? 'Sealing…' : 'Seal'}

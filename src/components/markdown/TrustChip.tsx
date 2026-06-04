@@ -1,14 +1,21 @@
 import { BadgeCheck, Circle, CircleDashed, TriangleAlert } from 'lucide-react'
 import type { TrustState } from '@/lib/markdown/trust'
 
+// Flat status styling — a tinted label, deliberately NOT a button. Faint
+// trust-colour wash + saturated text/icon, no shadow, no border. Reads as a
+// state indicator next to the (solid, raised) Seal button.
 const CONFIG: Record<TrustState, { label: string; Icon: typeof BadgeCheck; cls: string }> = {
-  sealed: { label: 'Sealed', Icon: BadgeCheck, cls: 'bg-trust-sealed text-trust-sealed-fg' },
-  signed: { label: 'Signed', Icon: CircleDashed, cls: 'bg-trust-signed text-trust-signed-fg' },
-  unsigned: { label: 'Unsigned', Icon: Circle, cls: 'bg-trust-unsigned text-trust-unsigned-fg' },
+  sealed: { label: 'Sealed', Icon: BadgeCheck, cls: 'bg-trust-sealed/15 text-trust-sealed' },
+  signed: { label: 'Signed', Icon: CircleDashed, cls: 'bg-trust-signed/15 text-trust-signed' },
+  unsigned: {
+    label: 'Unsigned',
+    Icon: Circle,
+    cls: 'bg-trust-unsigned/20 text-muted-foreground',
+  },
   tampered: {
     label: 'Tampered',
     Icon: TriangleAlert,
-    cls: 'bg-trust-tampered text-trust-tampered-fg',
+    cls: 'bg-trust-tampered/15 text-trust-tampered',
   },
 }
 
@@ -17,9 +24,9 @@ export function TrustChip({ state }: { state: TrustState }) {
   return (
     <span
       role="status"
-      className={`inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium ${cls}`}
+      className={`inline-flex h-6 items-center gap-1.5 rounded px-2 text-xs font-medium ${cls}`}
     >
-      <Icon size={14} aria-hidden />
+      <Icon size={13} aria-hidden />
       {label}
     </span>
   )
