@@ -193,6 +193,179 @@ pub struct StampReport {
     pub delivery_warning: Option<String>,
 }
 
+/// One trust layer (signature OR stamp), flattened for the frontend.
+/// `outcome` is the discriminant; the other fields are populated per
+/// variant exactly as the CLI's `sec verify --json` emits them, so the
+/// wire vocabulary is identical across CLI / MCP / Tauri.
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+pub struct VerifyLayerResult {
+    /// Signature layer: none | ok | verifiedAgent | okUnverifiedAgent | tampered | signerUnresolvable | invalid
+    /// Stamp layer:     none | verified | tampered | signerUnresolvable | signatureInvalid
+    pub outcome: String,
+    pub signer: Option<String>,
+    pub signer_role: Option<String>,
+    pub principal: Option<String>,
+    pub agent: Option<String>,
+    pub signed_at: Option<String>,
+    pub stamped_at: Option<String>,
+    pub act: Option<String>,
+    pub claimed_hash: Option<String>,
+    pub computed_hash: Option<String>,
+    pub cause: Option<String>,
+}
+
+impl VerifyLayerResult {
+    fn empty(outcome: &str) -> Self {
+        Self {
+            outcome: outcome.to_string(),
+            signer: None,
+            signer_role: None,
+            principal: None,
+            agent: None,
+            signed_at: None,
+            stamped_at: None,
+            act: None,
+            claimed_hash: None,
+            computed_hash: None,
+            cause: None,
+        }
+    }
+}
+
+/// Layered verify result: author signature + principal stamp, reported
+/// independently. There is intentionally NO counter-stamp field — no
+/// counter-stamp record type ships (AGENTS.md "out of scope").
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+pub struct LayeredVerifyResult {
+    pub signature: VerifyLayerResult,
+    pub stamp: VerifyLayerResult,
+}
+
+fn map_signature(out: &secretariat_core::application::SignatureOutcome) -> VerifyLayerResult {
+    use secretariat_core::application::SignatureOutcome as S;
+    match out {
+        S::None => VerifyLayerResult::empty("none"),
+        S::Ok {
+            signer,
+            signer_role,
+            signed_at,
+        } => VerifyLayerResult {
+            signer: Some(signer.as_str().to_string()),
+            signer_role: Some(signer_role.as_str().to_string()),
+            signed_at: Some(signed_at.to_rfc3339()),
+            ..VerifyLayerResult::empty("ok")
+        },
+        S::VerifiedAgent {
+            agent,
+            principal,
+            signed_at,
+        } => VerifyLayerResult {
+            agent: Some(agent.as_str().to_string()),
+            principal: Some(principal.as_str().to_string()),
+            signed_at: Some(signed_at.to_rfc3339()),
+            ..VerifyLayerResult::empty("verifiedAgent")
+        },
+        S::OkUnverifiedAgent { signer, signed_at } => VerifyLayerResult {
+            signer: Some(signer.as_str().to_string()),
+            signed_at: Some(signed_at.to_rfc3339()),
+            ..VerifyLayerResult::empty("okUnverifiedAgent")
+        },
+        S::Tampered {
+            claimed_hash,
+            computed_hash,
+        } => VerifyLayerResult {
+            claimed_hash: Some(claimed_hash.to_string()),
+            computed_hash: Some(computed_hash.to_string()),
+            ..VerifyLayerResult::empty("tampered")
+        },
+        S::SignerUnresolvable { signer, cause } => VerifyLayerResult {
+            signer: Some(signer.as_str().to_string()),
+            cause: Some(cause.to_string()),
+            ..VerifyLayerResult::empty("signerUnresolvable")
+        },
+        S::Invalid { signer } => VerifyLayerResult {
+            signer: Some(signer.as_str().to_string()),
+            ..VerifyLayerResult::empty("invalid")
+        },
+    }
+}
+
+fn map_stamp(out: &secretariat_core::application::VerifyOutcome) -> VerifyLayerResult {
+    use secretariat_core::application::VerifyOutcome as V;
+    match out {
+        V::Unsigned => VerifyLayerResult::empty("none"),
+        V::Verified {
+            signer,
+            stamped_at,
+            act,
+        } => VerifyLayerResult {
+            signer: Some(signer.as_str().to_string()),
+            stamped_at: Some(stamped_at.to_rfc3339()),
+            act: Some(format!("{act}")),
+            ..VerifyLayerResult::empty("verified")
+        },
+        V::Tampered {
+            claimed_hash,
+            computed_hash,
+        } => VerifyLayerResult {
+            claimed_hash: Some(claimed_hash.to_string()),
+            computed_hash: Some(computed_hash.to_string()),
+            ..VerifyLayerResult::empty("tampered")
+        },
+        V::SignerUnresolvable { signer, cause } => VerifyLayerResult {
+            signer: Some(signer.as_str().to_string()),
+            cause: Some(cause.to_string()),
+            ..VerifyLayerResult::empty("signerUnresolvable")
+        },
+        V::SignatureInvalid { signer } => VerifyLayerResult {
+            signer: Some(signer.as_str().to_string()),
+            ..VerifyLayerResult::empty("signatureInvalid")
+        },
+    }
+}
+
+/// Inner, sync, testable core of `verify_envelope`. Resolves DIDs via the
+/// same composite resolver the CLI uses, passing the local principal DID
+/// (when present) so agent-self-loop short-circuits work, and the manifest
+/// cache root so agent→principal binding can promote to VerifiedAgent.
+fn verify_envelope_inner(file_path: String) -> Result<LayeredVerifyResult, String> {
+    use secretariat_core::application::verify_document_layered;
+    use secretariat_core::infrastructure::identity_store::load_identity;
+    use secretariat_core::infrastructure::{CompositeDidResolver, DidWebResolver};
+
+    let paths = KeyPaths::discover().map_err(|e| format!("resolving ~/.secretariat: {e}"))?;
+    let resolver = CompositeDidResolver::new(DidWebResolver::new(paths.peers_cache.clone()));
+    let local_did = load_identity(&paths.identity_md)
+        .ok()
+        .flatten()
+        .map(|id| id.did);
+
+    let outcome = verify_document_layered(
+        &std::path::PathBuf::from(&file_path),
+        &resolver,
+        local_did.as_ref(),
+        Some(&paths.root),
+    )
+    .map_err(|e| format!("verifying {file_path}: {e}"))?;
+
+    Ok(LayeredVerifyResult {
+        signature: map_signature(&outcome.signature),
+        stamp: map_stamp(&outcome.stamp),
+    })
+}
+
+/// Layered verify for the front-end: author `$signature` + principal
+/// `$attestation`, each reported independently. Read-only, no biometric
+/// gate. AGENTS.md rule #5 ("verify before trusting") — the UI derives
+/// its trust chip from this.
+#[tauri::command]
+#[specta::specta]
+pub async fn verify_envelope(file_path: String) -> Result<LayeredVerifyResult, String> {
+    tauri::async_runtime::spawn_blocking(move || verify_envelope_inner(file_path))
+        .await
+        .map_err(|e| format!("join error: {e}"))?
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn stamp_envelope(file_path: String) -> Result<StampReport, String> {
@@ -611,4 +784,23 @@ fn load_self_did(paths: &KeyPaths) -> Result<Did, String> {
 #[allow(dead_code)]
 pub fn _types_used_in_bindings() -> (PathBuf,) {
     (PathBuf::new(),)
+}
+
+#[cfg(test)]
+mod verify_tests {
+    use super::*;
+
+    #[test]
+    fn unsigned_document_maps_to_none_layers() {
+        // A bare markdown file with no $signature and no $attestation.
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("doc.md");
+        std::fs::write(&path, "# just a draft\n").unwrap();
+
+        let out = verify_envelope_inner(path.to_string_lossy().to_string())
+            .expect("verify should succeed on a plain file");
+
+        assert_eq!(out.signature.outcome, "none");
+        assert_eq!(out.stamp.outcome, "none");
+    }
 }
