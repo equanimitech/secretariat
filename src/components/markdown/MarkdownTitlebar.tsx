@@ -1,7 +1,7 @@
-import { FolderOpen, PanelRight, RefreshCw } from 'lucide-react'
-import { revealItemInDir } from '@tauri-apps/plugin-opener'
+import { FileCode, FolderOpen, RefreshCw } from 'lucide-react'
+import { openPath, revealItemInDir } from '@tauri-apps/plugin-opener'
 import { Button } from '@/components/ui/button'
-import { useSidebar } from '@/components/ui/sidebar'
+import { cn } from '@/lib/utils'
 
 interface MarkdownTitlebarProps {
   title: string
@@ -18,13 +18,19 @@ export function MarkdownTitlebar({
   onReload,
   reloading,
 }: MarkdownTitlebarProps) {
-  const { toggleSidebar } = useSidebar()
-
   const onReveal = async () => {
     try {
       await revealItemInDir(filePath)
     } catch (err) {
       console.warn('revealItemInDir failed', err)
+    }
+  }
+
+  const onEditRaw = async () => {
+    try {
+      await openPath(filePath)
+    } catch (err) {
+      console.warn('openPath failed', err)
     }
   }
 
@@ -40,9 +46,14 @@ export function MarkdownTitlebar({
         >
           {title}
         </h1>
-        {saving && (
-          <span className="text-muted-foreground text-xs">Saving…</span>
-        )}
+        <span
+          title={saving ? 'Saving…' : 'Synced — on disk'}
+          aria-label={saving ? 'Saving' : 'Synced'}
+          className={cn(
+            'ml-1 inline-block size-2 rounded-full transition-colors',
+            saving ? 'bg-muted-foreground animate-pulse' : 'bg-trust-sealed'
+          )}
+        />
       </div>
       <div className="flex items-center gap-1">
         <Button
@@ -61,18 +72,19 @@ export function MarkdownTitlebar({
         <Button
           variant="ghost"
           size="sm"
-          onClick={onReveal}
-          title="Reveal in Finder"
+          onClick={onEditRaw}
+          title="Edit raw .md in your default editor"
+          aria-label="Edit raw markdown"
         >
-          <FolderOpen size={14} />
+          <FileCode size={14} />
         </Button>
         <Button
           variant="ghost"
           size="sm"
-          onClick={toggleSidebar}
-          title="Frontmatter"
+          onClick={onReveal}
+          title="Reveal in Finder"
         >
-          <PanelRight size={14} />
+          <FolderOpen size={14} />
         </Button>
       </div>
     </header>

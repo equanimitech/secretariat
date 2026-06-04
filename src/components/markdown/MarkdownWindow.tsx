@@ -12,13 +12,6 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { buttonVariants } from '@/components/ui/button'
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarHeader,
-  SidebarInset,
-  SidebarProvider,
-} from '@/components/ui/sidebar'
 import { cn } from '@/lib/utils'
 import { commands } from '@/lib/tauri-bindings'
 import {
@@ -29,8 +22,11 @@ import {
 import { resolveTitle } from '@/lib/markdown/title'
 import { CrepeEditor } from './CrepeEditor'
 import { EnvelopeFooter } from './EnvelopeFooter'
-import { FrontmatterPanel } from './FrontmatterPanel'
 import { MarkdownTitlebar } from './MarkdownTitlebar'
+import { BreakSealDialog } from './BreakSealDialog'
+import { FrontmatterDisclosure } from './FrontmatterDisclosure'
+import { useVerify } from './useVerify'
+import './markdown-editor.css'
 
 interface MarkdownWindowProps {
   filePath: string
@@ -60,7 +56,10 @@ export function MarkdownWindow({
   // remounts it with the freshly-loaded body when we reload from disk.
   const [editorKey, setEditorKey] = useState(0)
   const [selfDid, setSelfDid] = useState<string | null>(null)
-  const [selfDisplayName, setSelfDisplayName] = useState<string | null>(null)
+  const verify = useVerify(filePath)
+  const [breakSealOpen, setBreakSealOpen] = useState(false)
+  const [sealBroken, setSealBroken] = useState(false)
+  const pendingBreakValue = useRef<string | null>(null)
   const saveTimer = useRef<number | null>(null)
   const pendingSave = useRef<PendingSave | null>(null)
   // sha256 is captured into a ref so flushSave can await the latest value
@@ -80,6 +79,8 @@ export function MarkdownWindow({
     setFrontmatter(parsed.frontmatter)
     setBody(parsed.body)
     setSha256(res.data.sha256)
+    // A freshly loaded (or re-stamped) doc re-arms the break-seal prompt.
+    setSealBroken(false)
     return true
   }, [filePath])
 
@@ -91,17 +92,12 @@ export function MarkdownWindow({
     })()
   }, [filePath, loadFromDisk])
 
-  // Identity + profile feed the "Stamped by <you|name>" pill label.
-  // Both are static for the lifetime of the window — load once.
+  // The principal's DID drives "by you" in the trust summary. Static for
+  // the window's lifetime — load once.
   useEffect(() => {
     void (async () => {
-      const [ident, prof] = await Promise.all([
-        commands.currentIdentity(),
-        commands.getProfile(),
-      ])
+      const ident = await commands.currentIdentity()
       if (ident.status === 'ok' && ident.data) setSelfDid(ident.data.did)
-      if (prof.status === 'ok' && prof.data)
-        setSelfDisplayName(prof.data.display_name)
     })()
   }, [])
 
@@ -230,6 +226,40 @@ export function MarkdownWindow({
       window.removeEventListener('keydown', handler, { capture: true })
   }, [requestReload])
 
+  // Body change. If the doc is sealed and the seal hasn't been broken this
+  // session, intercept the first edit and raise the calm interstitial rather
+  // than silently invalidating the seal.
+  const onBodyChange = useCallback(
+    (next: string) => {
+      if (verify.state === 'sealed' && !sealBroken) {
+        pendingBreakValue.current = next
+        setBreakSealOpen(true)
+        return
+      }
+      setBody(next)
+      scheduleSave(frontmatter, next)
+    },
+    [verify.state, sealBroken, frontmatter, scheduleSave]
+  )
+
+  const onConfirmBreakSeal = useCallback(() => {
+    setBreakSealOpen(false)
+    setSealBroken(true)
+    const next = pendingBreakValue.current
+    pendingBreakValue.current = null
+    if (next !== null) {
+      setBody(next)
+      scheduleSave(frontmatter, next)
+    }
+  }, [frontmatter, scheduleSave])
+
+  const onCancelBreakSeal = useCallback(() => {
+    setBreakSealOpen(false)
+    pendingBreakValue.current = null
+    // Revert the editor to the last committed body by remounting Crepe.
+    setEditorKey(k => k + 1)
+  }, [])
+
   const onStamp = useCallback(async () => {
     setStamping(true)
     // The body the principal saw in the editor MUST be the body that gets
@@ -248,7 +278,8 @@ export function MarkdownWindow({
     }
     toast.success('Stamped')
     await loadFromDisk()
-  }, [filePath, flushSave, loadFromDisk])
+    await verify.refresh()
+  }, [filePath, flushSave, loadFromDisk, verify])
 
   if (!loaded) {
     return (
@@ -259,60 +290,46 @@ export function MarkdownWindow({
   }
 
   return (
-    <SidebarProvider
-      defaultOpen={false}
-      className={cn('min-h-0', embedded ? 'h-full' : 'h-screen')}
+    <div
+      className={cn(
+        'bg-background text-foreground flex min-h-0 flex-col',
+        embedded ? 'h-full' : 'h-screen'
+      )}
     >
-      <SidebarInset
-        className={cn(
-          'bg-background text-foreground flex min-h-0 flex-col',
-          embedded ? 'h-full' : 'h-screen'
-        )}
-      >
-        <MarkdownTitlebar
-          title={title}
-          saving={saving}
-          filePath={filePath}
-          onReload={requestReload}
-          reloading={reloading}
-        />
-        <div className="flex-1 overflow-y-auto">
-          <main>
-            <CrepeEditor
-              key={editorKey}
-              initialValue={body}
-              onChange={next => {
-                setBody(next)
-                scheduleSave(frontmatter, next)
-              }}
-            />
-          </main>
-        </div>
-        <EnvelopeFooter
-          frontmatter={frontmatter}
-          selfDid={selfDid}
-          selfDisplayName={selfDisplayName}
-          stamping={stamping}
-          saving={saving}
-          onStamp={onStamp}
-        />
-      </SidebarInset>
-      <Sidebar side="right" collapsible="offcanvas">
-        <SidebarHeader>
-          <h2 className="text-muted-foreground px-3 py-2 text-xs font-medium uppercase tracking-wider">
-            Frontmatter
-          </h2>
-        </SidebarHeader>
-        <SidebarContent>
-          <FrontmatterPanel
+      <MarkdownTitlebar
+        title={title}
+        saving={saving}
+        filePath={filePath}
+        onReload={requestReload}
+        reloading={reloading}
+      />
+      <div className="flex-1 overflow-y-auto">
+        <div className="editor-shell py-8">
+          {/* Document header — frontmatter preview above the body. Trust
+              now lives in the footer, not here. */}
+          <FrontmatterDisclosure
             frontmatter={frontmatter}
             onChange={next => {
               setFrontmatter(next)
               scheduleSave(next, body)
             }}
           />
-        </SidebarContent>
-      </Sidebar>
+          <CrepeEditor
+            key={`${editorKey}-${verify.state === 'sealed' ? 'ro' : 'rw'}`}
+            initialValue={body}
+            onChange={onBodyChange}
+            readonly={verify.state === 'sealed'}
+          />
+        </div>
+      </div>
+      <EnvelopeFooter
+        state={verify.state}
+        verify={verify.verify}
+        selfDid={selfDid}
+        stamping={stamping}
+        saving={saving}
+        onStamp={onStamp}
+      />
       <AlertDialog open={reloadDialogOpen} onOpenChange={setReloadDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -337,6 +354,12 @@ export function MarkdownWindow({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </SidebarProvider>
+      <BreakSealDialog
+        open={breakSealOpen}
+        onOpenChange={setBreakSealOpen}
+        onConfirm={onConfirmBreakSeal}
+        onCancel={onCancelBreakSeal}
+      />
+    </div>
   )
 }

@@ -261,6 +261,20 @@ async stampEnvelope(filePath: string) : Promise<Result<StampReport, string>> {
 }
 },
 /**
+ * Layered verify for the front-end: author `$signature` + principal
+ * `$attestation`, each reported independently. Read-only, no biometric
+ * gate. AGENTS.md rule #5 ("verify before trusting") — the UI derives
+ * its trust chip from this.
+ */
+async verifyEnvelope(filePath: string) : Promise<Result<LayeredVerifyResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("verify_envelope", { filePath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Spawn the principal's assistant in their preferred environment. Reads
  * `AppPreferences::assistant_terminal` + `assistant_command` from the
  * caller; defaults to Terminal.app + `claude`.
@@ -727,6 +741,12 @@ export type IntegrationsStatus = { claude_code: IntegrationStatus; claude_deskto
  */
 bundled_binary: string | null }
 export type JsonValue = null | boolean | number | string | JsonValue[] | Partial<{ [key in string]: JsonValue }>
+/**
+ * Layered verify result: author signature + principal stamp, reported
+ * independently. There is intentionally NO counter-stamp field — no
+ * counter-stamp record type ships (AGENTS.md "out of scope").
+ */
+export type LayeredVerifyResult = { signature: VerifyLayerResult; stamp: VerifyLayerResult }
 export type PreferencesDto = { composition: CompositionSettingsDto; cognition: CognitionSettingsDto; delivery: DeliverySettingsDto }
 export type Profile = { display_name: string }
 export type ReadMarkdownResult = { content: string; sha256: string }
@@ -823,6 +843,18 @@ notes: string | null;
  * Release date as RFC3339 string, if present.
  */
 date: string | null }
+/**
+ * One trust layer (signature OR stamp), flattened for the frontend.
+ * `outcome` is the discriminant; the other fields are populated per
+ * variant exactly as the CLI's `sec verify --json` emits them, so the
+ * wire vocabulary is identical across CLI / MCP / Tauri.
+ */
+export type VerifyLayerResult = { 
+/**
+ * Signature layer: none | ok | verifiedAgent | okUnverifiedAgent | tampered | signerUnresolvable | invalid
+ * Stamp layer:     none | verified | tampered | signerUnresolvable | signatureInvalid
+ */
+outcome: string; signer: string | null; signer_role: string | null; principal: string | null; agent: string | null; signed_at: string | null; stamped_at: string | null; act: string | null; claimed_hash: string | null; computed_hash: string | null; cause: string | null }
 export type WriteMarkdownArgs = { path: string; content: string; expected_sha256: string }
 export type WriteMarkdownResult = { kind: "ok"; sha256: string } | { kind: "conflict"; current_sha256: string }
 

@@ -28,6 +28,7 @@ pub fn generate_bindings() -> Builder<tauri::Wry> {
         secretariat::get_profile,
         secretariat::set_profile,
         secretariat::stamp_envelope,
+        secretariat::verify_envelope,
         secretariat::launch_assistant,
         secretariat::launch_channel_from_pane,
         secretariat::launch_claude_at,

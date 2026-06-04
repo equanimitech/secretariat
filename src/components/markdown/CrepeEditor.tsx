@@ -28,6 +28,9 @@ function useHtmlDarkClass(): boolean {
 interface CrepeEditorProps {
   initialValue: string
   onChange: (markdown: string) => void
+  /** Render the document read-only (Attend intent): identical typography,
+   * no caret, no edits, no change-poll. */
+  readonly?: boolean
 }
 
 /**
@@ -40,10 +43,15 @@ interface CrepeEditorProps {
  * `MilkdownError: Context "editorView" not found`. Polling sidesteps the
  * lifecycle issue, costs ~zero, and is good enough for autosave cadence.
  */
-export function CrepeEditor({ initialValue, onChange }: CrepeEditorProps) {
+export function CrepeEditor({
+  initialValue,
+  onChange,
+  readonly = false,
+}: CrepeEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null)
   const onChangeRef = useRef(onChange)
   const initialValueRef = useRef(initialValue)
+  const readonlyRef = useRef(readonly)
   const isDark = useHtmlDarkClass()
 
   useEffect(() => {
@@ -75,19 +83,13 @@ export function CrepeEditor({ initialValue, onChange }: CrepeEditorProps) {
     const crepe = new Crepe({
       root: host,
       defaultValue: initialValueRef.current,
-      // Envelopes are markdown text — no images, no media drops.
+      // Envelopes are markdown text — no images, no media drops. BlockEdit
+      // (the per-line +/drag handles) is disabled: drag-drop is glitchy in
+      // Crepe 7.x and the handles forced an awkward left gutter. Writers use
+      // markdown syntax directly; the body sits flush with no handle column.
       features: {
         [CrepeFeature.ImageBlock]: false,
-      },
-      featureConfigs: {
-        // Keep the slash-menu inside BlockEdit but hide the per-block
-        // drag handle on the left — its drag interaction is glitchy in
-        // Crepe 7.x and isn't worth the visual noise for our use.
-        [CrepeFeature.BlockEdit]: {
-          blockHandle: {
-            shouldShow: () => false,
-          },
-        },
+        [CrepeFeature.BlockEdit]: false,
       },
     })
 
@@ -99,6 +101,17 @@ export function CrepeEditor({ initialValue, onChange }: CrepeEditorProps) {
           return
         }
         attached = crepe
+        if (readonlyRef.current) {
+          // Sealed / read-only: lock the surface, never poll for edits.
+          crepe.setReadonly(true)
+          return
+        }
+        // Baseline to Crepe's OWN serialization. Crepe normalizes markdown
+        // on load (whitespace, list markers, etc.), so getMarkdown() differs
+        // from the on-disk text even with zero edits. Without this baseline
+        // the first poll fires a phantom onChange — rewriting the file on
+        // open and, on a sealed doc, looping the break-seal dialog.
+        lastSeen = crepe.getMarkdown()
         pollTimer = window.setInterval(() => {
           if (!attached) return
           const md = attached.getMarkdown()
@@ -119,5 +132,8 @@ export function CrepeEditor({ initialValue, onChange }: CrepeEditorProps) {
     }
   }, [])
 
-  return <div ref={hostRef} className="prose-host h-full overflow-auto" />
+  // No own overflow — the parent (.flex-1.overflow-y-auto) scrolls. If this
+  // host clips, the block handles overflowing into the left padding get cut
+  // off; letting the parent own scroll keeps them visible.
+  return <div ref={hostRef} className="prose-host" />
 }
