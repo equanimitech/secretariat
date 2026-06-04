@@ -31,6 +31,10 @@ import { CrepeEditor } from './CrepeEditor'
 import { EnvelopeFooter } from './EnvelopeFooter'
 import { FrontmatterPanel } from './FrontmatterPanel'
 import { MarkdownTitlebar } from './MarkdownTitlebar'
+import { AttendView } from './AttendView'
+import { useVerify } from './useVerify'
+
+type Intent = 'compose' | 'attend'
 
 interface MarkdownWindowProps {
   filePath: string
@@ -61,6 +65,8 @@ export function MarkdownWindow({
   const [editorKey, setEditorKey] = useState(0)
   const [selfDid, setSelfDid] = useState<string | null>(null)
   const [selfDisplayName, setSelfDisplayName] = useState<string | null>(null)
+  const [intent, setIntent] = useState<Intent>('compose')
+  const verify = useVerify(filePath)
   const saveTimer = useRef<number | null>(null)
   const pendingSave = useRef<PendingSave | null>(null)
   // sha256 is captured into a ref so flushSave can await the latest value
@@ -230,6 +236,33 @@ export function MarkdownWindow({
       window.removeEventListener('keydown', handler, { capture: true })
   }, [requestReload])
 
+  // Toggle Compose ⇄ Attend. Re-verify on entering Attend so the reading
+  // posture always reflects the file's current trust state.
+  const toggleIntent = useCallback(() => {
+    setIntent(m => {
+      const next = m === 'compose' ? 'attend' : 'compose'
+      if (next === 'attend') void verify.refresh()
+      return next
+    })
+  }, [verify])
+
+  // Cmd/Ctrl+E is the one-key intent toggle.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        !e.shiftKey &&
+        !e.altKey &&
+        e.key === 'e'
+      ) {
+        e.preventDefault()
+        toggleIntent()
+      }
+    }
+    window.addEventListener('keydown', onKey, { capture: true })
+    return () => window.removeEventListener('keydown', onKey, { capture: true })
+  }, [toggleIntent])
+
   const onStamp = useCallback(async () => {
     setStamping(true)
     // The body the principal saw in the editor MUST be the body that gets
@@ -248,7 +281,8 @@ export function MarkdownWindow({
     }
     toast.success('Stamped')
     await loadFromDisk()
-  }, [filePath, flushSave, loadFromDisk])
+    await verify.refresh()
+  }, [filePath, flushSave, loadFromDisk, verify])
 
   if (!loaded) {
     return (
@@ -273,19 +307,32 @@ export function MarkdownWindow({
           title={title}
           saving={saving}
           filePath={filePath}
+          intent={intent}
+          onToggleIntent={toggleIntent}
+          trust={verify.state}
           onReload={requestReload}
           reloading={reloading}
         />
         <div className="flex-1 overflow-y-auto">
-          <main>
-            <CrepeEditor
-              key={editorKey}
-              initialValue={body}
-              onChange={next => {
-                setBody(next)
-                scheduleSave(frontmatter, next)
-              }}
-            />
+          <main key={intent} className="animate-in fade-in duration-300">
+            {intent === 'compose' ? (
+              <CrepeEditor
+                key={editorKey}
+                initialValue={body}
+                onChange={next => {
+                  setBody(next)
+                  scheduleSave(frontmatter, next)
+                }}
+              />
+            ) : (
+              <AttendView
+                body={body}
+                verify={verify}
+                selfDid={selfDid}
+                stamping={stamping}
+                onStamp={onStamp}
+              />
+            )}
           </main>
         </div>
         <EnvelopeFooter

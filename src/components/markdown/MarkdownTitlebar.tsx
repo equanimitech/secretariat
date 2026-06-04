@@ -1,12 +1,19 @@
-import { FolderOpen, PanelRight, RefreshCw } from 'lucide-react'
+import { Eye, FolderOpen, PanelRight, Pencil, RefreshCw } from 'lucide-react'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import { Button } from '@/components/ui/button'
 import { useSidebar } from '@/components/ui/sidebar'
+import type { TrustState } from '@/lib/markdown/trust'
+import { TrustChip } from './TrustChip'
+
+type Intent = 'compose' | 'attend'
 
 interface MarkdownTitlebarProps {
   title: string
   saving: boolean
   filePath: string
+  intent: Intent
+  onToggleIntent: () => void
+  trust: TrustState
   onReload: () => void
   reloading: boolean
 }
@@ -15,6 +22,9 @@ export function MarkdownTitlebar({
   title,
   saving,
   filePath,
+  intent,
+  onToggleIntent,
+  trust,
   onReload,
   reloading,
 }: MarkdownTitlebarProps) {
@@ -45,6 +55,29 @@ export function MarkdownTitlebar({
         )}
       </div>
       <div className="flex items-center gap-1">
+        <TrustChip state={trust} />
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onToggleIntent}
+          title={
+            intent === 'compose'
+              ? 'Attend — read & seal (⌘E)'
+              : 'Compose — edit (⌘E)'
+          }
+          aria-label="Toggle Compose and Attend"
+          className="gap-1.5"
+        >
+          {intent === 'compose' ? (
+            <>
+              <Eye size={14} /> Attend
+            </>
+          ) : (
+            <>
+              <Pencil size={14} /> Compose
+            </>
+          )}
+        </Button>
         <Button
           variant="ghost"
           size="sm"
