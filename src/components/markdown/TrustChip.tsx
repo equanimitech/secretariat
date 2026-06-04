@@ -17,7 +17,7 @@ export function TrustChip({ state }: { state: TrustState }) {
   return (
     <span
       role="status"
-      className={`inline-flex h-7 items-center gap-1.5 rounded-full px-3 text-xs font-medium ${cls}`}
+      className={`inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium ${cls}`}
     >
       <Icon size={14} aria-hidden />
       {label}

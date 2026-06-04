@@ -1,0 +1,81 @@
+/*
+ * Editor typography + measure. Imported by MarkdownWindow.tsx so it loads
+ * in BOTH render contexts (standalone window + embedded session tab) —
+ * markdown-window.css only loads standalone, which is why the measure cap
+ * never reached tabs.
+ *
+ * Type stance: chrome stays system sans (SF), the DOCUMENT body gets a
+ * refined reading face. `ui-serif` resolves to New York on macOS — Apple's
+ * editorial serif. Mac-only product + invariant #2 (nothing phones home):
+ * an OS-native face means zero vendored webfonts, zero network. Refined
+ * without becoming a magazine.
+ */
+
+/* The reading column. The shell owns the measure; Crepe's internal cap is
+   released so header + body align to one column. */
+/* Centered editorial column. Header + body share this column → one left
+   edge, centered. (The earlier "ridiculous margin" was Crepe's internal
+   padding shoving the body off the column, not the centering — that's
+   zeroed below.) */
+.editor-shell {
+  width: 100%;
+  max-width: 85ch;
+  margin-inline: auto;
+  padding-inline: 2rem;
+}
+
+.prose-host .milkdown,
+.prose-host .milkdown .ProseMirror {
+  max-width: none !important;
+  margin: 0 !important;
+  /* Flush — no indent. Block handles overflow left into .editor-shell's
+     padding (no longer clipped, since .prose-host has no overflow). */
+  padding: 0 !important;
+  font-family: ui-sans-serif, -apple-system, 'SF Pro Text', system-ui, sans-serif;
+  font-size: 1.0625rem; /* ~17px */
+  line-height: 1.7;
+  color: var(--foreground);
+}
+
+/* First block sits flush with the header divider — no leading gap. */
+.prose-host .milkdown .ProseMirror > :first-child {
+  margin-top: 0 !important;
+}
+
+/* Vertical rhythm — calm, even spacing instead of cramped defaults. */
+.prose-host .milkdown .ProseMirror > * + * {
+  margin-top: 0.9em;
+}
+.prose-host .milkdown .ProseMirror > :is(h1, h2, h3, h4) {
+  /* Serif headings over the sans body — the editorial pattern Anthropic
+     uses (their proprietary Copernicus/Tiempos can't be bundled; New York
+     is the Mac-native display serif, zero-vendor). */
+  font-family: ui-serif, 'New York', 'Source Serif 4', Charter, Georgia, serif;
+  margin-top: 1.8em;
+  margin-bottom: 0.35em;
+  line-height: 1.25;
+  letter-spacing: -0.014em;
+  font-weight: 600;
+}
+.prose-host .milkdown .ProseMirror h1 {
+  font-size: 1.95rem;
+  letter-spacing: -0.021em;
+}
+.prose-host .milkdown .ProseMirror h2 {
+  font-size: 1.5rem;
+}
+.prose-host .milkdown .ProseMirror h3 {
+  font-size: 1.2rem;
+}
+
+/* Code + inline mono switch to the system mono face (SF Mono). */
+.prose-host .milkdown .ProseMirror :is(code, pre, kbd) {
+  font-family: ui-monospace, 'SF Mono', 'Menlo', monospace;
+  font-size: 0.9em;
+}
+.prose-host .milkdown .ProseMirror blockquote {
+  border-inline-start: 2px solid var(--border);
+  padding-inline-start: 1rem;
+  color: var(--muted-foreground);
+  font-style: italic;
+}

@@ -1,29 +1,29 @@
-import { useState } from 'react'
 import { Copy } from 'lucide-react'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
+import { useState } from 'react'
 import type { LayeredVerifyResult, VerifyLayerResult } from '@/lib/bindings'
 import type { TrustState } from '@/lib/markdown/trust'
 import { TrustChip } from './TrustChip'
 
-/** Short DID for display — `did:key:z6Mk…last6`. Never the full string in
- * the medium rung (that's the fine rung's job). */
 function shortDid(did: string): string {
   if (did.length <= 16) return did
   return `${did.slice(0, 12)}…${did.slice(-6)}`
 }
 
-function who(layerSigner: string | null, selfDid: string | null): string {
-  if (!layerSigner) return 'someone'
-  if (selfDid && layerSigner === selfDid) return 'you'
-  return shortDid(layerSigner)
+function who(signer: string | null, selfDid: string | null): string {
+  if (!signer) return 'someone'
+  if (selfDid && signer === selfDid) return 'you'
+  return shortDid(signer)
 }
 
 function fmtDate(iso: string | null): string | null {
-  if (!iso) return null
-  // Date-only, locale-stable: the day is what a reader cares about.
-  return iso.slice(0, 10)
+  return iso ? iso.slice(0, 10) : null
 }
 
-/** Plain-language medium rung — NOT lexicon jargon (spec acceptance gate). */
 function plainSummary(
   r: LayeredVerifyResult,
   state: TrustState,
@@ -36,17 +36,17 @@ function plainSummary(
       const signer = who(sig.signer ?? sig.agent, selfDid)
       const when = fmtDate(stamp.stamped_at)
       const signedClause = sig.outcome === 'none' ? '' : `Signed by ${signer}, `
-      return `${signedClause}sealed${when ? ` ${when}` : ''}.`
+      return `${signedClause}sealed${when ? ` ${when}` : ''}`
     }
     case 'signed': {
       const signer = who(sig.signer ?? sig.agent, selfDid)
       const when = fmtDate(sig.signed_at)
-      return `Signed by ${signer}${when ? ` ${when}` : ''} — not yet sealed.`
+      return `Signed by ${signer}${when ? ` ${when}` : ''} — not yet sealed`
     }
     case 'tampered':
-      return 'This document fails verification — its contents changed after signing.'
+      return 'Fails verification — changed after signing'
     default:
-      return 'Unsigned draft — no author signature yet.'
+      return 'Unsigned draft'
   }
 }
 
@@ -80,20 +80,21 @@ function FineLayer({ name, layer }: { name: string; layer: VerifyLayerResult }) 
   )
 }
 
-interface TrustBannerProps {
+/**
+ * Trust home — footer, left side. Chip + plain summary; click opens the
+ * provenance popover (the fine rung) upward. The single place trust state
+ * is shown (AGENTS.md rule #5), no longer duplicated in the titlebar or a
+ * strip above the document.
+ */
+export function TrustFooter({
+  verify,
+  state,
+  selfDid,
+}: {
   verify: LayeredVerifyResult | null
   state: TrustState
   selfDid: string | null
-}
-
-/**
- * Provenance-forward banner. Three rungs of zoom (AGENTS.md rule #5 —
- * the reader derives trust from this, not from the body alone):
- *   coarse  — the TrustChip + a one-line plain-language summary
- *   medium  — [details] discloses who/when in plain words
- *   fine    — raw layer fields, the reserved counter row, copy-JSON
- */
-export function TrustBanner({ verify, state, selfDid }: TrustBannerProps) {
+}) {
   const [copied, setCopied] = useState(false)
   const summary = verify ? plainSummary(verify, state, selfDid) : 'Verifying…'
 
@@ -105,33 +106,34 @@ export function TrustBanner({ verify, state, selfDid }: TrustBannerProps) {
   }
 
   return (
-    <div className="border-border bg-background/60 mx-auto mb-6 w-full max-w-[68ch] rounded-lg border px-4 py-3">
-      <div className="flex items-center gap-3">
-        <TrustChip state={state} />
-        <span className="text-muted-foreground text-sm">{summary}</span>
-      </div>
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          title="Provenance"
+          className="hover:bg-accent/50 -mx-1.5 inline-flex items-center gap-2 rounded-md px-1.5 py-0.5 transition-colors focus-visible:outline-none"
+        >
+          <TrustChip state={state} />
+          <span className="text-muted-foreground text-xs">{summary}</span>
+        </button>
+      </PopoverTrigger>
       {verify && (
-        <details className="mt-2 group">
-          <summary className="text-muted-foreground hover:text-foreground cursor-pointer select-none text-xs">
-            details
-          </summary>
-          <div className="mt-3 space-y-3">
-            <FineLayer name="signature" layer={verify.signature} />
-            <FineLayer name="stamp" layer={verify.stamp} />
-            <div className="text-muted-foreground/60 text-[11px] italic">
-              counter-stamp — none (reserved)
-            </div>
-            <button
-              type="button"
-              onClick={onCopy}
-              className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 text-xs"
-            >
-              <Copy size={12} aria-hidden />
-              {copied ? 'copied' : 'copy raw JSON'}
-            </button>
+        <PopoverContent side="top" align="start" className="w-80 space-y-3">
+          <FineLayer name="signature" layer={verify.signature} />
+          <FineLayer name="stamp" layer={verify.stamp} />
+          <div className="text-muted-foreground/60 text-[11px] italic">
+            counter-stamp — none (reserved)
           </div>
-        </details>
+          <button
+            type="button"
+            onClick={onCopy}
+            className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 text-xs"
+          >
+            <Copy size={12} aria-hidden />
+            {copied ? 'copied' : 'copy raw JSON'}
+          </button>
+        </PopoverContent>
       )}
-    </div>
+    </Popover>
   )
 }

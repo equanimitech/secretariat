@@ -1,27 +1,12 @@
-import {
-  Eye,
-  FileCode,
-  FolderOpen,
-  PanelRight,
-  Pencil,
-  RefreshCw,
-} from 'lucide-react'
+import { FileCode, FolderOpen, RefreshCw } from 'lucide-react'
 import { openPath, revealItemInDir } from '@tauri-apps/plugin-opener'
 import { Button } from '@/components/ui/button'
-import { useSidebar } from '@/components/ui/sidebar'
 import { cn } from '@/lib/utils'
-import type { TrustState } from '@/lib/markdown/trust'
-import { TrustChip } from './TrustChip'
-
-type Intent = 'compose' | 'attend'
 
 interface MarkdownTitlebarProps {
   title: string
   saving: boolean
   filePath: string
-  intent: Intent
-  onToggleIntent: () => void
-  trust: TrustState
   onReload: () => void
   reloading: boolean
 }
@@ -30,14 +15,9 @@ export function MarkdownTitlebar({
   title,
   saving,
   filePath,
-  intent,
-  onToggleIntent,
-  trust,
   onReload,
   reloading,
 }: MarkdownTitlebarProps) {
-  const { toggleSidebar } = useSidebar()
-
   const onReveal = async () => {
     try {
       await revealItemInDir(filePath)
@@ -74,34 +54,8 @@ export function MarkdownTitlebar({
             saving ? 'bg-muted-foreground animate-pulse' : 'bg-trust-sealed'
           )}
         />
-        {saving && (
-          <span className="text-muted-foreground/0 sr-only">Saving</span>
-        )}
       </div>
       <div className="flex items-center gap-1">
-        <TrustChip state={trust} />
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onToggleIntent}
-          title={
-            intent === 'compose'
-              ? 'Attend — read & seal (⌘E)'
-              : 'Compose — edit (⌘E)'
-          }
-          aria-label="Toggle Compose and Attend"
-          className="gap-1.5"
-        >
-          {intent === 'compose' ? (
-            <>
-              <Eye size={14} /> Attend
-            </>
-          ) : (
-            <>
-              <Pencil size={14} /> Compose
-            </>
-          )}
-        </Button>
         <Button
           variant="ghost"
           size="sm"
@@ -131,14 +85,6 @@ export function MarkdownTitlebar({
           title="Reveal in Finder"
         >
           <FolderOpen size={14} />
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={toggleSidebar}
-          title="Frontmatter"
-        >
-          <PanelRight size={14} />
         </Button>
       </div>
     </header>
