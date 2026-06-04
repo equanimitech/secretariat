@@ -47,6 +47,14 @@
   --radius-2xl: calc(var(--radius) + 8px);
   --radius-3xl: calc(var(--radius) + 12px);
   --radius-4xl: calc(var(--radius) + 16px);
+  --color-trust-sealed: var(--trust-sealed);
+  --color-trust-sealed-fg: var(--trust-sealed-fg);
+  --color-trust-signed: var(--trust-signed);
+  --color-trust-signed-fg: var(--trust-signed-fg);
+  --color-trust-unsigned: var(--trust-unsigned);
+  --color-trust-unsigned-fg: var(--trust-unsigned-fg);
+  --color-trust-tampered: var(--trust-tampered);
+  --color-trust-tampered-fg: var(--trust-tampered-fg);
 }
 
 :root {
@@ -82,6 +90,18 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+
+  /* Trust-state vocabulary — equanimitech brand palette. Sealed is the
+     ensō green (achievement); signed is the brand amber (warm "your move",
+     not caution); tampered red is the only alarm. */
+  --trust-sealed: oklch(0.55 0.045 145); /* ensō sage green — achievement */
+  --trust-sealed-fg: oklch(0.98 0.015 145);
+  --trust-signed: oklch(0.58 0.11 60); /* equanimitech amber — your move */
+  --trust-signed-fg: oklch(0.99 0.03 75);
+  --trust-unsigned: oklch(0.62 0.012 60); /* warm neutral grey */
+  --trust-unsigned-fg: oklch(0.99 0.005 60);
+  --trust-tampered: oklch(0.55 0.2 25); /* red — the only alarm */
+  --trust-tampered-fg: oklch(0.99 0.02 25);
 }
 
 .dark {
@@ -116,4 +136,13 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+
+  --trust-sealed: oklch(0.7 0.05 145); /* ensō green, lifted for dark bg */
+  --trust-sealed-fg: oklch(0.18 0.03 145);
+  --trust-signed: oklch(0.78 0.1 65); /* brand amber (keel primary) */
+  --trust-signed-fg: oklch(0.25 0.06 60);
+  --trust-unsigned: oklch(0.62 0.01 60);
+  --trust-unsigned-fg: oklch(0.16 0.005 60);
+  --trust-tampered: oklch(0.68 0.18 25);
+  --trust-tampered-fg: oklch(0.16 0.03 25);
 }
