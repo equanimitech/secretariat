@@ -4,6 +4,48 @@ All notable changes to Secretariat are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.0](https://github.com/equanimitech/secretariat/compare/v0.12.1...v0.13.0) — 2026-06-04
+
+The **editor-reader redesign**: one markdown surface with verify state made
+first-class and the seal re-weighted as a sober footer ceremony.
+
+### Added
+
+- **`verify_envelope` Tauri command** — layered author-signature + principal-
+  stamp verification surfaced to the editor (wraps `verify_document_layered`,
+  the same path `sec verify --json` uses; read-only, no biometric gate). Drives
+  a coarse four-state trust vocabulary: `sealed` / `signed` / `unsigned` /
+  `tampered`.
+- **Footer trust home.** Trust state lives in the footer — a flat status chip +
+  plain-language provenance ("Signed by you, sealed <date>") with a popover for
+  the raw layers, and a raised **Seal** button. No duplicate badges.
+- **Frontmatter above the document** — a collapsible preview/editor at the top
+  of the doc, replacing the offcanvas sidebar.
+
+### Changed
+
+- **Single editing surface.** The brief Compose/Attend split was cut — one
+  editable document; trust is ambient (footer), not a mode.
+- **Typography.** System-sans (SF) body with New York serif headings, centered
+  ~85ch measure, calmer vertical rhythm.
+- **Sealed documents are read-only**, protecting the authoritative record.
+
+### Fixed
+
+- **Phantom rewrites on open.** The editor's change-poll now baselines to
+  Crepe's own serialization, so loading a document no longer re-saves a
+  normalized copy (which had looped the break-seal dialog on sealed docs and
+  risked breaking signatures).
+- Trust derivation quarantines an invalid stamp layer and degrades an
+  unresolvable stamp to `signed` (never silently `unsigned`).
+
+### Known issues
+
+- Editing a **signed-but-unsealed** document still reformats the body via
+  Crepe's markdown round-trip, breaking its signature. Sealed docs are
+  protected (read-only); a source-mode editor is the planned fix — see
+  `docs/ideas/2026-06-04-editor-markdown-fidelity.md`.
+
 ## [0.12.1](https://github.com/equanimitech/secretariat/compare/v0.12.0...v0.12.1) — 2026-06-02
 
 First **published** build of the 0.12 line. v0.12.0 was tagged but never
