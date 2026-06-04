@@ -32,6 +32,8 @@ import { EnvelopeFooter } from './EnvelopeFooter'
 import { FrontmatterPanel } from './FrontmatterPanel'
 import { MarkdownTitlebar } from './MarkdownTitlebar'
 import { AttendView } from './AttendView'
+import { BreakSealDialog } from './BreakSealDialog'
+import { FrontmatterSummary } from './FrontmatterSummary'
 import { useVerify } from './useVerify'
 
 type Intent = 'compose' | 'attend'
@@ -67,6 +69,10 @@ export function MarkdownWindow({
   const [selfDisplayName, setSelfDisplayName] = useState<string | null>(null)
   const [intent, setIntent] = useState<Intent>('compose')
   const verify = useVerify(filePath)
+  const [breakSealOpen, setBreakSealOpen] = useState(false)
+  const [sealBroken, setSealBroken] = useState(false)
+  const pendingBreakValue = useRef<string | null>(null)
+  const [fmOpen, setFmOpen] = useState(false)
   const saveTimer = useRef<number | null>(null)
   const pendingSave = useRef<PendingSave | null>(null)
   // sha256 is captured into a ref so flushSave can await the latest value
@@ -86,6 +92,8 @@ export function MarkdownWindow({
     setFrontmatter(parsed.frontmatter)
     setBody(parsed.body)
     setSha256(res.data.sha256)
+    // A freshly loaded (or re-stamped) doc re-arms the break-seal prompt.
+    setSealBroken(false)
     return true
   }, [filePath])
 
@@ -246,6 +254,40 @@ export function MarkdownWindow({
     })
   }, [verify])
 
+  // Compose-intent body change. If the doc is sealed and the seal hasn't
+  // been broken this session, intercept the first edit and raise the calm
+  // interstitial rather than silently invalidating the seal.
+  const onComposeChange = useCallback(
+    (next: string) => {
+      if (verify.state === 'sealed' && !sealBroken) {
+        pendingBreakValue.current = next
+        setBreakSealOpen(true)
+        return
+      }
+      setBody(next)
+      scheduleSave(frontmatter, next)
+    },
+    [verify.state, sealBroken, frontmatter, scheduleSave]
+  )
+
+  const onConfirmBreakSeal = useCallback(() => {
+    setBreakSealOpen(false)
+    setSealBroken(true)
+    const next = pendingBreakValue.current
+    pendingBreakValue.current = null
+    if (next !== null) {
+      setBody(next)
+      scheduleSave(frontmatter, next)
+    }
+  }, [frontmatter, scheduleSave])
+
+  const onCancelBreakSeal = useCallback(() => {
+    setBreakSealOpen(false)
+    pendingBreakValue.current = null
+    // Revert the editor to the last committed body by remounting Crepe.
+    setEditorKey(k => k + 1)
+  }, [])
+
   // Cmd/Ctrl+E is the one-key intent toggle.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -294,7 +336,8 @@ export function MarkdownWindow({
 
   return (
     <SidebarProvider
-      defaultOpen={false}
+      open={fmOpen}
+      onOpenChange={setFmOpen}
       className={cn('min-h-0', embedded ? 'h-full' : 'h-screen')}
     >
       <SidebarInset
@@ -316,14 +359,17 @@ export function MarkdownWindow({
         <div className="flex-1 overflow-y-auto">
           <main key={intent} className="animate-in fade-in duration-300">
             {intent === 'compose' ? (
-              <CrepeEditor
-                key={editorKey}
-                initialValue={body}
-                onChange={next => {
-                  setBody(next)
-                  scheduleSave(frontmatter, next)
-                }}
-              />
+              <>
+                <CrepeEditor
+                  key={editorKey}
+                  initialValue={body}
+                  onChange={onComposeChange}
+                />
+                <FrontmatterSummary
+                  frontmatter={frontmatter}
+                  onExpand={() => setFmOpen(true)}
+                />
+              </>
             ) : (
               <AttendView
                 body={body}
@@ -384,6 +430,12 @@ export function MarkdownWindow({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <BreakSealDialog
+        open={breakSealOpen}
+        onOpenChange={setBreakSealOpen}
+        onConfirm={onConfirmBreakSeal}
+        onCancel={onCancelBreakSeal}
+      />
     </SidebarProvider>
   )
 }
