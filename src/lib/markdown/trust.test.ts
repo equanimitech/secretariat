@@ -27,6 +27,13 @@ describe('deriveTrustState', () => {
   it('tampered when stamp tampered', () => {
     expect(deriveTrustState(result('ok', 'tampered'))).toBe('tampered')
   })
+  it('tampered when stamp signatureInvalid (rule #5 — quarantine)', () => {
+    expect(deriveTrustState(result('ok', 'signatureInvalid'))).toBe('tampered')
+    expect(deriveTrustState(result('none', 'signatureInvalid'))).toBe('tampered')
+  })
+  it('signed (not unsigned) when stamp is present but signerUnresolvable', () => {
+    expect(deriveTrustState(result('none', 'signerUnresolvable'))).toBe('signed')
+  })
   it('signed (not sealed) when signer unresolvable', () => {
     expect(deriveTrustState(result('signerUnresolvable', 'none'))).toBe('signed')
   })

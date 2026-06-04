@@ -61,7 +61,9 @@ export function AttendView({
         ) : (
           <div className="flex flex-col items-center gap-2">
             <p className="text-muted-foreground text-center text-sm">
-              Signed only — not yet sealed.
+              {state === 'signed'
+                ? 'Signed only — not yet sealed.'
+                : 'Unsigned draft — not yet sealed.'}
             </p>
             <Button onClick={onStamp} disabled={stamping} className="h-8">
               <BadgeCheck size={14} className="mr-1.5" />
