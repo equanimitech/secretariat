@@ -18,9 +18,19 @@ export function useVerify(filePath: string) {
     }
   }, [filePath])
 
+  // Fetch on mount / filePath change. Inlined (not `refresh()`) so no
+  // setState runs synchronously in the effect body — setVerify only fires
+  // after the await (react-hooks/set-state-in-effect).
   useEffect(() => {
-    void refresh()
-  }, [refresh])
+    let cancelled = false
+    void (async () => {
+      const res = await commands.verifyEnvelope(filePath)
+      if (!cancelled) setVerify(res.status === 'ok' ? res.data : null)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [filePath])
 
   const state: TrustState = verify ? deriveTrustState(verify) : 'unsigned'
   return { verify, state, refresh, loading }
