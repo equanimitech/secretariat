@@ -28,6 +28,9 @@ function useHtmlDarkClass(): boolean {
 interface CrepeEditorProps {
   initialValue: string
   onChange: (markdown: string) => void
+  /** Render the document read-only (Attend intent): identical typography,
+   * no caret, no edits, no change-poll. */
+  readonly?: boolean
 }
 
 /**
@@ -40,10 +43,15 @@ interface CrepeEditorProps {
  * `MilkdownError: Context "editorView" not found`. Polling sidesteps the
  * lifecycle issue, costs ~zero, and is good enough for autosave cadence.
  */
-export function CrepeEditor({ initialValue, onChange }: CrepeEditorProps) {
+export function CrepeEditor({
+  initialValue,
+  onChange,
+  readonly = false,
+}: CrepeEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null)
   const onChangeRef = useRef(onChange)
   const initialValueRef = useRef(initialValue)
+  const readonlyRef = useRef(readonly)
   const isDark = useHtmlDarkClass()
 
   useEffect(() => {
@@ -99,6 +107,11 @@ export function CrepeEditor({ initialValue, onChange }: CrepeEditorProps) {
           return
         }
         attached = crepe
+        if (readonlyRef.current) {
+          // Attend intent: lock the surface, never poll for edits.
+          crepe.setReadonly(true)
+          return
+        }
         pollTimer = window.setInterval(() => {
           if (!attached) return
           const md = attached.getMarkdown()
