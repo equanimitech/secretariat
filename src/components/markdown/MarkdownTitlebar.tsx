@@ -1,7 +1,15 @@
-import { Eye, FolderOpen, PanelRight, Pencil, RefreshCw } from 'lucide-react'
-import { revealItemInDir } from '@tauri-apps/plugin-opener'
+import {
+  Eye,
+  FileCode,
+  FolderOpen,
+  PanelRight,
+  Pencil,
+  RefreshCw,
+} from 'lucide-react'
+import { openPath, revealItemInDir } from '@tauri-apps/plugin-opener'
 import { Button } from '@/components/ui/button'
 import { useSidebar } from '@/components/ui/sidebar'
+import { cn } from '@/lib/utils'
 import type { TrustState } from '@/lib/markdown/trust'
 import { TrustChip } from './TrustChip'
 
@@ -38,6 +46,14 @@ export function MarkdownTitlebar({
     }
   }
 
+  const onEditRaw = async () => {
+    try {
+      await openPath(filePath)
+    } catch (err) {
+      console.warn('openPath failed', err)
+    }
+  }
+
   return (
     <header
       data-tauri-drag-region
@@ -50,8 +66,16 @@ export function MarkdownTitlebar({
         >
           {title}
         </h1>
+        <span
+          title={saving ? 'Saving…' : 'Synced — on disk'}
+          aria-label={saving ? 'Saving' : 'Synced'}
+          className={cn(
+            'ml-1 inline-block size-2 rounded-full transition-colors',
+            saving ? 'bg-muted-foreground animate-pulse' : 'bg-trust-sealed'
+          )}
+        />
         {saving && (
-          <span className="text-muted-foreground text-xs">Saving…</span>
+          <span className="text-muted-foreground/0 sr-only">Saving</span>
         )}
       </div>
       <div className="flex items-center gap-1">
@@ -90,6 +114,15 @@ export function MarkdownTitlebar({
             size={14}
             className={reloading ? 'animate-spin' : undefined}
           />
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onEditRaw}
+          title="Edit raw .md in your default editor"
+          aria-label="Edit raw markdown"
+        >
+          <FileCode size={14} />
         </Button>
         <Button
           variant="ghost"
