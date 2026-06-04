@@ -1,3 +1,13 @@
+---
+$attestation:
+  $type: tech.equanimi.secretariat.stamp
+  signer: did:key:z6MkjB8PQaN1vuUzdtnJsxyXR2f8d3tckGHkUYZMDytQsfak
+  act: attest
+  docHash: sha256:50a7159dedc6641eb908600270391b1bc60e741535d4dadf22c492eede54aebf
+  docFilename: 2026-06-03-editor-reader-redesign-design.md
+  stampedAt: 2026-06-03T21:50:48.364430Z
+  signature: ed25519:9TWw43JhERQlctwMZhvc3SDndpapsVqdil7LCR++jRl4/ibLY2AlmuQ2QRR3kwkeskPXQXIJJqQUVr3QaBwaAQ==
+---
 # Editor & Envelope-Reader Redesign
 
 **Date:** 2026-06-03
