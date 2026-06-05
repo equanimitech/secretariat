@@ -87,6 +87,7 @@ export function MarkdownTitlebar({
           size="sm"
           onClick={onReveal}
           title="Reveal in Finder"
+          aria-label="Reveal in Finder"
         >
           <FolderOpen size={14} />
         </Button>

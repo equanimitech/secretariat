@@ -55,8 +55,8 @@ export function DispatchComposer({ open, onOpenChange, docPath }: DispatchCompos
         `Sent to ${draft.channel}`,
         result.permalink ? { description: result.permalink } : undefined,
       )
+      // Closing the dialog resets via the onOpenChange handler below.
       onOpenChange(false)
-      reset()
     } catch (e) {
       toast.error(`Send failed: ${e instanceof Error ? e.message : String(e)}`)
       setPhase('review')
@@ -75,8 +75,8 @@ export function DispatchComposer({ open, onOpenChange, docPath }: DispatchCompos
         <DialogHeader>
           <DialogTitle>Send to Slack</DialogTitle>
           <DialogDescription>
-            The scribe drafts the message; you review the exact text before it sends.
-            Sends the saved document.
+            The scribe drafts a message from the saved document; you review the
+            exact text before it sends.
           </DialogDescription>
         </DialogHeader>
 
