@@ -66,6 +66,43 @@ The text to send is:\n\n{body}"
     }
 }
 
+/// Pull the agent's reply text out of the `claude -p --output-format json`
+/// envelope. Errors if the envelope reports `is_error` or has no `result`.
+pub fn extract_result_text(stdout: &str) -> Result<String, String> {
+    let v: serde_json::Value = serde_json::from_str(stdout.trim())
+        .map_err(|e| format!("cognition CLI returned non-JSON output: {e}"))?;
+    if v.get("is_error").and_then(|b| b.as_bool()) == Some(true) {
+        let msg = v.get("result").and_then(|r| r.as_str()).unwrap_or("unknown error");
+        return Err(format!("scribe reported an error: {msg}"));
+    }
+    v.get("result")
+        .and_then(|r| r.as_str())
+        .map(|s| s.to_string())
+        .ok_or_else(|| "cognition CLI output had no `result` field".to_string())
+}
+
+/// Strip an optional ```json … ``` fence and surrounding whitespace.
+fn strip_fence(text: &str) -> &str {
+    let t = text.trim();
+    let t = t.strip_prefix("```json").or_else(|| t.strip_prefix("```")).unwrap_or(t);
+    t.trim().strip_suffix("```").unwrap_or(t).trim()
+}
+
+/// Parse the COMPOSE agent reply into `{channel, body}`.
+pub fn parse_compose_output(text: &str) -> Result<ComposeResult, String> {
+    serde_json::from_str::<ComposeResult>(strip_fence(text))
+        .map_err(|e| format!("could not parse composed message (expected {{channel, body}}): {e}"))
+}
+
+/// Parse the SEND agent reply. Missing/garbled permalink is non-fatal — the
+/// CLI exit already told us the send succeeded — so fall back to `None`.
+pub fn parse_send_output(text: &str) -> SendResult {
+    let permalink = serde_json::from_str::<SendResult>(strip_fence(text))
+        .ok()
+        .and_then(|r| r.permalink);
+    SendResult { permalink }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -87,5 +124,37 @@ mod tests {
         assert!(p.contains("Hello team"));
         assert!(p.contains("verbatim"));
         assert!(p.contains("slack_send_message"));
+    }
+
+    #[test]
+    fn extract_result_text_pulls_result_field() {
+        let env = r#"{"type":"result","is_error":false,"result":"hello"}"#;
+        assert_eq!(extract_result_text(env).unwrap(), "hello");
+    }
+
+    #[test]
+    fn extract_result_text_errors_on_is_error() {
+        let env = r#"{"type":"result","is_error":true,"result":"boom"}"#;
+        assert!(extract_result_text(env).unwrap_err().contains("boom"));
+    }
+
+    #[test]
+    fn parse_compose_output_handles_bare_and_fenced_json() {
+        let bare = "{\"channel\":\"#legal\",\"body\":\"Hi\"}";
+        assert_eq!(
+            parse_compose_output(bare).unwrap(),
+            ComposeResult { channel: "#legal".into(), body: "Hi".into() }
+        );
+        let fenced = "```json\n{\"channel\":\"#legal\",\"body\":\"Hi\"}\n```";
+        assert_eq!(parse_compose_output(fenced).unwrap().channel, "#legal");
+    }
+
+    #[test]
+    fn parse_send_output_tolerates_missing_permalink() {
+        assert_eq!(parse_send_output("not json").permalink, None);
+        assert_eq!(
+            parse_send_output(r#"{"permalink":"https://x"}"#).permalink,
+            Some("https://x".into())
+        );
     }
 }
