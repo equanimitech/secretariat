@@ -1,7 +1,9 @@
-import { FileCode, FolderOpen, RefreshCw } from 'lucide-react'
+import { useState } from 'react'
+import { FileCode, FolderOpen, RefreshCw, Send } from 'lucide-react'
 import { openPath, revealItemInDir } from '@tauri-apps/plugin-opener'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { DispatchComposer } from './DispatchComposer'
 
 interface MarkdownTitlebarProps {
   title: string
@@ -18,6 +20,8 @@ export function MarkdownTitlebar({
   onReload,
   reloading,
 }: MarkdownTitlebarProps) {
+  const [dispatchOpen, setDispatchOpen] = useState(false)
+
   const onReveal = async () => {
     try {
       await revealItemInDir(filePath)
@@ -86,7 +90,21 @@ export function MarkdownTitlebar({
         >
           <FolderOpen size={14} />
         </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setDispatchOpen(true)}
+          title="Send to Slack"
+          aria-label="Send to Slack"
+        >
+          <Send size={14} />
+        </Button>
       </div>
+      <DispatchComposer
+        open={dispatchOpen}
+        onOpenChange={setDispatchOpen}
+        docPath={filePath}
+      />
     </header>
   )
 }
