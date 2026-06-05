@@ -11,11 +11,59 @@
 //! no `$attestation`, no lexicon record. The Touch-ID stamp gate is unreachable
 //! from this path.
 
-// The Tauri commands that consume these items land in a later task; suppress
-// dead_code until then rather than hiding real future lints with a blanket allow.
-#![allow(dead_code)]
-
 use serde::{Deserialize, Serialize};
+use tauri::AppHandle;
+use tauri_plugin_shell::ShellExt;
+
+use crate::cognition::claude_code_sdk::resolve_claude_path;
+
+/// Run the configured cognition CLI headless with `prompt`, return the agent's
+/// reply text (already unwrapped from the `--output-format json` envelope).
+async fn run_scribe(app: &AppHandle, prompt: &str) -> Result<String, String> {
+    let claude = resolve_claude_path()
+        .ok_or_else(|| "cognition CLI (`claude`) not found on PATH".to_string())?;
+    let output = app
+        .shell()
+        .command(claude)
+        .args(["-p", prompt, "--output-format", "json"])
+        .output()
+        .await
+        .map_err(|e| format!("could not run the scribe: {e}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("scribe exited with an error: {}", stderr.trim()));
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    extract_result_text(&stdout)
+}
+
+/// COMPOSE: draft a message from the document. Does NOT send.
+#[tauri::command]
+#[specta::specta]
+pub async fn dispatch_compose(
+    app: AppHandle,
+    target: DispatchTarget,
+    doc_path: String,
+    instruction: String,
+) -> Result<ComposeResult, String> {
+    let prompt = compose_prompt(target, &doc_path, &instruction);
+    let text = run_scribe(&app, &prompt).await?;
+    parse_compose_output(&text)
+}
+
+/// SEND: post the principal-confirmed body verbatim.
+#[tauri::command]
+#[specta::specta]
+pub async fn dispatch_send(
+    app: AppHandle,
+    target: DispatchTarget,
+    channel: String,
+    body: String,
+) -> Result<SendResult, String> {
+    let prompt = send_prompt(target, &channel, &body);
+    let text = run_scribe(&app, &prompt).await?;
+    Ok(parse_send_output(&text))
+}
 
 /// Where a dispatch goes. One variant today; the enum documents the seam.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
@@ -54,6 +102,9 @@ Do NOT send anything. Reply with ONLY a JSON object, no prose, no code fence: \
 }
 
 /// Build the SEND prompt. The scribe sends the already-confirmed body verbatim.
+///
+/// The `body` must be principal-confirmed before this is called — the human gate lives in the
+/// frontend composer, not in this function. Do not call with unreviewed content.
 pub fn send_prompt(target: DispatchTarget, channel: &str, body: &str) -> String {
     match target {
         DispatchTarget::Slack => format!(
@@ -147,6 +198,12 @@ mod tests {
         );
         let fenced = "```json\n{\"channel\":\"#legal\",\"body\":\"Hi\"}\n```";
         assert_eq!(parse_compose_output(fenced).unwrap().channel, "#legal");
+    }
+
+    #[test]
+    fn parse_compose_output_handles_plain_fence() {
+        let fenced_plain = "```\n{\"channel\":\"#legal\",\"body\":\"Hi\"}\n```";
+        assert_eq!(parse_compose_output(fenced_plain).unwrap().channel, "#legal");
     }
 
     #[test]
