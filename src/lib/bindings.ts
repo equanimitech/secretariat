@@ -202,6 +202,28 @@ async listScribes() : Promise<Result<AgentDto[], string>> {
 }
 },
 /**
+ * COMPOSE: draft a message from the document. Does NOT send.
+ */
+async dispatchCompose(target: DispatchTarget, docPath: string, instruction: string) : Promise<Result<ComposeResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("dispatch_compose", { target, docPath, instruction }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * SEND: post the principal-confirmed body verbatim.
+ */
+async dispatchSend(target: DispatchTarget, channel: string, body: string) : Promise<Result<SendResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("dispatch_send", { target, channel, body }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Diagnostic — returns the absolute path to `~/.secretariat/`. Useful for
  * "open in Finder" buttons and for surfacing where keys live.
  */
@@ -596,8 +618,16 @@ assistant_terminal?: string | null;
  */
 assistant_command?: string | null }
 export type CognitionSettingsDto = { provider: string; api_key: string | null; api_base: string | null; model: string | null; route_threshold: number | null }
+/**
+ * Result of the COMPOSE phase — the scribe's draft, not yet sent.
+ */
+export type ComposeResult = { channel: string; body: string }
 export type CompositionSettingsDto = { closing_line: string; style_notes: string }
 export type DeliverySettingsDto = { poll_interval_minutes: number }
+/**
+ * Where a dispatch goes. One variant today; the enum documents the seam.
+ */
+export type DispatchTarget = "slack"
 export type EntryKind = 
 /**
  * Top-level "Private" entry pointing at the principal's self
@@ -775,6 +805,11 @@ export type RecoveryError =
  */
 { type: "ParseError"; message: string }
 export type RelayInfo = { endpoint: string; registered: boolean }
+/**
+ * Result of the SEND phase. `permalink` is best-effort (the scribe may or
+ * may not surface one); success is determined by the CLI exit, not this field.
+ */
+export type SendResult = { permalink: string | null }
 /**
  * Stamp a draft. Touch ID fires from the app's window context. The
  * stamp's atomic rename promotes the file into the canonical
