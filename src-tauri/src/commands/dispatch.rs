@@ -123,7 +123,10 @@ pub fn extract_result_text(stdout: &str) -> Result<String, String> {
     let v: serde_json::Value = serde_json::from_str(stdout.trim())
         .map_err(|e| format!("cognition CLI returned non-JSON output: {e}"))?;
     if v.get("is_error").and_then(|b| b.as_bool()) == Some(true) {
-        let msg = v.get("result").and_then(|r| r.as_str()).unwrap_or("unknown error");
+        let msg = v
+            .get("result")
+            .and_then(|r| r.as_str())
+            .unwrap_or("unknown error");
         return Err(format!("scribe reported an error: {msg}"));
     }
     v.get("result")
@@ -135,7 +138,10 @@ pub fn extract_result_text(stdout: &str) -> Result<String, String> {
 /// Strip an optional ```json … ``` fence and surrounding whitespace.
 fn strip_fence(text: &str) -> &str {
     let t = text.trim();
-    let t = t.strip_prefix("```json").or_else(|| t.strip_prefix("```")).unwrap_or(t);
+    let t = t
+        .strip_prefix("```json")
+        .or_else(|| t.strip_prefix("```"))
+        .unwrap_or(t);
     t.trim().strip_suffix("```").unwrap_or(t).trim()
 }
 
@@ -160,7 +166,11 @@ mod tests {
 
     #[test]
     fn compose_prompt_embeds_path_and_instruction() {
-        let p = compose_prompt(DispatchTarget::Slack, "/docs/note.md", "send the summary to #legal");
+        let p = compose_prompt(
+            DispatchTarget::Slack,
+            "/docs/note.md",
+            "send the summary to #legal",
+        );
         assert!(p.contains("/docs/note.md"));
         assert!(p.contains("send the summary to #legal"));
         assert!(p.contains("Do NOT send"));
@@ -194,7 +204,10 @@ mod tests {
         let bare = "{\"channel\":\"#legal\",\"body\":\"Hi\"}";
         assert_eq!(
             parse_compose_output(bare).unwrap(),
-            ComposeResult { channel: "#legal".into(), body: "Hi".into() }
+            ComposeResult {
+                channel: "#legal".into(),
+                body: "Hi".into()
+            }
         );
         let fenced = "```json\n{\"channel\":\"#legal\",\"body\":\"Hi\"}\n```";
         assert_eq!(parse_compose_output(fenced).unwrap().channel, "#legal");
@@ -203,7 +216,10 @@ mod tests {
     #[test]
     fn parse_compose_output_handles_plain_fence() {
         let fenced_plain = "```\n{\"channel\":\"#legal\",\"body\":\"Hi\"}\n```";
-        assert_eq!(parse_compose_output(fenced_plain).unwrap().channel, "#legal");
+        assert_eq!(
+            parse_compose_output(fenced_plain).unwrap().channel,
+            "#legal"
+        );
     }
 
     #[test]
