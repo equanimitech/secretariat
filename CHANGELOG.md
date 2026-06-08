@@ -4,6 +4,27 @@ All notable changes to Secretariat are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.0](https://github.com/equanimitech/secretariat/compare/v0.13.0...v0.14.0) — 2026-06-08
+
+The **dispatch send mechanism**: send a document out of the editor through a
+compose → review → send gate, with the dark-mode editor surface tidied up.
+
+### Added
+
+- **Dispatch send mechanism.** `dispatch_compose` + `dispatch_send` Tauri
+  commands drive a compose → review → send flow: the scribe drafts the message,
+  the principal reviews it in the `DispatchComposer` dialog, and only then is it
+  sent. A **send-to-Slack** button lives in the editor titlebar. Pure parsers
+  for the `claude -p` JSON output keep the compose path testable.
+
+### Fixed
+
+- **Dark-mode editor text.** Crepe's frame-dark theme painted all non-body text
+  (placeholders, secondary/surface labels, slash-menu, tooltips) with its own
+  washed greys instead of the app tokens, so the editor read lighter-grey than
+  the rest of the dark chrome. The `on-*` text vars now map to
+  `--foreground` / `--muted-foreground` / `--border`.
+
 ## [0.13.0](https://github.com/equanimitech/secretariat/compare/v0.12.1...v0.13.0) — 2026-06-04
 
 The **editor-reader redesign**: one markdown surface with verify state made
