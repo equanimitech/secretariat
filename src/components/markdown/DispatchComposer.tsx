@@ -22,7 +22,11 @@ interface DispatchComposerProps {
 
 type Phase = 'instruct' | 'composing' | 'review' | 'sending'
 
-export function DispatchComposer({ open, onOpenChange, docPath }: DispatchComposerProps) {
+export function DispatchComposer({
+  open,
+  onOpenChange,
+  docPath,
+}: DispatchComposerProps) {
   const [phase, setPhase] = useState<Phase>('instruct')
   const [instruction, setInstruction] = useState('')
   const [draft, setDraft] = useState<ComposeResult | null>(null)
@@ -41,7 +45,9 @@ export function DispatchComposer({ open, onOpenChange, docPath }: DispatchCompos
       setDraft(result)
       setPhase('review')
     } catch (e) {
-      toast.error(`Compose failed: ${e instanceof Error ? e.message : String(e)}`)
+      toast.error(
+        `Compose failed: ${e instanceof Error ? e.message : String(e)}`
+      )
       setPhase('instruct')
     }
   }
@@ -53,7 +59,7 @@ export function DispatchComposer({ open, onOpenChange, docPath }: DispatchCompos
       const result = await send(draft.channel, draft.body)
       toast.success(
         `Sent to ${draft.channel}`,
-        result.permalink ? { description: result.permalink } : undefined,
+        result.permalink ? { description: result.permalink } : undefined
       )
       // Closing the dialog resets via the onOpenChange handler below.
       onOpenChange(false)
@@ -66,7 +72,7 @@ export function DispatchComposer({ open, onOpenChange, docPath }: DispatchCompos
   return (
     <Dialog
       open={open}
-      onOpenChange={(o) => {
+      onOpenChange={o => {
         onOpenChange(o)
         if (!o) reset()
       }}
@@ -84,7 +90,7 @@ export function DispatchComposer({ open, onOpenChange, docPath }: DispatchCompos
           <Textarea
             placeholder="e.g. send a short summary to #legal"
             value={instruction}
-            onChange={(e) => setInstruction(e.target.value)}
+            onChange={e => setInstruction(e.target.value)}
             disabled={phase === 'composing'}
             rows={3}
           />
@@ -93,7 +99,12 @@ export function DispatchComposer({ open, onOpenChange, docPath }: DispatchCompos
             <div className="text-sm text-muted-foreground">
               Channel: <span className="font-mono">{draft?.channel}</span>
             </div>
-            <Textarea readOnly value={draft?.body ?? ''} rows={8} className="font-mono text-sm" />
+            <Textarea
+              readOnly
+              value={draft?.body ?? ''}
+              rows={8}
+              className="font-mono text-sm"
+            />
           </div>
         )}
 
