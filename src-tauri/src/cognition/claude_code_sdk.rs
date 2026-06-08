@@ -371,7 +371,7 @@ fn resolve_sec_mcp_path() -> Option<std::path::PathBuf> {
 /// Locate the standalone `claude` executable to override the SDK's bundled
 /// cli.js (the bundled path lives in Bun's virtual FS and isn't reachable
 /// after `bun build --compile`).
-fn resolve_claude_path() -> Option<std::path::PathBuf> {
+pub(crate) fn resolve_claude_path() -> Option<std::path::PathBuf> {
     if let Ok(out) = std::process::Command::new("which").arg("claude").output() {
         let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
         if !s.is_empty() {

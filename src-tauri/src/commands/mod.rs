@@ -4,6 +4,7 @@
 //! Import specific commands via their submodule (e.g., `commands::preferences::greet`).
 
 pub mod agent;
+pub mod dispatch;
 pub mod explorer;
 pub mod markdown;
 pub mod notifications;

@@ -11,6 +11,19 @@
  * without becoming a magazine.
  */
 
+/* Crepe's frame-dark theme paints all non-body text (placeholders, secondary
+   text, surface labels, slash-menu, tooltips) with its own washed greys
+   (#e6e6e6 / #a9a9a9) instead of the app tokens — so dark mode reads
+   lighter-grey than the rest of the chrome. Remap the on-* text vars to the
+   app foreground/muted tokens so the editor matches the theme. The body color
+   below already overrides ProseMirror directly; this covers everything else. */
+.dark .prose-host .milkdown {
+  --crepe-color-on-background: var(--foreground);
+  --crepe-color-on-surface: var(--foreground);
+  --crepe-color-on-surface-variant: var(--muted-foreground);
+  --crepe-color-outline: var(--border);
+}
+
 /* The reading column. The shell owns the measure; Crepe's internal cap is
    released so header + body align to one column. */
 /* Centered editorial column. Header + body share this column → one left

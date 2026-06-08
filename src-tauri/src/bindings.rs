@@ -2,8 +2,8 @@ use tauri_specta::{collect_commands, Builder};
 
 pub fn generate_bindings() -> Builder<tauri::Wry> {
     use crate::commands::{
-        agent, explorer, markdown, notifications, preferences, quick_pane, recovery, secretariat,
-        sessions, settings, timeline, updater,
+        agent, dispatch, explorer, markdown, notifications, preferences, quick_pane, recovery,
+        secretariat, sessions, settings, timeline, updater,
     };
 
     Builder::<tauri::Wry>::new().commands(collect_commands![
@@ -23,6 +23,8 @@ pub fn generate_bindings() -> Builder<tauri::Wry> {
         secretariat::current_identity,
         agent::provision_scribe,
         agent::list_scribes,
+        dispatch::dispatch_compose,
+        dispatch::dispatch_send,
         secretariat::secretariat_root,
         secretariat::read_envelope,
         secretariat::get_profile,
