@@ -34,9 +34,10 @@ enum Cmd {
 pub fn run(args: Args) -> Result<()> {
     let paths = key_paths()?;
     paths.ensure_dirs()?;
+    let ledger = paths.root.join("usage.jsonl");
     match args.cmd {
         Cmd::List { repo } => list(repo),
-        Cmd::Run { doc, dry_run } => run_doc(&paths.preferences, doc, dry_run),
+        Cmd::Run { doc, dry_run } => run_doc(&paths.preferences, &ledger, doc, dry_run),
     }
 }
 
@@ -78,7 +79,7 @@ fn repo_root_of(doc: &Path) -> Result<PathBuf> {
     Err(anyhow!("{} is not inside a git repo", doc.display()))
 }
 
-fn run_doc(prefs: &Path, doc: PathBuf, dry_run: bool) -> Result<()> {
+fn run_doc(prefs: &Path, ledger: &Path, doc: PathBuf, dry_run: bool) -> Result<()> {
     let repo = repo_root_of(&doc)?;
     let abs_doc = std::fs::canonicalize(&doc)?;
     let doc_rel = abs_doc
@@ -96,19 +97,31 @@ fn run_doc(prefs: &Path, doc: PathBuf, dry_run: bool) -> Result<()> {
             println!("doc: {}", doc_rel.display());
             println!("prompt:\n{}", w.prompt);
         } else {
-            dispatch(prefs, &repo, doc_rel, &w.name, &w.prompt)?;
+            dispatch(prefs, ledger, &repo, doc_rel, &w.name, &w.prompt)?;
         }
     }
     Ok(())
 }
 
 /// Run the configured cognition CLI (`launch_command`) headless with the
-/// workflow prompt, cwd = the repo, the doc path injected so the scribe knows
-/// what it is acting on.
-fn dispatch(prefs: &Path, repo: &Path, doc_rel: &Path, name: &str, prompt: &str) -> Result<()> {
+/// workflow prompt, cwd = the repo, the doc path injected. Captures the JSON
+/// result envelope to record the dispatch's cost + tokens in the usage ledger.
+fn dispatch(
+    prefs: &Path,
+    ledger: &Path,
+    repo: &Path,
+    doc_rel: &Path,
+    name: &str,
+    prompt: &str,
+) -> Result<()> {
     use secretariat_core::infrastructure::preferences::Preferences;
+    use secretariat_core::infrastructure::usage_ledger::{
+        append, now_epoch_secs, parse_cli_usage, UsageRecord,
+    };
 
-    let cog = Preferences::load(prefs).context("loading preferences")?.cognition;
+    let cog = Preferences::load(prefs)
+        .context("loading preferences")?
+        .cognition;
     let full_prompt = format!(
         "Document: {doc}\n(The current working directory is the repo root; read \
          the document there.)\n\n{prompt}",
@@ -118,17 +131,42 @@ fn dispatch(prefs: &Path, repo: &Path, doc_rel: &Path, name: &str, prompt: &str)
     cmd.args(&cog.launch_args)
         .arg("-p")
         .arg(&full_prompt)
+        .arg("--output-format")
+        .arg("json")
         .current_dir(repo);
     for (k, v) in &cog.launch_env {
         cmd.env(k, v);
     }
     eprintln!("[sec] dispatching `{name}` via `{}`…", cog.launch_command);
-    let status = cmd
-        .status()
+    let out = cmd
+        .output()
         .with_context(|| format!("dispatching `{name}` via `{}`", cog.launch_command))?;
-    if !status.success() {
-        return Err(anyhow!("workflow `{name}` exited with {status}"));
+    if !out.status.success() {
+        return Err(anyhow!(
+            "workflow `{name}` exited with {}: {}",
+            out.status,
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
     }
-    eprintln!("[sec] workflow `{name}` done");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    if let Some((cost, input, output)) = parse_cli_usage(&stdout) {
+        let _ = append(
+            ledger,
+            &UsageRecord {
+                at: now_epoch_secs(),
+                source: format!("workflow:{name}"),
+                repo: repo.display().to_string(),
+                doc: doc_rel.display().to_string(),
+                cost_usd: cost,
+                input_tokens: input,
+                output_tokens: output,
+            },
+        );
+        eprintln!(
+            "[sec] workflow `{name}` done — ${cost:.4} ({input} in / {output} out)"
+        );
+    } else {
+        eprintln!("[sec] workflow `{name}` done (no usage data in output)");
+    }
     Ok(())
 }

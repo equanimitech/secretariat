@@ -21,6 +21,7 @@ pub mod preferences;
 pub mod queue_dir;
 pub mod repo_registry;
 pub mod transport;
+pub mod usage_ledger;
 
 pub use binding_store::{load_channel_binding, resolve_channel_path, BindingStoreError};
 pub use biometric::{build_signer, pick_gate, AnyGate};
