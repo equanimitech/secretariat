@@ -21,6 +21,7 @@ mod root;
 mod scope_intent;
 mod signature;
 mod stamp;
+mod workflow;
 
 pub use acts::StampAct;
 pub use agent::{
@@ -46,3 +47,6 @@ pub use root::Root;
 pub use scope_intent::{ScopeIntent, ScopeIntentParseError};
 pub use signature::{EnvelopeSignature, SignerRole, SignerRoleParseError};
 pub use stamp::Stamp;
+pub use workflow::{
+    doc_type_from_path, StampEvent, Trigger, Workflow, WorkflowMatch, WorkflowParseError,
+};

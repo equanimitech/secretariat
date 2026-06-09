@@ -10,6 +10,7 @@ pub mod org_ops;
 pub mod repo_ops;
 pub mod stamp_document;
 pub mod verify_document;
+pub mod workflow_ops;
 
 pub use agent_manifest_ops::{
     emit_manifest_into_channel, ingest_manifest_from_file, AgentManifestOpsError,
@@ -32,3 +33,4 @@ pub use verify_document::{
     verify_document, verify_document_layered, LayeredVerifyOutcome, SignatureOutcome, VerifyError,
     VerifyOutcome,
 };
+pub use workflow_ops::{load_workflows, match_workflows, parse_workflow, WorkflowError};
