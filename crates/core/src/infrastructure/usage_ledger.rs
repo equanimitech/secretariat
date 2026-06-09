@@ -28,7 +28,10 @@ pub struct UsageRecord {
 /// missing fields default to 0 (older CLI / a substrate without cost data).
 pub fn parse_cli_usage(json: &str) -> Option<(f64, u64, u64)> {
     let v: serde_json::Value = serde_json::from_str(json).ok()?;
-    let cost = v.get("total_cost_usd").and_then(|x| x.as_f64()).unwrap_or(0.0);
+    let cost = v
+        .get("total_cost_usd")
+        .and_then(|x| x.as_f64())
+        .unwrap_or(0.0);
     let usage = v.get("usage");
     let input = usage
         .and_then(|u| u.get("input_tokens"))

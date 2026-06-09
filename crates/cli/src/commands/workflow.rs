@@ -85,7 +85,8 @@ fn run_doc(prefs: &Path, ledger: &Path, doc: PathBuf, dry_run: bool) -> Result<(
     let doc_rel = abs_doc
         .strip_prefix(&repo)
         .context("doc not under its repo root")?;
-    let hits = workflow_ops::match_workflows(prefs, &repo, doc_rel).context("matching workflows")?;
+    let hits =
+        workflow_ops::match_workflows(prefs, &repo, doc_rel).context("matching workflows")?;
     if hits.is_empty() {
         eprintln!("[sec] no workflows match {}", doc.display());
         return Ok(());
@@ -162,9 +163,7 @@ fn dispatch(
                 output_tokens: output,
             },
         );
-        eprintln!(
-            "[sec] workflow `{name}` done — ${cost:.4} ({input} in / {output} out)"
-        );
+        eprintln!("[sec] workflow `{name}` done — ${cost:.4} ({input} in / {output} out)");
     } else {
         eprintln!("[sec] workflow `{name}` done (no usage data in output)");
     }

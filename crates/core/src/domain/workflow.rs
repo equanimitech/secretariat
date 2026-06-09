@@ -31,8 +31,8 @@ impl WorkflowMatch {
     pub fn matches(&self, doc_type: Option<&str>, repo_tags: &[String]) -> bool {
         let type_ok =
             self.types.is_empty() || doc_type.is_some_and(|t| self.types.iter().any(|x| x == t));
-        let tag_ok = self.tags.is_empty()
-            || self.tags.iter().any(|x| repo_tags.iter().any(|rt| rt == x));
+        let tag_ok =
+            self.tags.is_empty() || self.tags.iter().any(|x| repo_tags.iter().any(|rt| rt == x));
         type_ok && tag_ok
     }
 }
@@ -71,7 +71,7 @@ pub fn doc_type_from_path(doc_rel: &Path) -> Option<String> {
         return None;
     }
     let sub = comps.next()?; // immediate child of docs/
-    // It is a directory only if at least one more component (the file) follows.
+                             // It is a directory only if at least one more component (the file) follows.
     comps.next().map(|_| sub)
 }
 

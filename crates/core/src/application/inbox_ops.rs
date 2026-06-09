@@ -25,7 +25,9 @@ use crate::infrastructure::markdown::{parse_document, MarkdownError};
 /// git-native teardown; the read/decrypt path reconstitutes the type here,
 /// where it needs `from` / recipient / `encryption`.
 fn typed_envelope(value: serde_yaml::Value) -> Result<Envelope, InboxOpError> {
-    serde_yaml::from_value(value).map_err(MarkdownError::from).map_err(InboxOpError::from)
+    serde_yaml::from_value(value)
+        .map_err(MarkdownError::from)
+        .map_err(InboxOpError::from)
 }
 
 #[derive(Debug, Error)]

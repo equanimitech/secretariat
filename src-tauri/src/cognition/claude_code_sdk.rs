@@ -390,7 +390,11 @@ pub(crate) fn resolve_claude_path() -> Option<std::path::PathBuf> {
     //    minimal PATH (`/usr/bin:/bin:/usr/sbin:/sbin`), NOT the shell PATH, so
     //    `which` misses installs under `~/.local/bin` etc.
     if let Some(home) = std::env::var_os("HOME").map(std::path::PathBuf::from) {
-        for rel in [".local/bin/claude", ".claude/local/claude", ".bun/bin/claude"] {
+        for rel in [
+            ".local/bin/claude",
+            ".claude/local/claude",
+            ".bun/bin/claude",
+        ] {
             let p = home.join(rel);
             if p.exists() {
                 return Some(p);

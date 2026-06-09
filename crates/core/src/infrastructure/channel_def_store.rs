@@ -249,9 +249,11 @@ fn finalize(
             path: path.to_path_buf(),
         })?
         .with_timezone(&Utc);
-    Ok(ChannelDef::new(parsed_handle, name, description, created_at)
-        .with_requires_stamp(requires_stamp)
-        .with_tombstoned(tombstoned))
+    Ok(
+        ChannelDef::new(parsed_handle, name, description, created_at)
+            .with_requires_stamp(requires_stamp)
+            .with_tombstoned(tombstoned),
+    )
 }
 
 pub fn save_channel_def(

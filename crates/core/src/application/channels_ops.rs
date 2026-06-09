@@ -349,9 +349,7 @@ fn read_one(path: &Path) -> Result<ChannelEnvelope, ChannelOpError> {
 /// Pull a root-level `tags:` list out of arbitrary frontmatter. Accepts
 /// either a YAML sequence of strings or a single string; anything else
 /// (missing key, non-stringy values, malformed) collapses to empty.
-fn tags_from_extra(
-    extra: &std::collections::BTreeMap<String, serde_yaml::Value>,
-) -> Vec<String> {
+fn tags_from_extra(extra: &std::collections::BTreeMap<String, serde_yaml::Value>) -> Vec<String> {
     let Some(value) = extra.get("tags") else {
         return Vec::new();
     };
