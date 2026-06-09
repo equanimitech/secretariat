@@ -4,6 +4,32 @@ All notable changes to Secretariat are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.0](https://github.com/equanimitech/secretariat/compare/v0.14.0...v0.15.0) — 2026-06-09
+
+**Stamp-triggered workflows (CLI)** + a local spend ledger, plus a fix that
+restores scribe dispatch from the app. The seal becomes a trigger: a stamped
+document can fire a principal-authored workflow against it.
+
+### Added
+
+- **`.secretariat/workflows/*.md` — "Actions for stamps."** Author a workflow
+  (trigger in frontmatter, prompt in the body); `sec workflow list` /
+  `sec workflow run <doc> [--dry-run]` matches it against a document (type from
+  its `docs/` subdir or a frontmatter `type:` override, tags from the repo
+  registry) and dispatches the scribe with the doc injected. The app-side stamp
+  trigger lands next.
+- **Local usage ledger.** Each scribe dispatch records its cost + tokens
+  (`total_cost_usd`, input/output) to `~/.secretariat/usage.jsonl`. Sovereign,
+  no telemetry — you see your own spend (architectural invariant #2).
+
+### Fixed
+
+- **Scribe dispatch from the app (`claude` not found on PATH).** A GUI app
+  launched by LaunchServices gets a minimal PATH, so `claude` installed under
+  `~/.local/bin` was invisible to a bare `which` and send / compose failed.
+  `resolve_claude_path` now probes an override env, known install locations, and
+  a login-shell fallback.
+
 ## [0.14.0](https://github.com/equanimitech/secretariat/compare/v0.13.0...v0.14.0) — 2026-06-08
 
 The **dispatch send mechanism**: send a document out of the editor through a
