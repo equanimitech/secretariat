@@ -13,5 +13,6 @@ pub mod repo;
 pub mod stamp;
 pub mod verify;
 pub mod view;
+pub mod workflow;
 
 pub(crate) mod paths;

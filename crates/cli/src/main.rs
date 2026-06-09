@@ -50,6 +50,9 @@ enum Cmd {
 
     /// Open a markdown file in the Secretariat desktop app.
     View(commands::view::Args),
+
+    /// Inspect + fire `.secretariat/workflows/*.md` (stamp-triggered actions).
+    Workflow(commands::workflow::Args),
 }
 
 fn main() -> Result<()> {
@@ -66,5 +69,6 @@ fn main() -> Result<()> {
         Cmd::Mcp(a) => commands::mcp::run(a),
         Cmd::Profile(a) => commands::profile::run(a),
         Cmd::View(a) => commands::view::run(a),
+        Cmd::Workflow(a) => commands::workflow::run(a),
     }
 }
