@@ -372,9 +372,44 @@ fn resolve_sec_mcp_path() -> Option<std::path::PathBuf> {
 /// cli.js (the bundled path lives in Bun's virtual FS and isn't reachable
 /// after `bun build --compile`).
 pub(crate) fn resolve_claude_path() -> Option<std::path::PathBuf> {
+    // 1. Explicit override (same env the sidecar honors).
+    if let Ok(p) = std::env::var("SECRETARIAT_CLAUDE_PATH") {
+        let p = std::path::PathBuf::from(p);
+        if p.exists() {
+            return Some(p);
+        }
+    }
+    // 2. `which` against whatever PATH this process has.
     if let Ok(out) = std::process::Command::new("which").arg("claude").output() {
         let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
         if !s.is_empty() {
+            return Some(std::path::PathBuf::from(s));
+        }
+    }
+    // 3. Known install locations — a GUI app launched by LaunchServices gets a
+    //    minimal PATH (`/usr/bin:/bin:/usr/sbin:/sbin`), NOT the shell PATH, so
+    //    `which` misses installs under `~/.local/bin` etc.
+    if let Some(home) = std::env::var_os("HOME").map(std::path::PathBuf::from) {
+        for rel in [".local/bin/claude", ".claude/local/claude", ".bun/bin/claude"] {
+            let p = home.join(rel);
+            if p.exists() {
+                return Some(p);
+            }
+        }
+    }
+    for abs in ["/opt/homebrew/bin/claude", "/usr/local/bin/claude"] {
+        let p = std::path::PathBuf::from(abs);
+        if p.exists() {
+            return Some(p);
+        }
+    }
+    // 4. Login-shell PATH as a last resort (picks up `.zshrc` install dirs).
+    if let Ok(out) = std::process::Command::new("zsh")
+        .args(["-lic", "command -v claude"])
+        .output()
+    {
+        let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if !s.is_empty() && std::path::Path::new(&s).exists() {
             return Some(std::path::PathBuf::from(s));
         }
     }
