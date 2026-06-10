@@ -6,7 +6,14 @@ $signature:
   docHash: sha256:1d6fbef006aa75d0ac320033e076437b66d60e7bba5505376e09b3068f57b9c4
   signedAt: 2026-06-10T14:36:57.957001Z
   signature: ed25519:zCs5xvMFQiQBEVAOfpiZEdMgTnOZ2iTDxWmuy3DaTC/HrQnhNH/6MeIdR1Ibn2YTsXLRc8EOQVAXlNfRbdGyCw==
-type: pain
+$attestation:
+  $type: tech.equanimi.secretariat.stamp
+  signer: did:key:z6MkjB8PQaN1vuUzdtnJsxyXR2f8d3tckGHkUYZMDytQsfak
+  act: attest
+  docHash: sha256:1d6fbef006aa75d0ac320033e076437b66d60e7bba5505376e09b3068f57b9c4
+  docFilename: 2026-06-10-never-cli-swap-a-binary-inside-a-signed-app-macos-blocks-it-a.md
+  stampedAt: 2026-06-10T14:39:37.732934Z
+  signature: ed25519:MHB/J87V1S4gIEP7no6QK+gVda75me81wFRIrsYNjNvmNoqGd8B7lugF0xwYrCgBUlnljFplaC6zltEMpfUaCA==
 ---
 # Never CLI-swap a binary inside a signed .app
 
