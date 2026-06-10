@@ -51,10 +51,11 @@ use secretariat_core::infrastructure::biometric::build_signer;
 use secretariat_core::infrastructure::composite_did_resolver::CompositeDidResolver;
 use secretariat_core::infrastructure::did_web_resolver::DidWebResolver;
 use secretariat_core::infrastructure::keys::{load_signing_key, KeyPaths};
+use secretariat_core::infrastructure::open_in_secretariat;
 use secretariat_core::ports::SignerError;
 use secretariat_core::Did;
 use serde::{Deserialize, Serialize};
-use tracing::info;
+use tracing::{info, warn};
 
 #[derive(Clone)]
 pub struct SecretariatServer {
@@ -429,6 +430,11 @@ impl SecretariatServer {
         })
         .map_err(|e| invalid_request(format!("compose failed: {e}")))?;
         info!(path = %outcome.path.display(), committed = outcome.committed, "doc composed via MCP");
+        // Surface the fresh doc in the desktop app. Best-effort: a missing
+        // GUI session must not fail the compose call.
+        if let Err(e) = open_in_secretariat(&outcome.path) {
+            warn!(error = %e, "composed but could not open in the Secretariat app");
+        }
         Ok(Json(ComposeOutput {
             path: outcome.path.display().to_string(),
             signer: scribe_did.as_str().to_string(),

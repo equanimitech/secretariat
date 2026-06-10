@@ -15,6 +15,7 @@ use clap::Parser;
 use secretariat_core::application::compose_ops::ComposeRequest;
 use secretariat_core::application::repo_ops::list_repos;
 use secretariat_core::application::{compose_document, resolve_sole_scribe, DocType};
+use secretariat_core::infrastructure::open_in_secretariat;
 
 use super::paths::key_paths;
 
@@ -32,6 +33,10 @@ pub struct Args {
     /// Read the body from a file instead of stdin.
     #[arg(long)]
     body_file: Option<PathBuf>,
+    /// Do not open the composed doc in the Secretariat desktop app
+    /// (default is to open it; pass this for scripted/headless use).
+    #[arg(long)]
+    no_open: bool,
 }
 
 pub fn run(args: Args) -> Result<()> {
@@ -77,6 +82,14 @@ pub fn run(args: Args) -> Result<()> {
                 .commit_skipped
                 .unwrap_or_else(|| "unknown reason".to_string())
         );
+    }
+
+    // Open the fresh doc in the desktop app so the author sees it land.
+    // Best-effort: a missing GUI session (headless/CI) must not fail compose.
+    if !args.no_open {
+        if let Err(e) = open_in_secretariat(&outcome.path) {
+            eprintln!("[sec] composed but could not open in the app: {e}");
+        }
     }
     Ok(())
 }

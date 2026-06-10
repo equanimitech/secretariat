@@ -12,7 +12,8 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use std::path::PathBuf;
-use std::process::Command;
+
+use secretariat_core::infrastructure::open_in_secretariat;
 
 #[derive(Parser, Debug)]
 pub struct Args {
@@ -23,25 +24,5 @@ pub struct Args {
 pub fn run(args: Args) -> Result<()> {
     let abs = std::fs::canonicalize(&args.path)
         .with_context(|| format!("could not resolve {}", args.path.display()))?;
-
-    #[cfg(target_os = "macos")]
-    {
-        let status = Command::new("open")
-            .args(["-a", "Secretariat"])
-            .arg(&abs)
-            .status()
-            .context("failed to exec `open -a Secretariat`")?;
-        if !status.success() {
-            anyhow::bail!(
-                "`open -a Secretariat` exited {} — is the app installed?",
-                status
-            );
-        }
-        Ok(())
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    {
-        anyhow::bail!("`sec view` is macOS-only for now (Tauri shell is Mac-only).")
-    }
+    open_in_secretariat(&abs).context("opening the file in the Secretariat desktop app")
 }

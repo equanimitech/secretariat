@@ -8,6 +8,7 @@ pub mod cognition;
 pub mod composite_did_resolver;
 pub mod contract_store;
 pub mod crypto;
+pub mod desktop;
 pub mod did_key_resolver;
 pub mod did_web_resolver;
 pub mod ed25519_signer;
@@ -32,6 +33,7 @@ pub use channel_def_store::{
 };
 pub use cognition::PrefsLauncher;
 pub use composite_did_resolver::CompositeDidResolver;
+pub use desktop::open_in_secretariat;
 pub use contract_store::{
     channel_contract_path, load_contract, load_contract_with_binding, org_contract_path,
     save_contract, save_stub_if_absent, ContractStoreError, CONTRACT_FILENAME,
