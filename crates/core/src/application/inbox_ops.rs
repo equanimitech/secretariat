@@ -75,7 +75,20 @@ pub fn read_envelope(
         source: e,
     })?;
     let parsed = parse_document(&raw)?;
-    let envelope_value = parsed.envelope.ok_or(InboxOpError::NoEnvelope)?;
+
+    // Unsigned / frontmatter-less docs: most working docs in the substrate
+    // are plain markdown with no `$envelope` block. Treat them as a plaintext
+    // passthrough — return the body with no envelope metadata rather than
+    // erroring. The `ReadResult` Option fields already encode "no frontmatter".
+    let Some(envelope_value) = parsed.envelope else {
+        return Ok(ReadResult {
+            body: parsed.body,
+            envelope_from: None,
+            envelope_to: None,
+            envelope_queue: None,
+            was_encrypted: false,
+        });
+    };
     let envelope = typed_envelope(envelope_value)?;
 
     let envelope_to = Some(envelope.recipient.owner.clone());
@@ -140,5 +153,22 @@ mod tests {
         let result = read_envelope(&path, &dir.path().join("nonexistent-key")).unwrap();
         assert!(!result.was_encrypted);
         assert_eq!(result.body, body);
+    }
+
+    #[test]
+    fn read_unsigned_doc_without_frontmatter_returns_body() {
+        // Most working docs in the substrate are plain markdown with no
+        // `$envelope` block. Reading one must pass the body through, not error.
+        let dir = TempDir::new().unwrap();
+        let body = "# A plain doc\n\nNo frontmatter, no signature.\n";
+        let path = dir.path().join("plain.md");
+        std::fs::write(&path, body).unwrap();
+
+        let result = read_envelope(&path, &dir.path().join("nonexistent-key")).unwrap();
+        assert!(!result.was_encrypted);
+        assert_eq!(result.body, body);
+        assert!(result.envelope_from.is_none());
+        assert!(result.envelope_to.is_none());
+        assert!(result.envelope_queue.is_none());
     }
 }

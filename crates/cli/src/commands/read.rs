@@ -45,9 +45,14 @@ pub fn run(args: Args) -> Result<()> {
     // `$envelope` is parsed opaquely by the markdown layer (git-native
     // teardown); deserialize the typed view here to read the encryption
     // scheme that drives the decrypt branch.
-    let envelope_value = parsed
-        .envelope
-        .ok_or_else(|| anyhow!("envelope frontmatter missing"))?;
+    //
+    // Unsigned / frontmatter-less docs: most working docs in the substrate
+    // are plain markdown with no `$envelope` block. Print the body as-is
+    // rather than erroring — only envelopes carry an encryption scheme.
+    let Some(envelope_value) = parsed.envelope else {
+        print!("{}", parsed.body);
+        return Ok(());
+    };
     let envelope: secretariat_core::domain::Envelope =
         serde_yaml::from_value(envelope_value).context("parsing $envelope block")?;
 
