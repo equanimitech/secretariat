@@ -18,9 +18,14 @@ vite.config.ts
 package-lock.json
 .git/
 src/lib/bindings.ts
+# Rewritten by scripts/prepare-release.js (JSON.stringify) on every version
+# bump; its machine format isn't prettier's, so checking it just re-breaks
+# the release. Treat as release-managed.
+src-tauri/tauri.conf.json
 
 # Documentation — prose; prettier's nested-list indent oscillates here.
 docs/ideas/
+docs/pain/
 docs/pitches/
 docs/decisions/
 docs/audits/
