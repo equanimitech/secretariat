@@ -4,6 +4,31 @@ All notable changes to Secretariat are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.16.0](https://github.com/equanimitech/secretariat/compare/v0.15.0...v0.16.0) — 2026-06-10
+
+**`compose` — every doc written through Secretariat, signed at birth.** The
+write-side of the three-layer trust model: scribe-authored docs now enter the
+substrate placed by convention, carrying their author `$signature`, and
+committed — instead of landing unsigned via generic file writes.
+
+### Added
+
+- **`sec compose` + MCP `compose` tool.** Compose a doc (`idea` | `pain` |
+  `decision` | `pitch` | `note`) into a registered repo: placed at
+  `docs/<bucket>/<date>-<slug>.md`, body signed with the scribe's agent key
+  (`$signature`, `signer_role: agent`), then committed pathspec-scoped
+  (message `docs(<type>): <title>`) — co-mingled working-tree state is never
+  staged. The commit skips with a warning mid-rebase/merge or on detached
+  HEAD; existing target paths are never overwritten. Caller-supplied leading
+  frontmatter is lifted into the canonical block; the reserved cryptographic
+  keys are rejected.
+- **Sole-scribe resolution.** Compose signs as the principal's only scribe
+  agent; zero or multiple scribes is an explicit error (`--as` selection
+  lands when cardinality does).
+- **Server instructions** now name `compose` the canonical write path for
+  docs — render the body to the principal first; composed docs are
+  signed-only (informational) until the principal stamps.
+
 ## [0.15.0](https://github.com/equanimitech/secretariat/compare/v0.14.0...v0.15.0) — 2026-06-09
 
 **Stamp-triggered workflows (CLI)** + a local spend ledger, plus a fix that
