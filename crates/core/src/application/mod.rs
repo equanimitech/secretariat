@@ -4,6 +4,7 @@ pub mod ag_extract;
 pub mod agent_manifest_ops;
 pub mod agent_ops;
 pub mod channels_ops;
+pub mod compose_ops;
 pub mod inbox_ops;
 pub mod launch_channel;
 pub mod org_ops;
@@ -23,6 +24,10 @@ pub use agent_ops::{add_agent, list_agents, remove_agent, rotate_agent, AgentOps
 pub use channels_ops::{
     create_channel, delete_channel, handle_is_reserved, list_channels, read_channel,
     ChannelEnvelope, ChannelOpError, ChannelSummary, META_HANDLE,
+};
+pub use compose_ops::{
+    compose_document, resolve_sole_scribe, ComposeError, ComposeOutcome, DocType,
+    ScribeResolveError,
 };
 pub use inbox_ops::{read_envelope, InboxOpError, ReadResult};
 pub use launch_channel::{launch_channel, launch_channel_with_binding, LaunchChannelError};
