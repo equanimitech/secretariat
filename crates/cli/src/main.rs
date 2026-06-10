@@ -24,6 +24,9 @@ enum Cmd {
     /// Manage authorized agents (scribes + future roles).
     Agent(commands::agent::Args),
 
+    /// Compose a doc into a registered repo: placed, signed, committed.
+    Compose(commands::compose::Args),
+
     /// Embed a biometric-attested stamp into a markdown file.
     Stamp(commands::stamp::Args),
 
@@ -60,6 +63,7 @@ fn main() -> Result<()> {
     match cli.cmd {
         Cmd::Init(a) => commands::init::run(a),
         Cmd::Agent(a) => commands::agent::run(a),
+        Cmd::Compose(a) => commands::compose::run(a),
         Cmd::Stamp(a) => commands::stamp::run(a),
         Cmd::Verify(a) => commands::verify::run(a),
         Cmd::Daemon(a) => commands::daemon::run(a),

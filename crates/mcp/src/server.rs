@@ -4,6 +4,7 @@
 //!
 //! | Tool | Purpose |
 //! |---|---|
+//! | `compose` | Write a doc into a registered repo: placed by convention, scribe-signed, committed |
 //! | `stamp` | Trigger biometric stamp on a draft (Touch ID gates regardless of caller) |
 //! | `read` | Decrypt + return body of an envelope |
 //! | `verify` | Check a signed/stamped artifact (three-state layered verifier) |
@@ -37,10 +38,13 @@ use rmcp::{
     tool, tool_handler, tool_router, RoleServer, ServerHandler,
 };
 use schemars::JsonSchema;
+use secretariat_core::application::compose_ops::ComposeRequest;
+use secretariat_core::application::repo_ops::list_repos;
 use secretariat_core::application::{
-    add_agent as app_add_agent, list_agents as app_list_agents, read_envelope,
-    remove_agent as app_remove_agent, rotate_agent as app_rotate_agent, stamp_document,
-    verify_document_layered, LayeredVerifyOutcome, StampError, VerifyOutcome,
+    add_agent as app_add_agent, compose_document, list_agents as app_list_agents, read_envelope,
+    remove_agent as app_remove_agent, resolve_sole_scribe, rotate_agent as app_rotate_agent,
+    stamp_document, verify_document_layered, DocType, LayeredVerifyOutcome, StampError,
+    VerifyOutcome,
 };
 use secretariat_core::domain::StampAct;
 use secretariat_core::infrastructure::biometric::build_signer;
@@ -123,6 +127,32 @@ pub struct StampOutput {
     pub signer: String,
     pub stamped_at: String,
     pub doc_hash: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ComposeParams {
+    /// Absolute path to the target repo. Must be enrolled in the substrate
+    /// manifest (`repo_add`).
+    pub repo: String,
+    /// Doc type: `idea` | `pain` | `decision` | `pitch` | `note`. Drives the
+    /// bucket directory (`docs/ideas/`, `docs/pain/`, …) and the frontmatter
+    /// `type:` facet.
+    pub doc_type: String,
+    /// Title — drives the `<date>-<slug>.md` filename and the commit message.
+    pub title: String,
+    /// Full markdown body. May carry leading editorial frontmatter (lifted
+    /// into the canonical block); the cryptographic keys (`$envelope` /
+    /// `$signature` / `$attestation`) are reserved and rejected.
+    pub body: String,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct ComposeOutput {
+    pub path: String,
+    pub signer: String,
+    pub committed: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub commit_skipped: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -358,6 +388,52 @@ impl SecretariatServer {
             envelope_from: result.envelope_from.map(|d| d.as_str().to_string()),
             envelope_to: result.envelope_to.map(|d| d.as_str().to_string()),
             encrypted: result.was_encrypted,
+        }))
+    }
+
+    #[tool(
+        name = "compose",
+        annotations(
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = false
+        ),
+        description = "Compose a markdown doc into a registered repo through the substrate \
+        — the canonical way to write any doc (idea, pain, decision, pitch, note). Places it \
+        by convention (`docs/<bucket>/<date>-<slug>.md`), signs the body at birth with the \
+        scribe's `$signature` (the author-signature tier of the trust model — NOT a stamp), \
+        and commits exactly that one path (message `docs(<type>): <title>`); co-mingled \
+        working-tree state is never staged. Never overwrites: an existing target path is an \
+        error. Render the body to the principal before composing. Stamping remains a \
+        separate, principal-only act."
+    )]
+    async fn compose(
+        &self,
+        Parameters(params): Parameters<ComposeParams>,
+    ) -> Result<Json<ComposeOutput>, ErrorData> {
+        let doc_type = DocType::parse(&params.doc_type)
+            .map_err(|e| invalid_request(format!("invalid doc_type: {e}")))?;
+        let (scribe_did, scribe_key) = resolve_sole_scribe(&self.paths)
+            .map_err(|e| invalid_request(format!("resolving scribe: {e}")))?;
+        let registry = list_repos(&self.paths.preferences, None)
+            .map_err(|e| invalid_request(format!("loading repo registry: {e}")))?;
+        let outcome = compose_document(ComposeRequest {
+            registry: &registry,
+            repo_path: &PathBuf::from(&params.repo),
+            doc_type,
+            title: &params.title,
+            body: &params.body,
+            signer: scribe_did.clone(),
+            signing_key: &scribe_key,
+            now: Utc::now(),
+        })
+        .map_err(|e| invalid_request(format!("compose failed: {e}")))?;
+        info!(path = %outcome.path.display(), committed = outcome.committed, "doc composed via MCP");
+        Ok(Json(ComposeOutput {
+            path: outcome.path.display().to_string(),
+            signer: scribe_did.as_str().to_string(),
+            committed: outcome.committed,
+            commit_skipped: outcome.commit_skipped,
         }))
     }
 
@@ -599,6 +675,12 @@ Secretariat is ambient context for AI, stamped by humans. You read and verify \
 envelopes; the principal enters to stamp the moments that count. You are the \
 scribe; the principal stamps, you never do. Stamping embeds an `$attestation` \
 block in place — no rename, no path change. Stamping is gated by Touch ID.
+
+Writing docs: use `compose`, not a generic file write. Compose places the doc \
+by convention (`docs/<bucket>/<date>-<slug>.md` in a registered repo), signs \
+the body with your scribe `$signature` at birth, and commits exactly that one \
+path. Render the full body to the principal before composing. A composed doc \
+is signed-only (informational) until the principal stamps it.
 
 Stamp ceremony (mandatory before calling `stamp`):
   1. Call `read` on the same `file_path`.

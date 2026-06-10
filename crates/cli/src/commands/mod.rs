@@ -3,6 +3,7 @@
 //! Each command exposes an `Args` struct (clap-derived) and a `run(Args)` entrypoint.
 
 pub mod agent;
+pub mod compose;
 pub mod daemon;
 pub mod init;
 pub mod launch;
