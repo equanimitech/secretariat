@@ -18,6 +18,11 @@
    app foreground/muted tokens so the editor matches the theme. The body color
    below already overrides ProseMirror directly; this covers everything else. */
 .dark .prose-host .milkdown {
+  /* The editor surface (reset.css paints .milkdown with this) is frame-dark's
+     #1a1a1a — lighter than the app --background (oklch 0.145), leaving a
+     visible card seam behind the document. Remap it to the page token so the
+     whole window is one continuous background in dark mode. */
+  --crepe-color-background: var(--background);
   --crepe-color-on-background: var(--foreground);
   --crepe-color-on-surface: var(--foreground);
   --crepe-color-on-surface-variant: var(--muted-foreground);
