@@ -12,6 +12,7 @@ pub mod profile;
 pub mod read;
 pub mod repo;
 pub mod stamp;
+pub mod timeline;
 pub mod verify;
 pub mod view;
 pub mod workflow;

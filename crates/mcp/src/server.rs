@@ -293,6 +293,69 @@ pub struct RepoRemoveOutput {
 }
 
 // ---------------------------------------------------------------------------
+// Timeline parameter / output schemas
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct TimelineParams {
+    /// Date window. One of: `today`, `Nd` (last N days, e.g. `7d` / `30d`),
+    /// `YYYY-MM` (whole month), `YYYY-MM-DD`, or `YYYY-MM-DD..YYYY-MM-DD`.
+    /// Default `7d`.
+    #[serde(default)]
+    pub range: Option<String>,
+    /// Grouping granularity: `day` | `week` | `month`. At `month` only the
+    /// per-day histogram is returned (no per-doc entries) to stay compact.
+    /// Default `day`.
+    #[serde(default)]
+    pub zoom: Option<String>,
+    /// Restrict to repos carrying this tag (e.g. `equanimitech`, `themia`).
+    #[serde(default)]
+    pub tag: Option<String>,
+    /// Restrict to a doc state: `stamped` | `signed` | `raw`.
+    #[serde(default)]
+    pub state: Option<String>,
+    /// Restrict to a doc bucket (top-level dir under `docs/`, e.g. `decisions`).
+    #[serde(default)]
+    pub bucket: Option<String>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct TimelineDayDto {
+    pub date: String,
+    pub stamped: usize,
+    pub signed: usize,
+    pub raw: usize,
+    pub total: usize,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct TimelineEntryDto {
+    pub date: String,
+    /// `stamped` | `signed` | `raw`.
+    pub state: String,
+    /// Top-level dir under `docs/`, or null if the doc sits directly in `docs/`.
+    pub bucket: Option<String>,
+    pub slug: String,
+    /// First markdown heading in the body, if any.
+    pub title: Option<String>,
+    pub repo_tags: Vec<String>,
+    pub rel_path: String,
+    /// Absolute path — hand directly to `read` to open the doc.
+    pub abs_path: String,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct TimelineOutput {
+    pub from: String,
+    pub to: String,
+    pub zoom: String,
+    pub total: usize,
+    pub by_day: Vec<TimelineDayDto>,
+    /// Per-doc entries. Empty when `zoom = month`.
+    pub entries: Vec<TimelineEntryDto>,
+}
+
+// ---------------------------------------------------------------------------
 // Tool router
 // ---------------------------------------------------------------------------
 
@@ -649,6 +712,90 @@ impl SecretariatServer {
         let removed = unregister_repo(&self.paths.preferences, std::path::Path::new(&params.path))
             .map_err(|e| invalid_request(format!("repo_remove failed: {e}")))?;
         Ok(Json(RepoRemoveOutput { removed }))
+    }
+
+    #[tool(
+        name = "timeline",
+        annotations(read_only_hint = true, idempotent_hint = true, open_world_hint = false),
+        description = "Chronological view of docs across all registered repos, grouped by \
+        date and badged by state (stamped / signed / raw). Answers 'what did I create \
+        today / over the last days / last month'. \
+        \
+        `range`: today | Nd (e.g. 7d, 30d) | YYYY-MM | YYYY-MM-DD | YYYY-MM-DD..YYYY-MM-DD \
+        (default 7d). `zoom`: day | week | month — at `month`, only the per-day histogram \
+        is returned (no per-doc entries) to stay compact. Optional filters: `tag` (repo \
+        group, e.g. equanimitech), `state` (stamped|signed|raw), `bucket` (e.g. decisions). \
+        \
+        Read-only and never decrypts — state is derived from frontmatter, dates from the \
+        `<date>-<slug>.md` filename. Hand an entry's `abs_path` to `read` to open it. \
+        Distinguish signed-only (informational) from stamped (authoritative)."
+    )]
+    async fn timeline(
+        &self,
+        Parameters(params): Parameters<TimelineParams>,
+    ) -> Result<Json<TimelineOutput>, ErrorData> {
+        use secretariat_core::application::timeline_ops::{
+            build_timeline, DocState, TimelineFilter,
+        };
+
+        let range = params.range.as_deref().unwrap_or("7d");
+        let zoom = params.zoom.as_deref().unwrap_or("day").to_lowercase();
+        if !matches!(zoom.as_str(), "day" | "week" | "month") {
+            return Err(invalid_request(format!(
+                "invalid zoom `{zoom}` (expected day|week|month)"
+            )));
+        }
+        let state = match params.state.as_deref() {
+            None => None,
+            Some(s) => Some(DocState::parse(s).ok_or_else(|| {
+                invalid_request(format!("invalid state `{s}` (expected stamped|signed|raw)"))
+            })?),
+        };
+        let filter = TimelineFilter {
+            tag: params.tag.clone(),
+            state,
+            bucket: params.bucket.clone(),
+        };
+        let today = Utc::now().date_naive();
+        let tl = build_timeline(&self.paths.preferences, today, range, &filter)
+            .map_err(|e| invalid_request(format!("timeline failed: {e}")))?;
+
+        let entries = if zoom == "month" {
+            Vec::new()
+        } else {
+            tl.entries
+                .iter()
+                .map(|e| TimelineEntryDto {
+                    date: e.date.to_string(),
+                    state: e.state.as_str().to_string(),
+                    bucket: e.bucket.clone(),
+                    slug: e.slug.clone(),
+                    title: e.title.clone(),
+                    repo_tags: e.repo_tags.clone(),
+                    rel_path: e.rel_path.display().to_string(),
+                    abs_path: e.abs_path.display().to_string(),
+                })
+                .collect()
+        };
+
+        Ok(Json(TimelineOutput {
+            from: tl.from.to_string(),
+            to: tl.to.to_string(),
+            zoom,
+            total: tl.entries.len(),
+            by_day: tl
+                .by_day
+                .iter()
+                .map(|d| TimelineDayDto {
+                    date: d.date.to_string(),
+                    stamped: d.stamped,
+                    signed: d.signed,
+                    raw: d.raw,
+                    total: d.total(),
+                })
+                .collect(),
+            entries,
+        }))
     }
 }
 

@@ -33,6 +33,9 @@ enum Cmd {
     /// Verify a stamped markdown file against the signer's did:web document.
     Verify(commands::verify::Args),
 
+    /// Chronological view of docs across registered repos (date zoom).
+    Timeline(commands::timeline::Args),
+
     /// Manage the macOS LaunchAgent: install / uninstall / status + keepalive serve.
     Daemon(commands::daemon::Args),
 
@@ -66,6 +69,7 @@ fn main() -> Result<()> {
         Cmd::Compose(a) => commands::compose::run(a),
         Cmd::Stamp(a) => commands::stamp::run(a),
         Cmd::Verify(a) => commands::verify::run(a),
+        Cmd::Timeline(a) => commands::timeline::run(a),
         Cmd::Daemon(a) => commands::daemon::run(a),
         Cmd::Read(a) => commands::read::run(a),
         Cmd::Repo(a) => commands::repo::run(a),
