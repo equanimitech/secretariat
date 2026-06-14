@@ -4,6 +4,29 @@ All notable changes to Secretariat are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.17.0](https://github.com/equanimitech/secretariat/compare/v0.16.3...v0.17.0) — 2026-06-14
+
+**`timeline`: chronological zoom over the substrate.** A read-only view of what
+you have created across every registered repo, grouped by date and badged by
+state (stamped / signed / raw). Answers "what did I make today, over the last
+days, last month."
+
+### Added
+
+- **`sec timeline` + MCP `timeline` tool.** Lists docs across all registered
+  repos by date. `range`: `today` | `Nd` (e.g. `7d`, `30d`) | `YYYY-MM` |
+  `YYYY-MM-DD` | `A..B` (default `7d`). `zoom`: `day` | `week` | `month`
+  (`month` returns the per-day histogram only, no per-doc entries). Filters:
+  `tag` (repo group), `state` (`stamped` | `signed` | `raw`), `bucket`
+  (top-level dir under `docs/`). Dates come from the `<date>-<slug>.md`
+  filename (no read needed to bucket); state is a tolerant frontmatter peek
+  (no decryption, no typed deserialization, so schema drift never hides a
+  doc). The CLI `day` view groups each day by repo (brand glyph + count) and
+  prints each doc's full path for click-to-open; `--json` mirrors the MCP
+  shape. The MCP entry carries `abs_path` (hand straight to `read`) and `repo`
+  (for per-project grouping). Read-only; no new record shape, so no
+  `lexicons/` change.
+
 ## [0.16.0](https://github.com/equanimitech/secretariat/compare/v0.15.0...v0.16.0) — 2026-06-10
 
 **`compose` — every doc written through Secretariat, signed at birth.** The

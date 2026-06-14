@@ -47,9 +47,9 @@ pub fn run(args: Args) -> Result<()> {
     let paths = key_paths()?;
     let state = match args.state.as_deref() {
         None => None,
-        Some(s) => Some(
-            DocState::parse(s).ok_or_else(|| anyhow::anyhow!("invalid --state `{s}` (expected stamped|signed|raw)"))?,
-        ),
+        Some(s) => Some(DocState::parse(s).ok_or_else(|| {
+            anyhow::anyhow!("invalid --state `{s}` (expected stamped|signed|raw)")
+        })?),
     };
     let zoom = args.zoom.to_lowercase();
     if !matches!(zoom.as_str(), "day" | "week" | "month") {
@@ -207,9 +207,7 @@ fn histogram(d: &DayBucket) -> String {
 }
 
 fn weekday(d: NaiveDate) -> &'static str {
-    [
-        "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun",
-    ][d.weekday().num_days_from_monday() as usize]
+    ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][d.weekday().num_days_from_monday() as usize]
 }
 
 fn monday_of(d: NaiveDate) -> NaiveDate {
