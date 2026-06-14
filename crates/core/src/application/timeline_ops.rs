@@ -81,6 +81,17 @@ pub struct TimelineEntry {
     pub title: Option<String>,
 }
 
+impl TimelineEntry {
+    /// The repo's display name (its directory basename, e.g. `keel`).
+    pub fn repo_name(&self) -> &str {
+        self.repo_path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .or_else(|| self.repo_path.to_str())
+            .unwrap_or("?")
+    }
+}
+
 /// Per-day state histogram.
 #[derive(Debug, Clone)]
 pub struct DayBucket {

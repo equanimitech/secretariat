@@ -333,6 +333,9 @@ pub struct TimelineEntryDto {
     pub date: String,
     /// `stamped` | `signed` | `raw`.
     pub state: String,
+    /// Repo display name (directory basename, e.g. `keel`). Group by this for
+    /// per-project summaries.
+    pub repo: String,
     /// Top-level dir under `docs/`, or null if the doc sits directly in `docs/`.
     pub bucket: Option<String>,
     pub slug: String,
@@ -768,6 +771,7 @@ impl SecretariatServer {
                 .map(|e| TimelineEntryDto {
                     date: e.date.to_string(),
                     state: e.state.as_str().to_string(),
+                    repo: e.repo_name().to_string(),
                     bucket: e.bucket.clone(),
                     slug: e.slug.clone(),
                     title: e.title.clone(),

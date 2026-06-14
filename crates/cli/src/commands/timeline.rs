@@ -89,28 +89,46 @@ pub fn run(args: Args) -> Result<()> {
     Ok(())
 }
 
-/// `day` zoom — full per-doc listing under each day.
+/// `day` zoom — each day a section; within it, docs cluster under a repo
+/// (brand-glyph) header. Each doc shows its state badge, bucket/title, and the
+/// full absolute path on its own line (clickable in the terminal to open it).
 fn render_day(tl: &Timeline) {
-    let mut current: Option<NaiveDate> = None;
+    let mut cur_date: Option<NaiveDate> = None;
+    let mut cur_repo: Option<String> = None;
     for e in &tl.entries {
-        if current != Some(e.date) {
-            if current.is_some() {
+        if cur_date != Some(e.date) {
+            if cur_date.is_some() {
                 println!();
             }
             let n = tl.entries.iter().filter(|x| x.date == e.date).count();
-            println!("{} ({})  {} doc{}", e.date, weekday(e.date), n, if n == 1 { "" } else { "s" });
-            current = Some(e.date);
+            println!(
+                "{} ({})  {} doc{}",
+                e.date,
+                weekday(e.date),
+                n,
+                if n == 1 { "" } else { "s" }
+            );
+            cur_date = Some(e.date);
+            cur_repo = None;
         }
-        let loc = e.bucket.as_deref().unwrap_or("·");
-        let title = e.title.as_deref().unwrap_or("");
-        println!(
-            "  {} {:<8} {}/{:<28} {}",
-            badge(e.state),
-            e.state.as_str(),
-            loc,
-            e.slug,
-            title
-        );
+        let repo = e.repo_name();
+        if cur_repo.as_deref() != Some(repo) {
+            let n = tl
+                .entries
+                .iter()
+                .filter(|x| x.date == e.date && x.repo_name() == repo)
+                .count();
+            println!("  {} {}  ({})", repo_glyph(repo), repo, n);
+            cur_repo = Some(repo.to_string());
+        }
+        let bucket = e
+            .bucket
+            .as_deref()
+            .map(|b| format!("{b}/"))
+            .unwrap_or_default();
+        let label = e.title.as_deref().unwrap_or(&e.slug);
+        println!("    {} {}{}", badge(e.state), bucket, label);
+        println!("       {}", e.abs_path.display());
     }
 }
 
@@ -167,6 +185,18 @@ fn badge(s: DocState) -> &'static str {
     }
 }
 
+/// Brand glyph per equanimitech repo; a neutral marker for everything else.
+fn repo_glyph(name: &str) -> &'static str {
+    match name {
+        "keel" => "∫",
+        "secretariat" => "∎",
+        "zenborg" => "≋",
+        "respost" => "↦",
+        "site" => "≃",
+        _ => "◦",
+    }
+}
+
 /// A glyph run like `▣▣✎·` for a day's state counts.
 fn histogram(d: &DayBucket) -> String {
     let mut s = String::new();
@@ -215,6 +245,7 @@ fn entry_json(e: &TimelineEntry) -> serde_json::Value {
     serde_json::json!({
         "date": e.date.to_string(),
         "state": e.state.as_str(),
+        "repo": e.repo_name(),
         "bucket": e.bucket,
         "slug": e.slug,
         "title": e.title,
