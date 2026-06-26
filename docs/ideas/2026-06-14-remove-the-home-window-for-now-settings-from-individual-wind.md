@@ -6,7 +6,14 @@ $signature:
   docHash: sha256:61600682c2d490f8b06d88e60c40eea46fbd15b71aca213e953fd959844d5371
   signedAt: 2026-06-14T12:37:09.581198Z
   signature: ed25519:3RbXkKKYUx9dxsv0vxwB7lDVBQug3Ae5DIL+SZzIboSvybBxkHK119136rSE4XwRqtMF3i2rI2MSxyZUxErEAw==
-type: idea
+$attestation:
+  $type: tech.equanimi.secretariat.stamp
+  signer: did:key:z6MkjB8PQaN1vuUzdtnJsxyXR2f8d3tckGHkUYZMDytQsfak
+  act: attest
+  docHash: sha256:61600682c2d490f8b06d88e60c40eea46fbd15b71aca213e953fd959844d5371
+  docFilename: 2026-06-14-remove-the-home-window-for-now-settings-from-individual-wind.md
+  stampedAt: 2026-06-14T12:52:12.132307Z
+  signature: ed25519:JX4FbkkV83CRu+9agWRqoxB64NQAmLz4a459VkgAEhr3gVFKGKhzr1MWasZXBSssSbhSIa0kaqnZaS4n/hPRAg==
 ---
 # Remove the home window for now (settings from individual windows)
 

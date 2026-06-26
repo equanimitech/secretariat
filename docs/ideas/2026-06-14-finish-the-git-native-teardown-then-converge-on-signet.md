@@ -6,7 +6,14 @@ $signature:
   docHash: sha256:0199aba247ce34469ddac3c5a8b9999b49a8f3a602fd57eda584a62152a50122
   signedAt: 2026-06-14T19:34:40.132957Z
   signature: ed25519:TLeNAieZxmS8avyJQgBS0zynbyyTDWTJhqwctTgMIbf5KM9WxMhVNDUgpTfDv++uTHOrhwwC/b1Dat5f5vrtDQ==
-type: idea
+$attestation:
+  $type: tech.equanimi.secretariat.stamp
+  signer: did:key:z6MkjB8PQaN1vuUzdtnJsxyXR2f8d3tckGHkUYZMDytQsfak
+  act: attest
+  docHash: sha256:0199aba247ce34469ddac3c5a8b9999b49a8f3a602fd57eda584a62152a50122
+  docFilename: 2026-06-14-finish-the-git-native-teardown-then-converge-on-signet.md
+  stampedAt: 2026-06-14T19:34:51.345138Z
+  signature: ed25519:bYtQmgZ5R20XImM2n25v/OP1EKQfkAm4OQY1yZqE6J8duaSNV0NavKNz/wz1xBKLTvGEaIjGJJd/IZna3fjCAA==
 ---
 > Surfaced by a ponytail over-engineering audit (2026-06-14). Two structural cuts, sequenced. Findings only; nothing applied. The first is pure deletion; the second is the documented signet convergence, quantified.
 
