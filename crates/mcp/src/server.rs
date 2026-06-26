@@ -839,6 +839,14 @@ the body with your scribe `$signature` at birth, and commits exactly that one \
 path. Render the full body to the principal before composing. A composed doc \
 is signed-only (informational) until the principal stamps it.
 
+TL;DR-as-contract: every composed body opens with a four-line block so \
+downstream readers depend on it cheaply — `## TL;DR` then `- **Goal:**` (one \
+sentence), `- **Key decisions:**` (one line each), `- **Open questions:**` \
+(one line each), `- **Cascades:**` (upstream docs this forced, or \"none\"). \
+When you need a sibling/upstream doc's context, read its `## TL;DR` first; \
+open the body only when a specific gap forces it. The TL;DR is the contract \
+between docs — keep it true when the body changes.
+
 Stamp ceremony (mandatory before calling `stamp`):
   1. Call `read` on the same `file_path`.
   2. Render the FULL decrypted body verbatim — code block or quoted region, \
