@@ -8,5 +8,9 @@
   "files.associations": {
     "*.css": "tailwindcss"
   },
-  "rust-analyzer.cargo.targetDir": true
+  "rust-analyzer.cargo.targetDir": true,
+  "i18n-ally.localesPaths": [
+    "locales",
+    "src/i18n"
+  ]
 }
