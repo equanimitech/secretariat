@@ -33,10 +33,10 @@ pub struct Args {
     /// Read the body from a file instead of stdin.
     #[arg(long)]
     body_file: Option<PathBuf>,
-    /// Do not open the composed doc in the Secretariat desktop app
-    /// (default is to open it; pass this for scripted/headless use).
+    /// Open the composed doc in the Secretariat desktop app. Off by default:
+    /// compose seals + commits; opening is a separate, explicit act.
     #[arg(long)]
-    no_open: bool,
+    open: bool,
 }
 
 pub fn run(args: Args) -> Result<()> {
@@ -84,9 +84,9 @@ pub fn run(args: Args) -> Result<()> {
         );
     }
 
-    // Open the fresh doc in the desktop app so the author sees it land.
-    // Best-effort: a missing GUI session (headless/CI) must not fail compose.
-    if !args.no_open {
+    // Opening is opt-in (`--open`). Best-effort: a missing GUI session
+    // (headless/CI) must not fail compose.
+    if args.open {
         if let Err(e) = open_in_secretariat(&outcome.path) {
             eprintln!("[sec] composed but could not open in the app: {e}");
         }
