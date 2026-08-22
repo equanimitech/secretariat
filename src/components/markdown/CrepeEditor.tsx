@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { Crepe, CrepeFeature } from '@milkdown/crepe'
+import { editorViewCtx } from '@milkdown/kit/core'
+import { $prose } from '@milkdown/kit/utils'
+import type { EditorView } from '@milkdown/kit/prose/view'
+import { search } from 'prosemirror-search'
 import '@milkdown/crepe/theme/common/style.css'
 // Crepe ships paired stylesheets. We can't conditionally `import` CSS, so
 // pull both as URL refs and inject the one matching the active theme via
@@ -31,6 +35,9 @@ interface CrepeEditorProps {
   /** Render the document read-only (Attend intent): identical typography,
    * no caret, no edits, no change-poll. */
   readonly?: boolean
+  /** Hands the live ProseMirror view up so the find bar can drive the
+   * search plugin. Called with null when the editor tears down. */
+  onViewReady?: (view: EditorView | null) => void
 }
 
 /**
@@ -47,15 +54,18 @@ export function CrepeEditor({
   initialValue,
   onChange,
   readonly = false,
+  onViewReady,
 }: CrepeEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null)
   const onChangeRef = useRef(onChange)
+  const onViewReadyRef = useRef(onViewReady)
   const initialValueRef = useRef(initialValue)
   const readonlyRef = useRef(readonly)
   const isDark = useHtmlDarkClass()
 
   useEffect(() => {
     onChangeRef.current = onChange
+    onViewReadyRef.current = onViewReady
   })
 
   // Swap Crepe's theme sheet to match the html `dark` class. Single
@@ -93,6 +103,12 @@ export function CrepeEditor({
       },
     })
 
+    // Crepe ships no find feature. `prosemirror-search` supplies the query
+    // state, the match decorations and the next/prev commands; FindBar
+    // drives it. Registered before create() — the underlying Milkdown
+    // editor exists from the Crepe constructor onward.
+    crepe.editor.use($prose(() => search()))
+
     crepe
       .create()
       .then(() => {
@@ -101,6 +117,11 @@ export function CrepeEditor({
           return
         }
         attached = crepe
+        // Read-only documents are still searchable, so the view goes up
+        // before the readonly branch returns.
+        crepe.editor.action(ctx => {
+          onViewReadyRef.current?.(ctx.get(editorViewCtx))
+        })
         if (readonlyRef.current) {
           // Sealed / read-only: lock the surface, never poll for edits.
           crepe.setReadonly(true)
@@ -127,6 +148,7 @@ export function CrepeEditor({
 
     return () => {
       alive = false
+      onViewReadyRef.current?.(null)
       if (pollTimer !== null) window.clearInterval(pollTimer)
       if (attached) void attached.destroy()
     }

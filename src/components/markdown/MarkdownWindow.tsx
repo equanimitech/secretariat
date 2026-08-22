@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
+import type { EditorView } from '@milkdown/kit/prose/view'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import {
   AlertDialog,
@@ -22,6 +23,7 @@ import {
 import { resolveTitle } from '@/lib/markdown/title'
 import { CrepeEditor } from './CrepeEditor'
 import { EnvelopeFooter } from './EnvelopeFooter'
+import { FindBar } from './FindBar'
 import { MarkdownTitlebar } from './MarkdownTitlebar'
 import { BreakSealDialog } from './BreakSealDialog'
 import { FrontmatterDisclosure } from './FrontmatterDisclosure'
@@ -56,6 +58,12 @@ export function MarkdownWindow({
   // remounts it with the freshly-loaded body when we reload from disk.
   const [editorKey, setEditorKey] = useState(0)
   const [selfDid, setSelfDid] = useState<string | null>(null)
+  // Find-in-document. The view arrives from CrepeEditor and is re-published
+  // on every remount (reload, seal state flip), so FindBar reads it lazily
+  // through a ref rather than capturing it.
+  const editorViewRef = useRef<EditorView | null>(null)
+  const [findOpen, setFindOpen] = useState(false)
+  const [findFocusSignal, setFindFocusSignal] = useState(0)
   const verify = useVerify(filePath)
   const [breakSealOpen, setBreakSealOpen] = useState(false)
   const [sealBroken, setSealBroken] = useState(false)
@@ -211,14 +219,18 @@ export function MarkdownWindow({
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (
-        (e.metaKey || e.ctrlKey) &&
-        !e.shiftKey &&
-        !e.altKey &&
-        e.key === 'r'
-      ) {
+      if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return
+      if (e.key === 'r') {
         e.preventDefault()
         requestReload()
+        return
+      }
+      if (e.key === 'f') {
+        e.preventDefault()
+        setFindOpen(true)
+        // Bumped unconditionally: a second Cmd+F on an already-open bar
+        // should re-focus and select the term, not fall through silently.
+        setFindFocusSignal(n => n + 1)
       }
     }
     window.addEventListener('keydown', handler, { capture: true })
@@ -303,6 +315,12 @@ export function MarkdownWindow({
         onReload={requestReload}
         reloading={reloading}
       />
+      <FindBar
+        open={findOpen}
+        focusSignal={findFocusSignal}
+        onClose={() => setFindOpen(false)}
+        getView={() => editorViewRef.current}
+      />
       <div className="flex-1 overflow-y-auto">
         <div className="editor-shell py-8">
           {/* Document header — frontmatter preview above the body. Trust
@@ -319,6 +337,9 @@ export function MarkdownWindow({
             initialValue={body}
             onChange={onBodyChange}
             readonly={verify.state === 'sealed'}
+            onViewReady={view => {
+              editorViewRef.current = view
+            }}
           />
         </div>
       </div>
