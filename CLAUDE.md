@@ -73,7 +73,7 @@ application use case in `crates/core/src/application/<verb>_ops.rs`, the CLI com
 `crates/cli/src/commands/<verb>.rs` (registered in `cli/src/main.rs`), the MCP tool in
 `crates/mcp/src/server.rs`, plus tests for the use case and the cross-layer contract.
 
-**Record shapes.** Changing any record shape requires the matching `lexicons/` edit in the *same*
+**Record shapes.** Changing any record shape requires the matching `lexicons/` edit in the _same_
 commit. A record-shape change without a lexicon diff is a stop-the-line event.
 
 ## Repo skills
