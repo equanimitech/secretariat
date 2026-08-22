@@ -35,5 +35,10 @@ docs/superpowers/
 # would break the seal hash. Treat as data, not source.
 docs/20*.md
 
+# Agent scratch: worktrees are full in-repo checkouts, attently is
+# tool-managed notes. Both are gitignored; neither is project source.
+.claude/worktrees/
+.claude/attently/
+
 # Logs
 *.log
