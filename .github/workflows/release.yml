@@ -177,9 +177,12 @@ jobs:
           fi
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v2
-        with:
-          version: 8
+        # No pinned version here on purpose: action-setup v4 reads
+        # `packageManager` from package.json, so CI and local can never
+        # drift again. Pinning v8 here while local ran v10 meant CI could
+        # not parse the lockfileVersion 9.0 lockfile, silently ignored it,
+        # and re-resolved every `^` range from the registry at build time.
+        uses: pnpm/action-setup@v4
 
       - name: Install Bun
         uses: oven-sh/setup-bun@v2
@@ -192,7 +195,10 @@ jobs:
           targets: aarch64-apple-darwin
 
       - name: Install frontend dependencies
-        run: pnpm install
+        # --frozen-lockfile turns a desynced lockfile into a loud failure
+        # instead of a silent re-resolve. Without it, a floating dependency
+        # can break the build days after the commit that "passed".
+        run: pnpm install --frozen-lockfile
 
       - name: Build the app (Apple Silicon)
         uses: tauri-apps/tauri-action@v0
