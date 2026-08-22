@@ -4,6 +4,45 @@ All notable changes to Secretariat are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.0](https://github.com/equanimitech/secretariat/compare/v0.17.1...v0.18.0) — 2026-08-22
+
+**The shell stops being the front door.** Launching Secretariat no longer opens
+a window. The editor surfaces you actually use — the quick pane, a markdown
+window per document, the tray — were already independent of the main window;
+it just kept appearing anyway. Now it is summoned, not presented. Plus
+find-in-document, and a text selection you can see in dark mode.
+
+### Added
+
+- **`Cmd+F` find-in-document** in the markdown window. Live match count
+  (`3 of 17`), `Enter` / `Shift+Enter` to step, `Escape` to dismiss and clear.
+  Works on sealed documents — read-only is still searchable. Built on
+  `prosemirror-search` registered into Crepe as a `$prose` plugin; Crepe ships
+  no find feature of its own. Find only: no replace, no regex, no case or
+  whole-word toggles in this cut.
+
+### Changed
+
+- **The main window is hidden at launch** (`visible: false`). A cold start
+  gives you a dock icon, the menu bar and the tray — no window. It is still
+  one gesture away: tray → _Show Secretariat_, a dock-icon click
+  (`RunEvent::Reopen`), or `open -a Secretariat`. Red-X still hides rather
+  than quits, and `Cmd+Q` still kills the shell. Activation policy is
+  unchanged — this is not a return of the Accessory ↔ Regular flip dropped in
+  v0.11.3; `visible` and the policy were always separable. Onboarding still
+  lives inside that window, so a fresh install must summon it once.
+
+### Fixed
+
+- **Text selection is visible in dark mode.** Nothing had ever set
+  `::selection`, so every window fell back to the WebKit default, which does
+  not follow the `dark` class. Adds `--selection` / `--selection-foreground`
+  to both themes — neutral by design, since amber is spoken for by
+  `--trust-signed`. Inside the editor the cause was different: Crepe's
+  `frame-dark` paints selection `#2f2f2f` against a `#1a1a1a` background, a
+  ~5% lightness delta. Both are now driven from the same token, so the editor
+  and the rest of the app agree.
+
 ## [0.17.0](https://github.com/equanimitech/secretariat/compare/v0.16.3...v0.17.0) — 2026-06-14
 
 **`timeline`: chronological zoom over the substrate.** A read-only view of what
