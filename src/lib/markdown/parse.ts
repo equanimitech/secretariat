@@ -24,25 +24,31 @@ function loadFrontmatterObject(fmText: string): Frontmatter {
 // themselves already carry a `---...---` block) produce files with two
 // adjacent frontmatter blocks. Without this merge, the second block leaks
 // into the body, gets parsed as markdown by the editor, and a roundtrip
-// rewrites `_` as `\_`, `- ` as `* `, and `---` as `***` — corrupting the
+// rewrites `_` as `\_`, `- ` as `* `, and `---` as `***` -- corrupting the
 // YAML and bricking later loads.
+//
+// The second-block merge only fires when the body starts with `---\n`
+// (adjacent blocks). A `---` after real content is a markdown HR, not a
+// frontmatter block -- the old greedy loop swallowed those.
 export function parseMarkdown(source: string): ParsedMarkdown {
-  let remaining = source
-  const merged: Frontmatter = {}
-  let matched = false
-  while (true) {
-    const m = remaining.match(FM_RE)
-    if (!m) break
-    matched = true
-    const fm = loadFrontmatterObject(m[1] ?? '')
-    for (const [k, v] of Object.entries(fm)) {
-      if (!(k in merged)) merged[k] = v
-    }
-    remaining = (m[2] ?? '').replace(/^\n+/, '')
-  }
-  if (!matched) {
+  const m = source.match(FM_RE)
+  if (!m) {
     return { frontmatter: {}, body: trim(source) }
   }
+  const merged = loadFrontmatterObject(m[1] ?? '')
+  let remaining = (m[2] ?? '').replace(/^\n+/, '')
+
+  if (/^---\r?\n/.test(remaining)) {
+    const m2 = remaining.match(FM_RE)
+    if (m2) {
+      const fm2 = loadFrontmatterObject(m2[1] ?? '')
+      for (const [k, v] of Object.entries(fm2)) {
+        if (!(k in merged)) merged[k] = v
+      }
+      remaining = (m2[2] ?? '').replace(/^\n+/, '')
+    }
+  }
+
   return { frontmatter: merged, body: trim(remaining) }
 }
 

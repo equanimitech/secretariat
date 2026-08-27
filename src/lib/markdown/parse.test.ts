@@ -20,6 +20,23 @@ describe('parseMarkdown', () => {
     const { frontmatter } = parseMarkdown(src)
     expect(frontmatter).toEqual({ custom_field: 'value' })
   })
+
+  it('does not swallow body content around a --- horizontal rule', () => {
+    const src = '---\ntype: note\n---\n## TL;DR\n\nSummary.\n\n---\n\n## Context\n\nDetails.'
+    const { frontmatter, body } = parseMarkdown(src)
+    expect(frontmatter).toEqual({ type: 'note' })
+    expect(body).toContain('## TL;DR')
+    expect(body).toContain('Summary.')
+    expect(body).toContain('## Context')
+    expect(body).toContain('Details.')
+  })
+
+  it('merges adjacent double frontmatter blocks', () => {
+    const src = '---\ntitle: A\n---\n---\nextra: B\n---\n# Body'
+    const { frontmatter, body } = parseMarkdown(src)
+    expect(frontmatter).toEqual({ title: 'A', extra: 'B' })
+    expect(body).toBe('# Body')
+  })
 })
 
 describe('serializeMarkdown', () => {
